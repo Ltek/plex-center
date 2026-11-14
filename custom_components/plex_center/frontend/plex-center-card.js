@@ -1,0 +1,1415 @@
+// Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
+// Version: v2026.11.14.1
+//
+// Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
+// (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
+// Plex token. Each TV shows the libraries, Continue Watching and watched marks of the Plex Home user that
+// TV's Plex app uses.
+//
+// The Home-row look (poster / fanart items, title + four lines with $keywords, date formats) is adapted
+// from upcoming-media-card by the custom-cards team (MIT); see LICENSE.
+//
+// Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
+// it); per-card values are custom properties on the card root. Renders once, then patches.
+
+const BUILD_NUMBER = 'v2026.11.14.1';
+const CARD_TAG = 'plex-center-card';
+const EDITOR_TAG = 'plex-center-card-editor';
+const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
+const PHONE_MAX_W = 600;           // auto layout: narrower than this is the phone layout
+const PAGE = 60;                   // items per page
+const REFRESH_MS = 60 * 1000;      // config / hubs refresh
+const SESSIONS_MS = 15 * 1000;     // Watching now refresh
+
+const THEME_COLORS = [
+  ['var(--primary-color)', 'Primary'],
+  ['var(--accent-color)', 'Accent'],
+  ['var(--primary-text-color)', 'Primary text'],
+  ['var(--secondary-text-color)', 'Secondary text'],
+  ['var(--disabled-text-color)', 'Disabled text'],
+  ['var(--state-active-color)', 'State active'],
+  ['var(--error-color)', 'Error'],
+  ['var(--warning-color)', 'Warning'],
+  ['var(--success-color)', 'Success'],
+  ['var(--info-color)', 'Info'],
+];
+
+// key → [label, "unset" label, seed hex, css custom property]
+const COLOR_DEFS = {
+  accent_color: ['Accent', 'Theme accent', '#e5a00d', '--plc-accent'],
+  title_color: ['Row titles', 'Theme text', '#ffffff', '--plc-title-c'],
+  line_color: ['Row lines', 'Theme secondary text', '#bbbbbb', '--plc-line-c'],
+  flag_color: ['"New" flag', 'Accent', '#e5a00d', '--plc-flag-c'],
+};
+const SIZES = { large: 1.25, medium: 1, small: 0.85 };
+const DEFAULTS = {
+  title: 'Plex',
+  layout: 'auto',
+  tv_picker: 'chips',
+  client_choice: 'card',
+  tap_action: 'details',
+  start_tab: 'home',
+  show_continue: true,
+  show_recent: true,
+  show_watching: true,
+  surprise: true,
+  lock: false,
+  now_playing: 'auto',
+  slim_position: 'bottom',
+  slim_controls: 'toggle',
+  panel_when: 'always',
+  image_style: 'poster',
+  max: 12,
+  date: 'mm/dd',
+  clock: '12',
+  title_size: 'medium',
+  line_size: 'small',
+  poster_width: 130,
+  corner_radius: 10,
+  box_shadows: true,
+  text_shadows: false,
+  flag: true,
+};
+// ------------------------------------------------------------------------------------------- helpers
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+function colorMode(cur) {
+  cur = cur == null ? '' : String(cur);
+  if (cur === '') return 'default';
+  if (/^#[0-9a-fA-F]{3,8}$/.test(cur)) return 'custom';
+  if (/^var\(/.test(cur) && THEME_COLORS.some(([v]) => v === cur)) return 'theme';
+  return 'css';
+}
+
+
+/** Merge defaults; keep only known shapes. Idempotent: normalize(normalize(c)) equals normalize(c). */
+function normalizeConfig(raw) {
+  const c = { ...(raw || {}) };
+  delete c.type;
+  for (const [k, v] of Object.entries(DEFAULTS)) if (c[k] === v) delete c[k];
+  for (const k of Object.keys(c)) if (c[k] === '' || c[k] == null) delete c[k];
+  if (Array.isArray(c.home_rows)) {
+    c.home_rows = c.home_rows.filter((r) => r && r.sensor).map((r) => (r.title ? { sensor: r.sensor, title: r.title } : { sensor: r.sensor }));
+    if (!c.home_rows.length) delete c.home_rows;
+  } else delete c.home_rows;
+  for (const k of ['libraries', 'tvs', 'home_cards']) if (!Array.isArray(c[k]) || !c[k].length) delete c[k];
+  return c;
+}
+const cfg = (c, k) => (c[k] !== undefined ? c[k] : DEFAULTS[k]);
+
+/** Per-card custom properties (never written into the stylesheet). */
+function cardVars(c) {
+  const v = [`--plc-poster-w:${Number(cfg(c, 'poster_width')) || 130}px`, `--plc-radius:${Number(cfg(c, 'corner_radius'))}px`,
+    `--plc-title-fs:${SIZES[cfg(c, 'title_size')] || 1}`, `--plc-line-fs:${SIZES[cfg(c, 'line_size')] || 0.85}`];
+  for (const [k, d] of Object.entries(COLOR_DEFS)) if (c[k]) v.push(`${d[3]}:${String(c[k]).replace(/[;{}<>]/g, '')}`);
+  return v.join(';');
+}
+
+
+
+/** Real playback (not the 30 s title-page preview). */
+function isRealPlayback(st) {
+  if (!st || !['playing', 'paused', 'buffering'].includes(st.state)) return false;
+  const d = Number(st.attributes?.media_duration);
+  return !(d > 0 && d <= PREVIEW_MAX_S);
+}
+
+/** Live position in seconds from position + position_updated_at. */
+function livePosition(st, now = Date.now()) {
+  const a = st?.attributes || {};
+  let p = Number(a.media_position);
+  if (!Number.isFinite(p)) return null;
+  if (st.state === 'playing' && a.media_position_updated_at) p += Math.max(0, (now - Date.parse(a.media_position_updated_at)) / 1000);
+  const d = Number(a.media_duration);
+  return d > 0 ? Math.min(p, d) : p;
+}
+
+const fmtTime = (s) => {
+  s = Math.max(0, Math.floor(Number(s) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`;
+};
+const endsAt = (remainingS, clock = '12', now = Date.now()) =>
+  new Date(now + Math.max(0, remainingS) * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: clock !== '24' });
+
+
+/** upcoming-media deep_link ('…/server/<id>/details?key=%2Flibrary%2Fmetadata%2F<key>') → { server, key }. */
+function deepLinkKey(url) {
+  const m = /\/server\/([A-Za-z0-9]+)\/details\?key=%2Flibrary%2Fmetadata%2F(\d+)/.exec(String(url || ''));
+  return m ? { server: m[1], key: m[2] } : null;
+}
+
+
+// --------------------------------------------- upcoming-media rows (adapted from upcoming-media-card, MIT)
+
+/** Items of an upcoming-media sensor: entry 0 is the template (line defaults), the rest are items. */
+function umcItems(st) {
+  const data = st?.attributes?.data;
+  let list = data;
+  if (typeof data === 'string') { try { list = JSON.parse(data); } catch { list = []; } }
+  if (!Array.isArray(list) || !list.length) return { defaults: {}, items: [] };
+  return { defaults: list[0] || {}, items: list.slice(1).filter((x) => x && x.title) };
+}
+
+function formatDate(input, format = 'mm/dd/yy') {
+  const s = String(input || '');
+  let d, m, y2, y4;
+  if ((format === 'yyyy' || format === '(yyyy)') && /^\d{4}$/.test(s)) return format === '(yyyy)' ? `(${s})` : s;
+  if (/T\d+:\d+:\d+/.test(s)) {
+    const dt = new Date(s);
+    if (isNaN(dt)) return '';
+    d = String(dt.getDate()).padStart(2, '0'); m = String(dt.getMonth() + 1).padStart(2, '0');
+    y4 = String(dt.getFullYear()); y2 = y4.slice(-2);
+  } else if (/^\d+-\d+-\d+/.test(s)) {
+    [y4, m, d] = s.slice(0, 10).split('-'); y2 = y4.slice(-2);
+  } else return '';
+  const map = { dd: d, d: String(Number(d)), mm: m, m: String(Number(m)), yyyy: y4, yy: y2 };
+  const mark = '\u0000';
+  return String(format).replace(/yyyy|yy|mm|m|dd|d/g, (t) => (map[t] ?? t) + mark)
+    .replace(new RegExp(mark + '(?=\\d)', 'g'), '/').replace(new RegExp(mark, 'g'), '');
+}
+
+const KEYWORDS = /\$title|\$episode|\$genres|\$number|\$rating|\$release|\$runtime|\$studio|\$day|\$date|\$time|\$aired|\$tmdb_id|\$empty/g;
+
+/** Title + line 1–4 of an item: $keywords replaced; a '-'-separated part whose keyword is empty is dropped. */
+function umcLines(item, defaults, c, now = Date.now()) {
+  const fmt = cfg(c, 'date');
+  const air = item.airdate ? new Date(item.airdate) : null;
+  const days = air && !isNaN(air) ? Math.round(Math.abs(now - air.getTime()) / 86400000) : 99;
+  let runtime = '';
+  if (/^\d+$/.test(String(item.runtime || ''))) {
+    const t = Number(item.runtime), h = Math.floor(t / 60);
+    runtime = (h ? `${h}hr ` : '') + (t % 60 ? `${t % 60}min` : '');
+  }
+  const keys = {
+    $title: item.title || null, $episode: item.episode || null,
+    $genres: (Array.isArray(item.genres) ? item.genres.join(', ') : item.genres) || null,
+    $number: item.number || null, $rating: item.rating || null,
+    $release: String(item.release || '').replace('$date', formatDate(item.airdate, fmt)).replace('$year', formatDate(item.airdate, 'yy')) || null,
+    $runtime: runtime || null, $studio: item.studio || null,
+    $day: air && !isNaN(air) ? air.toLocaleDateString([], { weekday: days <= 7 ? 'long' : 'short' }) : null,
+    $date: formatDate(item.airdate, fmt) || null,
+    $time: air && !isNaN(air) ? air.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: cfg(c, 'clock') !== '24' }) : null,
+    $aired: formatDate(item.aired, fmt) || null, $tmdb_id: item.tmdb_id || null, $empty: '',
+  };
+  const tpl = [c.title_text || defaults.title_default || '$title', c.line1_text || defaults.line1_default || '$episode',
+    c.line2_text || defaults.line2_default || '$release', c.line3_text || defaults.line3_default || '$rating - $runtime',
+    c.line4_text || defaults.line4_default || '$number - $studio'];
+  return tpl.map((t) => {
+    const parts = String(t).replace(/ - /g, '-').split('-')
+      .map((p) => p.replace(KEYWORDS, (k) => (keys[k] == null ? '\u0001' : keys[k])))
+      .filter((p) => !p.includes('\u0001'));
+    return parts.join(' - ').replace(KEYWORDS, (k) => keys[k] ?? '').trim();
+  });
+}
+
+/** YouTube watch / youtu.be link → embed URL; anything else unchanged. */
+function trailerEmbed(url) {
+  const m = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{6,})/.exec(String(url || ''));
+  return m ? `https://www.youtube.com/embed/${m[1]}?autoplay=1` : null;
+}
+
+// ------------------------------------------------------------------------------------------- card CSS
+// Constant for every instance. Per-card values arrive as custom properties on .plc (cardVars()).
+
+const CARD_CSS = `
+.plc { --plc-a: var(--plc-accent, var(--accent-color, var(--primary-color)));
+  --plc-bg2: var(--secondary-background-color, rgba(127,127,127,.12));
+  --plc-r: var(--plc-radius, 10px);
+  display: block; position: relative; overflow: hidden; color: var(--primary-text-color); padding: 12px 14px 14px; box-sizing: border-box; }
+.plc *, .plc *::before, .plc *::after { box-sizing: border-box; }
+.plc button { font: inherit; color: inherit; cursor: pointer; }
+.plc ha-icon { --mdc-icon-size: 20px; }
+.plc-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.plc-title { margin: 0; font-size: 1.35em; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.plc-sp { flex: 1; }
+.plc-tvs { display: flex; gap: 6px; flex-wrap: wrap; }
+.plc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--divider-color, #444);
+  background: transparent; font-size: .85em; font-weight: 600; white-space: nowrap; }
+.plc-chip.on { border-color: var(--plc-a); background: color-mix(in srgb, var(--plc-a) 18%, transparent); }
+.plc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--disabled-text-color, #777); }
+.plc-dot.on { background: var(--success-color, #4caf50); } .plc-dot.play { background: var(--plc-a); }
+.plc-select, .plc-search { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--divider-color, #444); background: var(--plc-bg2);
+  color: var(--primary-text-color); font: inherit; font-size: .9em; min-width: 0; }
+.plc-search { flex: 1 1 180px; max-width: 320px; }
+.plc-tabs { display: flex; gap: 4px; margin: 10px 0 8px; overflow-x: auto; scrollbar-width: none; }
+.plc-tabs::-webkit-scrollbar { display: none; }
+.plc-tab { padding: 7px 14px; border: none; border-radius: 8px; background: transparent; font-weight: 700; font-size: .92em; white-space: nowrap;
+  color: var(--secondary-text-color); }
+.plc-tab.on { color: var(--primary-text-color); background: var(--plc-bg2); box-shadow: inset 0 -2px 0 var(--plc-a); }
+.plc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+.plc-msg { color: var(--secondary-text-color); font-size: .9em; padding: 12px 2px; }
+.plc-msg.err { color: var(--error-color, #f44336); }
+.plc-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.plc.tablet .plc-body.with-detail { grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); }
+.plc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--plc-poster-w, 130px), 1fr)); gap: 14px 12px; }
+.plc.phone .plc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; }
+.plc-tile { position: relative; border: none; background: none; padding: 0; text-align: left; min-width: 0; }
+.plc-poster { position: relative; aspect-ratio: 2 / 3; width: 100%; border-radius: var(--plc-r); background: var(--plc-bg2) center / cover no-repeat;
+  overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--secondary-text-color); font-size: .75em; text-align: center; }
+.plc.shadows .plc-poster { box-shadow: 0 4px 14px rgba(0,0,0,.45); }
+.plc-tile.sel .plc-poster { outline: 2px solid var(--plc-a); outline-offset: 2px; }
+.plc-play { position: absolute; right: 8px; bottom: 8px; width: 38px; height: 38px; border-radius: 50%; border: none; display: flex; align-items: center;
+  justify-content: center; background: var(--plc-a); color: #fff; opacity: .92; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+.plc-play ha-icon { --mdc-icon-size: 22px; }
+.plc-badge { position: absolute; top: 6px; left: 6px; padding: 2px 6px; border-radius: 4px; font-size: .68em; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; background: var(--plc-flag-c, var(--plc-a)); color: #fff; }
+.plc-t { margin-top: 6px; font-size: calc(.85em * var(--plc-title-fs, 1)); font-weight: 700; line-height: 1.25; color: var(--plc-title-c, var(--primary-text-color));
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.plc-s { font-size: calc(.95em * var(--plc-line-fs, .85)); color: var(--plc-line-c, var(--secondary-text-color)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plc.tshadow .plc-t, .plc.tshadow .plc-s { text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.plc-sentinel { height: 30px; }
+.plc-sec { margin: 4px 0 16px; }
+.plc-sec-h { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: .78em; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--plc-a); }
+.plc-sec-h .n { color: var(--secondary-text-color); letter-spacing: .04em; }
+.plc-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
+.plc-row > .plc-tile { flex: 0 0 var(--plc-poster-w, 130px); scroll-snap-align: start; }
+.plc.phone .plc-row > .plc-tile { flex-basis: 30%; }
+.plc-row.fanart > .plc-tile { flex: 0 0 calc(var(--plc-poster-w, 130px) * 2.2); }
+.plc.phone .plc-row.fanart > .plc-tile { flex-basis: 78%; }
+.plc-row.fanart .plc-poster { aspect-ratio: 16 / 9; }
+.plc-fan-text { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 10px 8px; text-align: left;
+  background: linear-gradient(transparent, rgba(0,0,0,.85)); }
+.plc-fan-text .plc-t, .plc-fan-text .plc-s { color: #fff; }
+.plc-fan-text .plc-s { color: rgba(255,255,255,.75); }
+.plc-hero { position: relative; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 0; border-radius: calc(var(--plc-r) + 4px);
+  overflow: hidden; background: var(--plc-bg2); min-height: 200px; }
+.plc-hero-img { background: center / cover no-repeat; min-height: 200px; }
+.plc-hero-info { padding: 16px 18px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.plc-eyebrow { font-size: .7em; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--plc-a); }
+.plc-big { font-size: 1.5em; font-weight: 800; line-height: 1.15; margin: 0; overflow-wrap: anywhere; }
+.plc-meta { color: var(--secondary-text-color); font-size: .9em; }
+.plc-pager { display: flex; gap: 6px; align-items: center; margin-top: auto; font-size: .8em; color: var(--secondary-text-color); }
+.plc-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.plc-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--divider-color, #555);
+  background: transparent; font-weight: 700; font-size: .92em; }
+.plc-btn.main { background: var(--plc-a); border-color: var(--plc-a); color: #fff; flex: 1 1 auto; }
+.plc-btn:disabled { opacity: .45; cursor: default; }
+.plc-icon-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--divider-color, #555); background: transparent;
+  display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.plc-detail { border-radius: calc(var(--plc-r) + 4px); background: var(--plc-bg2); overflow: hidden; align-self: start; position: sticky; top: 0; }
+.plc-detail-img { aspect-ratio: 16 / 10; background: center / cover no-repeat; position: relative; }
+.plc-detail-img .plc-big { position: absolute; left: 14px; right: 14px; bottom: 12px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
+.plc-detail-body { padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.plc-detail-close { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.55); border: none; color: #fff; }
+.plc.phone .plc-detail { position: fixed; inset: 0; z-index: 8; border-radius: 0; overflow-y: auto; background: var(--card-background-color, var(--ha-card-background, #1c1c1c)); }
+.plc.phone .plc-detail .plc-btns { position: sticky; bottom: 0; padding: 10px 0 4px; background: inherit; }
+.plc-eps { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
+.plc.phone .plc-eps { max-height: none; }
+.plc-ep { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-bottom: 1px solid var(--divider-color, #333); font-size: .9em; }
+.plc-ep span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plc-ep .plc-icon-btn { width: 32px; height: 32px; }
+.plc-np { position: relative; border-radius: calc(var(--plc-r) + 4px); overflow: hidden; margin-bottom: 12px; background: #000; color: #fff; }
+.plc-np-bg { position: absolute; inset: 0; background: center / cover no-repeat; opacity: .35; filter: blur(2px); }
+.plc-np-in { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; padding: 14px 16px; align-items: center; }
+.plc-np-art { width: 92px; aspect-ratio: 2 / 3; border-radius: 8px; background: rgba(255,255,255,.08) center / cover no-repeat; }
+.plc-np .plc-meta { color: rgba(255,255,255,.75); }
+.plc-np .plc-icon-btn, .plc-np .plc-btn { border-color: rgba(255,255,255,.35); color: #fff; }
+.plc-np-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.plc-np-ctl .big { width: 52px; height: 52px; background: var(--plc-a); border-color: var(--plc-a); }
+.plc-np-ctl .big ha-icon { --mdc-icon-size: 28px; }
+.plc-bar { position: relative; height: 22px; display: flex; align-items: center; touch-action: none; }
+.plc-bar.seek { cursor: pointer; }
+.plc-bar-track { width: 100%; height: 5px; border-radius: 3px; background: rgba(255,255,255,.25); overflow: hidden; }
+.plc-bar-fill { height: 100%; background: var(--plc-a); width: 0; }
+.plc-times { display: flex; justify-content: space-between; font-size: .78em; color: rgba(255,255,255,.75); font-variant-numeric: tabular-nums; }
+.plc.phone .plc-np.mini { position: sticky; bottom: 0; z-index: 6; margin: 10px -14px -14px; border-radius: 0; }
+.plc.phone .plc-np.mini .plc-np-in { grid-template-columns: auto minmax(0, 1fr) auto; padding: 8px 12px; gap: 10px; }
+.plc.phone .plc-np.mini .plc-np-art { width: 40px; }
+.plc.phone .plc-np.mini .plc-big { font-size: 1em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plc-sheet { position: fixed; inset: 0; z-index: 9; background: rgba(0,0,0,.6); display: flex; align-items: flex-end; justify-content: center; }
+.plc.tablet .plc-sheet { align-items: center; }
+.plc-sheet-in { width: min(520px, 100%); max-height: 90vh; overflow-y: auto; background: var(--card-background-color, var(--ha-card-background, #1c1c1c));
+  border-radius: 16px 16px 0 0; padding: 0 0 14px; }
+.plc.tablet .plc-sheet-in { border-radius: 16px; }
+.plc-frame { width: 100%; aspect-ratio: 16 / 9; border: 0; display: block; background: #000; }
+.plc-cards { display: grid; gap: 12px; margin-top: 8px; }
+
+.plc-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.plc.side .plc-wrap { grid-template-columns: minmax(260px, 32%) minmax(0, 1fr); }
+.plc-content { min-width: 0; display: flex; flex-direction: column; }
+.plc-side { align-self: start; position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; }
+.plc-side-card { position: relative; border-radius: calc(var(--plc-r) + 6px); overflow: hidden; background: #0b0b0b; color: #fff; }
+.plc-side-art { aspect-ratio: 2 / 3; background: rgba(255,255,255,.06) center / cover no-repeat; display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,.45); font-size: .9em; }
+.plc-side-info { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; text-align: center; }
+.plc-side-info .plc-big { font-size: 1.25em; }
+.plc-side-info .plc-meta { color: rgba(255,255,255,.7); }
+.plc-side-info .plc-np-ctl { justify-content: center; }
+.plc-side-card .plc-icon-btn, .plc-side-card .plc-btn { border-color: rgba(255,255,255,.3); color: #fff; }
+.plc-playon { border-radius: calc(var(--plc-r) + 6px); background: var(--plc-bg2); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.plc-playon-h { font-size: .78em; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--plc-a); }
+.plc-tvrow { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--divider-color, #444);
+  background: transparent; text-align: left; width: 100%; }
+.plc-tvrow.on { border-color: var(--plc-a); background: color-mix(in srgb, var(--plc-a) 14%, transparent); }
+.plc-tvrow b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plc-tvrow small { color: var(--secondary-text-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.plc-slim { position: sticky; z-index: 6; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 8px 12px; background: var(--card-background-color, var(--ha-card-background, #1c1c1c)); border: 1px solid var(--divider-color, #333);
+  border-radius: calc(var(--plc-r) + 4px); }
+.plc-slim.bottom { bottom: 0; margin-top: 12px; order: 99; }
+.plc-slim.top { top: 0; margin-bottom: 10px; order: -1; }
+.plc-slim-art { width: 40px; aspect-ratio: 2 / 3; border-radius: 6px; background: var(--plc-bg2) center / cover no-repeat; }
+.plc-slim-t { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plc-slim .plc-bar-track { background: color-mix(in srgb, var(--primary-text-color) 20%, transparent); }
+.plc-slim .plc-times { color: var(--secondary-text-color); }
+.plc-slim-btns { display: flex; gap: 6px; align-items: center; }
+.plc-slim-ctl { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.plc-slim .plc-icon-btn { width: 36px; height: 36px; }
+.plc-prog { height: 4px; border-radius: 2px; background: rgba(0,0,0,.45); position: absolute; left: 6px; right: 6px; bottom: 6px; overflow: hidden; }
+.plc-prog > div { height: 100%; background: var(--plc-a); }
+.plc-watched { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff;
+  display: flex; align-items: center; justify-content: center; }
+.plc-watched ha-icon { --mdc-icon-size: 16px; }
+.plc-watch { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+.plc-sess { flex: 0 0 260px; display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; padding: 8px; border-radius: 12px; background: var(--plc-bg2); }
+.plc-sess-art { aspect-ratio: 2 / 3; border-radius: 6px; background: rgba(127,127,127,.2) center / cover no-repeat; }
+.plc-sess .plc-bar-track { height: 4px; background: color-mix(in srgb, var(--primary-text-color) 18%, transparent); margin-top: 6px; }
+.plc-viewall { margin-left: auto; border: none; background: none; color: var(--secondary-text-color); font-size: .9em; letter-spacing: .04em; }
+.plc-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0 10px; }
+.plc-count { font-size: 2.6em; font-weight: 800; color: var(--plc-a); text-align: center; }
+.plc-cast { color: var(--secondary-text-color); font-size: .85em; }
+`;
+
+// ------------------------------------------------------------------------------------------- data
+// Module-level, so a card element the Dashboard editor recreates renders the same view at once.
+
+const CACHE = new Map();    // request key → { data, ts }
+const VIEW = new Map();     // card key → view state
+const ws = (hass, type, extra = {}) => hass.callWS({ type: `plex_center/${type}`, ...extra });
+
+async function cached(hass, key, ttl, fetch, { force = false } = {}) {
+  const hit = CACHE.get(key);
+  if (hit && !force && Date.now() - hit.ts < ttl) return hit.data;
+  if (hit?.pending) return hit.pending;
+  const pending = fetch().then((data) => { CACHE.set(key, { data, ts: Date.now() }); return data; })
+    .catch((e) => { if (hit) CACHE.set(key, hit); else CACHE.delete(key); throw e; });
+  CACHE.set(key, { ...(hit || {}), pending, ts: hit?.ts || 0 });
+  return pending;
+}
+const peek = (key) => CACHE.get(key)?.data;
+
+const realOn = (hass, tv) => [tv.pipup, tv.plex_client, tv.adb].some((id) => id && isRealPlayback(hass.states[id]));
+const tvLabel = (tv) => tv?.name || tv?.id || 'TV';
+
+/** Now playing on a TV, from its players' states (the Plex player supplies the poster and episode). */
+function nowPlaying(hass, tv) {
+  if (!tv) return null;
+  const p = tv.pipup && hass.states[tv.pipup], x = tv.plex_client && hass.states[tv.plex_client], a = tv.adb && hass.states[tv.adb];
+  const src = [p, x, a].find((s) => isRealPlayback(s));
+  if (src) {
+    const meta = x && isRealPlayback(x) ? x.attributes : {};
+    const at = src.attributes, series = meta.media_series_title;
+    return { tv, live: true, st: src, title: series || at.media_title || meta.media_title || 'Playing',
+      sub: series ? `S${meta.media_season} · E${meta.media_episode}${meta.media_title ? ` · ${meta.media_title}` : ''}` : (at.app_name || ''),
+      art: meta.entity_picture || (src === a ? null : at.entity_picture) || null };
+  }
+  const on = [p, x, a].find((s) => s && !['off', 'unavailable', 'standby', 'unknown'].includes(s.state));
+  return { tv, live: false, st: on || p || a || x || { state: 'off', attributes: {} },
+    title: tvLabel(tv), sub: on ? (on.attributes.app_name || on.state) : 'Off', art: a?.attributes?.entity_picture || null };
+}
+const seekable = (tv) => ['pipup', 'open', 'plex'].includes(tv?.route);
+
+// ------------------------------------------------------------------------------------------- the card
+
+class PlexCenterCard extends HTMLElement {
+  constructor() { super(); this._c = {}; this._built = false; this._lists = new Map(); this._extra = []; }
+
+  static getConfigElement() { return document.createElement(EDITOR_TAG); }
+  static getStubConfig() { return {}; }
+  getCardSize() { return 12; }
+  getGridOptions() { return { columns: 'full', min_columns: 6, rows: 'auto' }; }
+
+  setConfig(config) {
+    const prev = this._c;
+    this._c = normalizeConfig(config);
+    if (!this._built) return;
+    this._applyLook();
+    const strip = (c) => { const o = { ...c }; for (const k of STYLE_KEYS) delete o[k]; return JSON.stringify(o); };
+    if (strip(prev) !== strip(this._c)) this._renderAll();
+  }
+
+  set hass(h) {
+    this._hass = h;
+    if (!this._built) { if (this.isConnected) this._build(); return; }
+    for (const card of this._extra) card.hass = h;
+    if (!this._tq) this._tq = setTimeout(() => { this._tq = null; this._updateStates(); }, 250);
+  }
+  get hass() { return this._hass; }
+
+  connectedCallback() {
+    if (!this._built && this._hass) this._build();
+    clearInterval(this._tick); this._tick = setInterval(() => this._progress(), 1000);
+    clearInterval(this._poll); this._poll = setInterval(() => this._refresh(), SESSIONS_MS);
+    if (this._root && !this._ro) this._observeSize();
+  }
+  disconnectedCallback() {
+    clearInterval(this._tick); clearInterval(this._poll); this._tick = this._poll = null;
+    this._ro?.disconnect(); this._ro = null; this._io?.disconnect();
+  }
+
+  // ---- state
+
+  get _key() { return `${this._c.title || ''}|${this._c.default_tv || ''}`; }
+  get _v() {
+    if (!VIEW.has(this._key)) VIEW.set(this._key, { tab: cfg(this._c, 'start_tab'), unwatched: false, sort: 'title', query: '',
+      detail: null, season: null, hero: 0, ctl: cfg(this._c, 'slim_controls') === 'shown' });
+    return VIEW.get(this._key);
+  }
+  get _conf() { return peek('config'); }
+  _tvs() {
+    const all = this._conf?.tvs || [];
+    const pick = this._c.tvs;
+    return pick?.length ? all.filter((t) => pick.includes(t.id)) : all;
+  }
+  _tv() {
+    const tvs = this._tvs();
+    if (!tvs.length) return null;
+    const fixed = cfg(this._c, 'lock') || cfg(this._c, 'tv_picker') === 'hidden';
+    let want = fixed ? null : this._v.tv;
+    if (want == null && !fixed) { try { want = localStorage.getItem(`plc-tv:${this._key}`); } catch { want = null; } }
+    if (want == null) want = this._c.default_tv;
+    return tvs.find((t) => t.id === want || t.name === want) || tvs[0];
+  }
+  _setTv(tv) {
+    this._v.tv = tv.id;
+    try { localStorage.setItem(`plc-tv:${this._key}`, tv.id); } catch { /* private mode */ }
+    this._v.detail = null;
+    this._renderAll();
+  }
+  _libraries() {
+    const tv = this._tv();
+    const libs = this._conf?.libraries?.[tv?.user || ''];
+    if (!Array.isArray(libs)) return [];
+    const pick = this._c.libraries;
+    return pick?.length ? libs.filter((l) => pick.includes(l.title)) : libs;
+  }
+  _toast(message) { this.dispatchEvent(new CustomEvent('hass-notification', { detail: { message }, bubbles: true, composed: true })); }
+  _npMode() {
+    const m = cfg(this._c, 'now_playing');
+    return m === 'auto' ? (this._phone ? 'slim' : 'panel') : m;
+  }
+
+  // ---- build once
+
+  _build() {
+    this._built = true;
+    this.innerHTML = `<ha-card><div class="plc"><style>${CARD_CSS}</style><div class="plc-wrap">
+      <div class="plc-side" hidden></div>
+      <div class="plc-content"><div class="plc-top"></div><div class="plc-tabs" role="tablist"></div>
+        <div class="plc-slim-slot"></div>
+        <div class="plc-body"><div class="plc-main"></div><div class="plc-detail-slot"></div></div></div></div>
+      <div class="plc-sheet-slot"></div></div></ha-card>`;
+    this._root = this.querySelector('.plc');
+    this._applyLook();
+    this._observeSize();
+    this._root.addEventListener('click', (e) => this._onClick(e));
+    this._root.addEventListener('input', (e) => this._onInput(e));
+    this._root.addEventListener('change', (e) => this._onChange(e));
+    this._root.addEventListener('pointerdown', (e) => this._onScrub(e));
+    this._renderAll();
+    this._refresh(true);
+  }
+
+  async _refresh(first = false) {
+    if (!this._hass) return;
+    try {
+      const had = !!this._conf;
+      await cached(this._hass, 'config', first ? 0 : REFRESH_MS, () => ws(this._hass, 'config'), { force: first && !had });
+      this._err = null;
+      if (!had || first) this._renderAll();
+      if (cfg(this._c, 'show_watching') && this._v.tab === 'home') {
+        const before = JSON.stringify(peek('sessions') || []);
+        await cached(this._hass, 'sessions', SESSIONS_MS - 1000, () => ws(this._hass, 'sessions'));
+        if (JSON.stringify(peek('sessions') || []) !== before) this._paintWatching();
+      }
+    } catch (e) {
+      this._err = /unknown command|not_set_up|Unknown command/i.test(e?.message || e?.code || '')
+        ? 'Set up the Plex Center integration first (Settings → Devices & services → Add integration → Plex Center).'
+        : `Plex Center: ${e?.message || e}`;
+      this._renderMain();
+    }
+  }
+
+  _applyLook() {
+    const r = this._root;
+    if (!r) return;
+    r.setAttribute('style', cardVars(this._c));
+    r.classList.toggle('shadows', !!cfg(this._c, 'box_shadows'));
+    r.classList.toggle('tshadow', !!cfg(this._c, 'text_shadows'));
+    this._layout();
+  }
+
+  _observeSize() {
+    if (typeof ResizeObserver === 'undefined' || this._ro) return;
+    this._ro = new ResizeObserver(() => this._layout());
+    this._ro.observe(this);
+  }
+
+  _layout() {
+    const want = cfg(this._c, 'layout');
+    const w = this.offsetWidth || this._root?.offsetWidth || 1000;
+    const phone = want === 'phone' || (want === 'auto' && w > 0 && w < PHONE_MAX_W);
+    if (!this._root || this._phone === phone) return;
+    this._phone = phone;
+    this._root.classList.toggle('phone', phone);
+    this._root.classList.toggle('tablet', !phone);
+    if (this._built) this._renderAll();
+  }
+
+  _renderAll() { this._renderTop(); this._renderTabs(); this._renderMain(); this._renderDetail(); this._renderNP(true); }
+
+  // ---- header
+
+  _renderTop() {
+    const top = this._root.querySelector('.plc-top');
+    const tvs = this._tvs(), cur = this._tv();
+    const mode = cfg(this._c, 'lock') ? 'hidden' : cfg(this._c, 'tv_picker');
+    const dot = (tv) => `<span class="plc-dot ${realOn(this._hass, tv) ? 'play' : (tv.state && !['off', 'unavailable', 'standby'].includes(tv.state) ? 'on' : '')}" data-dot="${esc(tv.id)}"></span>`;
+    let picker = '';
+    if (tvs.length > 1 && mode !== 'hidden') {
+      picker = mode === 'dropdown' || this._phone
+        ? `<select class="plc-select" data-tvsel>${tvs.map((t) => `<option value="${esc(t.id)}"${t === cur ? ' selected' : ''}>${esc(tvLabel(t))}</option>`).join('')}</select>`
+        : `<div class="plc-tvs">${tvs.map((t) => `<button class="plc-chip${t === cur ? ' on' : ''}" data-tv="${esc(t.id)}">${dot(t)}${esc(tvLabel(t))}</button>`).join('')}</div>`;
+    } else if (cur && mode !== 'hidden') picker = `<span class="plc-chip on">${dot(cur)}${esc(tvLabel(cur))}</span>`;
+    const title = this._c.title === undefined ? DEFAULTS.title : this._c.title;
+    const search = this._v.tab !== 'home' ? `<input class="plc-search" type="search" placeholder="Search" value="${esc(this._v.query)}" data-search>` : '';
+    const surprise = cfg(this._c, 'surprise') && this._libraries().length ? '<button class="plc-icon-btn" data-surprise title="Surprise me"><ha-icon icon="mdi:dice-5"></ha-icon></button>' : '';
+    top.innerHTML = `${title ? `<h1 class="plc-title">${esc(title)}</h1>` : ''}<span class="plc-sp"></span>${search}${surprise}${picker}`;
+  }
+
+  _renderTabs() {
+    const tabs = this._root.querySelector('.plc-tabs');
+    const libs = this._libraries();
+    if (this._v.tab !== 'home' && this._conf && !libs.some((l) => l.key === this._v.tab || l.title === this._v.tab)) this._v.tab = 'home';
+    const on = (k, t) => this._v.tab === k || this._v.tab === t;
+    tabs.innerHTML = [`<button class="plc-tab${this._v.tab === 'home' ? ' on' : ''}" data-tab="home">Home</button>`,
+      ...libs.map((l) => `<button class="plc-tab${on(l.key, l.title) ? ' on' : ''}" data-tab="${esc(l.key)}">${esc(l.title)}</button>`)].join('');
+  }
+
+  // ---- tiles
+
+  _tile(it, listId, i, { fanart = false, lines = null } = {}) {
+    const art = fanart ? (it.art || it.poster) : (it.poster || it.art);
+    const ln = lines || [it.show || it.title, it.type === 'episode' ? `S${it.season} · E${it.episode} · ${it.title}` : (it.year || '')];
+    const text = `<div class="plc-t">${esc(ln[0])}</div>${ln.slice(1).filter(Boolean).map((l) => `<div class="plc-s">${esc(l)}</div>`).join('')}`;
+    const sel = this._v.detail && this._v.detail.list === listId && this._v.detail.i === i ? ' sel' : '';
+    const flag = it.flag && cfg(this._c, 'flag') ? '<span class="plc-badge">New</span>' : '';
+    const watched = it.watched ? '<span class="plc-watched" title="Watched"><ha-icon icon="mdi:check"></ha-icon></span>' : '';
+    const prog = it.progress ? `<div class="plc-prog"><div style="width:${Math.min(100, Number(it.progress))}%"></div></div>` : '';
+    const qp = it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<span class="plc-play" data-qplay="${esc(listId)}|${i}" role="button" title="Play"><ha-icon icon="mdi:play"></ha-icon></span>` : '';
+    return `<button class="plc-tile${sel}" data-open="${esc(listId)}|${i}"><div class="plc-poster"${art ? ` style="background-image:url('${cssUrl(art)}')"` : ''}>${art ? '' : esc(it.title)}${flag}${watched}${qp}${prog}${fanart ? `<div class="plc-fan-text">${text}</div>` : ''}</div>${fanart ? '' : text}</button>`;
+  }
+
+  // ---- main
+
+  _renderMain() {
+    const main = this._root.querySelector('.plc-main');
+    this._io?.disconnect();
+    if (this._err) { main.innerHTML = `<div class="plc-msg err">${esc(this._err)}</div>`; return; }
+    if (!this._conf) { main.innerHTML = '<div class="plc-msg">Loading…</div>'; return; }
+    if (!this._tvs().length) { main.innerHTML = '<div class="plc-msg">No TVs yet: add them in Plex Center\'s options (Settings → Devices & services → Plex Center → Configure).</div>'; return; }
+    if (this._v.tab === 'home') this._renderHome(main); else this._renderLibrary(main);
+  }
+
+  _renderHome(main) {
+    const parts = [];
+    if (cfg(this._c, 'show_watching')) parts.push('<div class="plc-sec" data-sec="watching"></div>');
+    if (cfg(this._c, 'show_continue')) parts.push('<div class="plc-sec" data-sec="continue"></div>');
+    if (cfg(this._c, 'show_recent')) parts.push('<div class="plc-sec" data-sec="recent"></div>');
+    (this._c.home_rows || []).forEach((r, i) => parts.push(`<div class="plc-sec" data-sec="umc:${i}"></div>`));
+    if (this._c.home_cards?.length) parts.push('<div class="plc-cards"></div>');
+    main.innerHTML = parts.join('') || '<div class="plc-msg">Nothing on the Home tab. Turn rows on in the card editor, or pick a library above.</div>';
+    this._paintWatching();
+    (this._c.home_rows || []).forEach((r, i) => this._renderUmcRow(i));
+    this._renderExtraCards();
+    const tv = this._tv();
+    const key = `hubs:${tv.id}`;
+    const paint = (h) => {
+      const c = main.querySelector('[data-sec="continue"]'), r = main.querySelector('[data-sec="recent"]');
+      this._lists.set('continue', h.continue || []); this._lists.set('recent', h.recent || []);
+      if (c) { if (h.continue?.length) this._paintContinue(c, h.continue); else c.remove(); }
+      if (r) {
+        if (!h.recent?.length) { r.remove(); return; }
+        r.innerHTML = `<div class="plc-sec-h">Recently added <span class="n">${h.recent.length}</span>${this._libraries()[0] ? '<button class="plc-viewall" data-viewall="added">View all →</button>' : ''}</div>
+          <div class="plc-row">${h.recent.map((it, i) => this._tile(it, 'recent', i)).join('')}</div>`;
+      }
+    };
+    if (peek(key)) paint(peek(key));
+    if (cfg(this._c, 'show_continue') || cfg(this._c, 'show_recent')) {
+      cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'hubs', { tv: tv.id, size: Number(cfg(this._c, 'max')) || 12 }))
+        .then((h) => { if (main.isConnected && this._v.tab === 'home' && this._tv()?.id === tv.id) paint(h); })
+        .catch((e) => { const c = main.querySelector('[data-sec="continue"]'); if (c) c.innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; });
+    }
+  }
+
+  _paintWatching() {
+    const sec = this._root?.querySelector('[data-sec="watching"]');
+    if (!sec) return;
+    const s = peek('sessions') || [];
+    if (!s.length) { sec.innerHTML = ''; return; }
+    sec.innerHTML = `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div><div class="plc-watch">${s.map((x) => `
+      <div class="plc-sess"><div class="plc-sess-art"${x.poster ? ` style="background-image:url('${cssUrl(x.poster)}')"` : ''}></div>
+        <div style="min-width:0"><div class="plc-t">${esc(x.show || x.title)}</div>
+          <div class="plc-s">${esc(x.type === 'episode' ? `S${x.season} · E${x.episode} · ${x.title}` : (x.year || ''))}</div>
+          <div class="plc-s">${esc([x.user, x.player || x.device].filter(Boolean).join(' · '))}${x.player_state === 'paused' ? ' · paused' : ''}</div>
+          <div class="plc-bar-track"><div class="plc-bar-fill" style="width:${Math.min(100, Number(x.progress) || 0)}%"></div></div></div></div>`).join('')}</div>`;
+  }
+
+  _paintContinue(sec, items) {
+    if (this._phone) {
+      sec.innerHTML = `<div class="plc-sec-h">Continue watching <span class="n">${items.length}</span></div>
+        <div class="plc-row">${items.map((it, i) => this._tile(it, 'continue', i)).join('')}</div>`;
+      return;
+    }
+    const i = Math.min(this._v.hero || 0, items.length - 1), it = items[i];
+    const sub = it.type === 'episode' ? `Season ${it.season}, Episode ${it.episode} · ${it.title}` : [it.year, it.duration ? fmtTime(it.duration) : ''].filter(Boolean).join(' · ');
+    const left = it.offset ? `${fmtTime(it.offset)} of ${fmtTime(it.duration)} · ends ${endsAt((it.duration || 0) - it.offset, cfg(this._c, 'clock'))} if started now` : '';
+    const img = it.art || it.still || it.poster;
+    sec.innerHTML = `<div class="plc-hero"><div class="plc-hero-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
+      <div class="plc-hero-info"><div class="plc-eyebrow">Continue watching on ${esc(tvLabel(this._tv()))}</div>
+        <h2 class="plc-big">${esc(it.show || it.title)}</h2><div class="plc-meta">${esc(sub)}</div>
+        ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div><div class="plc-meta">${esc(left)}</div>` : ''}
+        <div class="plc-btns"><button class="plc-btn main" data-qplay="continue|${i}" data-direct><ha-icon icon="mdi:play"></ha-icon>Resume${it.offset ? ` ${fmtTime(it.offset)}` : ''}</button>
+          <button class="plc-btn" data-qrestart="continue|${i}"><ha-icon icon="mdi:restart"></ha-icon>Start over</button></div>
+        <div class="plc-pager"><button class="plc-icon-btn" data-hero="-1" title="Previous"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+          ${i + 1} / ${items.length}<button class="plc-icon-btn" data-hero="1" title="Next"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div></div></div>`;
+  }
+
+  _renderUmcRow(i) {
+    const sec = this._root.querySelector(`[data-sec="umc:${i}"]`);
+    if (!sec) return;
+    const row = this._c.home_rows[i];
+    const st = this._hass.states[row.sensor];
+    const { defaults, items } = umcItems(st);
+    const fan = cfg(this._c, 'image_style') === 'fanart';
+    const shown = items.slice(0, Number(cfg(this._c, 'max')) || 12).map((it) => {
+      const dl = deepLinkKey(it.deep_link);
+      return { title: it.title, poster: it.poster || it.fanart || '', art: it.fanart || it.poster || '', flag: !!it.flag, key: dl?.key || null,
+        type: dl ? (it.episode || it.number ? 'episode' : 'movie') : 'info', trailer: it.trailer || null, umc: it, lines: umcLines(it, defaults, this._c) };
+    });
+    this._lists.set(`umc:${i}`, shown);
+    const title = row.title || defaults.title || st?.attributes?.friendly_name || row.sensor;
+    sig(sec, JSON.stringify([title, fan, shown.map((s) => [s.title, s.poster, s.flag, s.lines])]), () => {
+      sec.innerHTML = !st ? `<div class="plc-msg err">${esc(row.sensor)} not found.</div>`
+        : `<div class="plc-sec-h">${esc(title)} <span class="n">${items.length}</span></div>
+          <div class="plc-row${fan ? ' fanart' : ''}">${shown.map((it, j) => this._tile(it, `umc:${i}`, j, { fanart: fan, lines: it.lines.filter(Boolean) })).join('') || '<div class="plc-msg">Nothing here.</div>'}</div>`;
+    });
+  }
+
+  async _renderExtraCards() {
+    const box = this._root.querySelector('.plc-cards');
+    if (!box) return;
+    if (!this._extra.length && window.loadCardHelpers) {
+      try {
+        const helpers = await window.loadCardHelpers();
+        this._extra = this._c.home_cards.map((conf) => { const el = helpers.createCardElement(conf); el.hass = this._hass; return el; });
+      } catch (e) { box.innerHTML = `<div class="plc-msg err">Extra cards: ${esc(e?.message || e)}</div>`; return; }
+    }
+    if (box.isConnected) box.replaceChildren(...this._extra);
+  }
+}
+
+const STYLE_KEYS = ['poster_width', 'corner_radius', 'title_size', 'line_size', 'box_shadows', 'text_shadows', 'layout', ...Object.keys(COLOR_DEFS)];
+function sig(node, s, paint) { if (node.dataset.sig === s) return; node.dataset.sig = s; paint(); }
+const cssUrl = (u) => String(u).replace(/['"\\()\s]/g, (c) => encodeURIComponent(c));
+
+Object.assign(PlexCenterCard.prototype, {
+  // ---- library
+
+  _libKey() { const l = this._libraries().find((x) => x.key === this._v.tab || x.title === this._v.tab); return l?.key; },
+  _itemsKey(start = 0) { const v = this._v; return `items:${this._tv().id}:${this._libKey()}:${v.sort}:${v.unwatched ? 1 : 0}:${v.query}:${start}`; },
+
+  _renderLibrary(main) {
+    const lib = this._libKey();
+    if (!lib) { main.innerHTML = '<div class="plc-msg">Loading…</div>'; return; }
+    const v = this._v;
+    const sorts = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
+    main.innerHTML = `<div class="plc-tools"><button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button>
+        <button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button><span class="plc-sp"></span>
+        <select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div class="plc-gridwrap"><div class="plc-grid"></div><div class="plc-sentinel"></div></div>`;
+    this._lists.set('grid', []);
+    this._page(main, 0);
+  },
+
+  async _page(main, start) {
+    const grid = main.querySelector('.plc-grid');
+    if (!grid) return;
+    const key = this._itemsKey(start), tv = this._tv(), v = this._v;
+    const req = { tv: tv.id, library: this._libKey(), start, size: PAGE, sort: v.sort, ...(v.unwatched ? { unwatched: true } : {}), ...(v.query ? { query: v.query } : {}) };
+    if (!peek(key) && start === 0) grid.innerHTML = '<div class="plc-msg">Loading…</div>';
+    let res;
+    try { res = await cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'items', req)); }
+    catch (e) { grid.innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; return; }
+    if (!grid.isConnected || this._itemsKey(start) !== key) return;
+    if (start === 0) grid.innerHTML = '';
+    const list = this._lists.get('grid');
+    const from = list.length;
+    list.push(...res.items);
+    grid.insertAdjacentHTML('beforeend', res.items.map((it, k) => this._tile(it, 'grid', from + k)).join(''));
+    if (!list.length) grid.innerHTML = `<div class="plc-msg">${v.query ? 'Nothing matches.' : 'Nothing here.'}</div>`;
+    this._io?.disconnect();
+    if (res.more && typeof IntersectionObserver !== 'undefined') {
+      this._io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { this._io.disconnect(); this._page(main, start + PAGE); } }, { rootMargin: '600px' });
+      this._io.observe(main.querySelector('.plc-sentinel'));
+    }
+  },
+
+  // ---- detail
+
+  _item(ref) { const [list, i] = String(ref || '').split('|'); return { list, i: Number(i), item: (this._lists.get(list) || [])[Number(i)] }; },
+
+  async _renderDetail() {
+    const slot = this._root.querySelector('.plc-detail-slot');
+    const body = this._root.querySelector('.plc-body');
+    const d = this._v.detail;
+    const base = d && (this._lists.get(d.list) || [])[d.i];
+    body.classList.toggle('with-detail', !!base);
+    if (!base) { slot.innerHTML = ''; return; }
+    const tv = this._tv();
+    const key = base.key && `item:${tv.id}:${base.key}`;
+    const it = { ...base, ...(key ? peek(key) || {} : {}) };
+    this._detailItem = it;
+    const img = it.art || it.still || it.poster;
+    const meta = [it.year, it.content_rating, it.duration ? fmtTime(it.duration) : '', it.rating ? `★ ${Number(it.rating).toFixed(1)}` : '', (it.genres || []).join(', ')].filter(Boolean).join(' · ');
+    const ep = it.type === 'episode' ? `<div class="plc-meta">${esc(`${it.show || ''} · S${it.season} · E${it.episode}`)}</div>` : '';
+    const umc = it.umc ? (it.lines || []).slice(1).filter(Boolean).map((l) => `<div class="plc-meta">${esc(l)}</div>`).join('') : '';
+    const summary = it.summary || it.umc?.summary;
+    const playable = it.key && ['movie', 'episode', 'show'].includes(it.type);
+    const resume = it.offset ? `Resume ${fmtTime(it.offset)}` : (it.type === 'show' && it.next ? `Play S${it.next.season} · E${it.next.episode}` : 'Play');
+    const ends = it.duration ? `<div class="plc-meta">Ends at ${esc(endsAt(it.duration - (it.offset || 0), cfg(this._c, 'clock')))} if started now</div>` : '';
+    slot.innerHTML = `<div class="plc-detail"><div class="plc-detail-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}>
+        <button class="plc-icon-btn plc-detail-close" data-close title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
+        <h2 class="plc-big">${esc(it.type === 'episode' ? it.title : (it.show || it.title))}</h2></div>
+      <div class="plc-detail-body">${ep}${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${umc}
+        ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div>` : ''}${ends}
+        ${summary ? `<div>${esc(summary)}</div>` : ''}
+        ${it.cast?.length ? `<div class="plc-cast">${esc(it.cast.join(', '))}</div>` : ''}
+        ${it.type === 'show' ? '<div class="plc-eps" data-eps><div class="plc-msg">Loading seasons…</div></div>' : ''}
+        ${this._pickHtml()}
+        <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:play"></ha-icon>${esc(resume)} on ${esc(tvLabel(this._pickTv || tv))}</button>
+          ${it.type !== 'show' && (it.offset || it.watched) ? '<button class="plc-btn" data-play="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>' : ''}` : ''}
+          ${it.trailer ? '<button class="plc-btn" data-trailer><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>' : ''}</div></div></div>`;
+    if (it.type === 'show') this._paintSeasons(it);
+    if (key && !peek(key)) {
+      try { await cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'item', { tv: tv.id, key: base.key })); }
+      catch { return; }
+      if (this._v.detail === d) this._renderDetail();
+    }
+  },
+
+  _pickHtml() {
+    const tvs = this._tvs();
+    if (cfg(this._c, 'client_choice') !== 'ask' || tvs.length < 2 || cfg(this._c, 'lock')) return '';
+    const cur = this._pickTv || this._tv();
+    return `<label class="plc-meta">Play on <select class="plc-select" data-pick>${tvs.map((t) => `<option value="${esc(t.id)}"${t === cur ? ' selected' : ''}>${esc(tvLabel(t))}</option>`).join('')}</select></label>`;
+  },
+
+  async _paintSeasons(show) {
+    const box = this._root.querySelector('[data-eps]');
+    if (!box || !show.seasons) return;
+    const pick = show.seasons.find((s) => s.key === this._v.season) || show.seasons.find((s) => show.next && s.key === show.next.season_key) || show.seasons[0];
+    box.innerHTML = `<select class="plc-select" data-season>${show.seasons.map((s) => `<option value="${esc(s.key)}"${s === pick ? ' selected' : ''}>${esc(s.title)}${s.watched ? ' ✓' : ''}</option>`).join('')}</select><div data-eplist><div class="plc-msg">Loading episodes…</div></div>`;
+    const tv = this._tv(), key = `item:${tv.id}:${pick.key}`;
+    let season;
+    try { season = await cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'item', { tv: tv.id, key: pick.key })); }
+    catch (e) { box.querySelector('[data-eplist]').innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; return; }
+    const list = box.querySelector('[data-eplist]');
+    if (!list?.isConnected) return;
+    const eps = season.episodes || [];
+    this._lists.set('eps', eps);
+    list.innerHTML = eps.map((e, i) => `<div class="plc-ep"><span>${e.watched ? '✓ ' : ''}${e.episode != null ? `${e.episode}. ` : ''}${esc(e.title)}${e.progress ? ` · ${e.progress}%` : ''}</span>
+      <button class="plc-icon-btn" data-qplay="eps|${i}" data-direct title="${e.offset ? `Resume ${fmtTime(e.offset)}` : 'Play'}"><ha-icon icon="mdi:play"></ha-icon></button>
+      <button class="plc-icon-btn" data-qrestart="eps|${i}" title="Start over"><ha-icon icon="mdi:restart"></ha-icon></button></div>`).join('') || '<div class="plc-msg">No episodes.</div>';
+  },
+
+  // ---- play
+
+  async _play(it, mode) {
+    const tv = this._pickTv || this._tv();
+    if (!tv || !it?.key) return;
+    const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : (it.show || it.title);
+    this._toast(`${mode === 'restart' ? 'Starting over' : 'Playing'} ${what} on ${tvLabel(tv)}…`);
+    try { await this._hass.callService('plex_center', 'play', { tv: tv.id, key: String(it.key), mode }); }
+    catch (e) { this._toast(`Could not start: ${e?.message || e}`); }
+  },
+
+  /** A ▶ tap: in-progress titles ask Resume / Start over; "ask each time" asks for the TV; a show plays its next episode. */
+  _quickPlay(r, direct) {
+    const it = r.item;
+    if (!it) return;
+    if (cfg(this._c, 'client_choice') === 'ask' && this._tvs().length > 1 && !direct && !cfg(this._c, 'lock')) { this._openDetail(r); return; }
+    if (it.offset && !direct) {
+      this._sheet(`<div class="plc-detail-body"><h2 class="plc-big">${esc(it.show || it.title)}</h2><div class="plc-meta">${esc(tvLabel(this._tv()))}</div>
+        <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Resume ${fmtTime(it.offset)}</button>
+        <button class="plc-btn" data-sheetplay="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>
+        <button class="plc-btn" data-close-sheet>Cancel</button></div></div>`, it);
+      return;
+    }
+    this._play(it, it.type === 'show' ? 'next' : 'play');
+  },
+
+  _openDetail(r) {
+    this._v.detail = { list: r.list, i: r.i }; this._v.season = null; this._pickTv = null;
+    this._root.querySelectorAll('.plc-tile.sel').forEach((n) => n.classList.remove('sel'));
+    this._renderDetail();
+  },
+
+  _sheet(html, item = null) {
+    this._sheetItem = item;
+    this._root.querySelector('.plc-sheet-slot').innerHTML = `<div class="plc-sheet" data-close-sheet><div class="plc-sheet-in">${html}</div></div>`;
+  },
+  _closeSheet() { clearInterval(this._count); this._root.querySelector('.plc-sheet-slot').innerHTML = ''; this._sheetItem = null; },
+
+  _trailer(url) {
+    const m = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{6,})/.exec(String(url || ''));
+    if (!m) { window.open(url, '_blank', 'noopener'); return; }
+    this._sheet(`<iframe class="plc-frame" src="https://www.youtube.com/embed/${m[1]}?autoplay=1" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
+      <div class="plc-btns" style="padding:0 14px"><a class="plc-btn" href="https://www.youtube.com/watch?v=${m[1]}" target="_blank" rel="noopener">Open in YouTube</a>
+      <button class="plc-btn" data-close-sheet>Close</button></div>`);
+  },
+
+  async _surprise() {
+    const lib = this._libKey() || this._libraries()[0]?.key;
+    if (!lib) return;
+    let it;
+    try { it = await ws(this._hass, 'random', { tv: this._tv().id, library: lib }); } catch (e) { this._toast(e?.message || e); return; }
+    if (!it) { this._toast('Nothing to pick from.'); return; }
+    let n = 5;
+    const paint = () => this._sheet(`<div class="plc-detail-img"${it.art || it.poster ? ` style="background-image:url('${cssUrl(it.art || it.poster)}')"` : ''}><h2 class="plc-big">${esc(it.show || it.title)}</h2></div>
+      <div class="plc-detail-body"><div class="plc-meta">${esc([it.year, it.duration ? fmtTime(it.duration) : '', (it.genres || []).join(', ')].filter(Boolean).join(' · '))}</div>
+      ${it.summary ? `<div>${esc(it.summary)}</div>` : ''}<div class="plc-count">${n}</div>
+      <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Play now</button>
+      <button class="plc-btn" data-surprise>Something else</button><button class="plc-btn" data-close-sheet>Not tonight</button></div></div>`, it);
+    paint();
+    clearInterval(this._count);
+    this._count = setInterval(() => {
+      n -= 1;
+      const c = this._root.querySelector('.plc-count');
+      if (!c) { clearInterval(this._count); return; }
+      if (n <= 0) { clearInterval(this._count); this._closeSheet(); this._play(it, it.type === 'show' ? 'next' : 'play'); return; }
+      c.textContent = n;
+    }, 1000);
+  },
+
+  // ---- now playing: slim bar + side panel
+
+  _renderNP(force = false) {
+    const tv = this._tv();
+    const np = nowPlaying(this._hass, tv);
+    const mode = this._npMode();
+    const panel = mode === 'panel' && !this._phone && np && (np.live || cfg(this._c, 'panel_when') === 'always');
+    const slim = mode !== 'off' && !panel && np;
+    const s = JSON.stringify([mode, panel, slim, np && [np.live, np.title, np.sub, np.art, np.st.state], this._v.ctl, this._phone,
+      this._tvs().map((t) => [t.id, realOn(this._hass, t)]), tv?.route]);
+    if (!force && this._npSig === s) return;
+    this._npSig = s;
+    this._root.classList.toggle('side', !!panel);
+    const side = this._root.querySelector('.plc-side'), slot = this._root.querySelector('.plc-slim-slot');
+    side.hidden = !panel;
+    side.innerHTML = panel ? this._panelHtml(np) : '';
+    slot.innerHTML = slim ? this._slimHtml(np) : '';
+    this._progress();
+  },
+
+  _controls(np, big = true) {
+    if (!np?.live) return '';
+    const playing = np.st.state === 'playing';
+    return `<div class="plc-np-ctl"><button class="plc-icon-btn" data-np="skip:-30" title="Back 30 s"><ha-icon icon="mdi:rewind-30"></ha-icon></button>
+      <button class="plc-icon-btn" data-np="skip:-10" title="Back 10 s"><ha-icon icon="mdi:rewind-10"></ha-icon></button>
+      <button class="plc-icon-btn${big ? ' big' : ''}" data-np="${playing ? 'pause' : 'play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>
+      <button class="plc-icon-btn" data-np="skip:10" title="Forward 10 s"><ha-icon icon="mdi:fast-forward-10"></ha-icon></button>
+      <button class="plc-icon-btn" data-np="skip:30" title="Forward 30 s"><ha-icon icon="mdi:fast-forward-30"></ha-icon></button>
+      <button class="plc-icon-btn" data-np="stop" title="Stop"><ha-icon icon="mdi:stop"></ha-icon></button>
+      <button class="plc-icon-btn" data-np="home" title="Home"><ha-icon icon="mdi:home"></ha-icon></button></div>`;
+  },
+
+  _bar(np) {
+    if (!np?.live) return '';
+    return `<div class="plc-bar${seekable(np.tv) ? ' seek' : ''}" data-bar><div class="plc-bar-track"><div class="plc-bar-fill"></div></div></div>
+      <div class="plc-times"><span data-pos></span><span data-ends></span><span data-dur></span></div>`;
+  },
+
+  _panelHtml(np) {
+    const others = this._tvs();
+    const sessions = peek('sessions') || [];
+    const who = (t) => {
+      const s = sessions.find((x) => x.user && t.user && x.user === t.user);
+      if (s) return `${s.user} · ${s.show || s.title}`;
+      return realOn(this._hass, t) ? 'playing' : (t.state || '');
+    };
+    return `<div class="plc-side-card"><div class="plc-side-art"${np.art ? ` style="background-image:url('${cssUrl(np.art)}')"` : ''}>${np.art ? '' : '<ha-icon icon="mdi:television"></ha-icon>'}</div>
+      <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
+        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${this._bar(np)}${this._controls(np)}</div></div>
+      ${others.length > 1 && !cfg(this._c, 'lock') ? `<div class="plc-playon"><div class="plc-playon-h">Play on</div>${others.map((t) => `<button class="plc-tvrow${t.id === np.tv.id ? ' on' : ''}" data-tv="${esc(t.id)}">
+        <ha-icon icon="mdi:television"></ha-icon><b>${esc(tvLabel(t))}</b><small>${esc(who(t))}</small></button>`).join('')}</div>` : ''}`;
+  },
+
+  _slimHtml(np) {
+    const pos = cfg(this._c, 'slim_position') === 'top' ? 'top' : 'bottom';
+    const mode = cfg(this._c, 'slim_controls');
+    const show = np.live && (mode === 'shown' || (mode === 'toggle' && this._v.ctl));
+    const playing = np.st.state === 'playing';
+    return `<div class="plc-slim ${pos}"><div class="plc-slim-art"${np.art ? ` style="background-image:url('${cssUrl(np.art)}')"` : ''}></div>
+      <div style="min-width:0"><div class="plc-slim-t">${esc(np.title)}</div><div class="plc-s">${esc([tvLabel(np.tv), np.sub].filter(Boolean).join(' · '))}</div>${this._bar(np)}</div>
+      <div class="plc-slim-btns">${np.live ? `<button class="plc-icon-btn" data-np="${playing ? 'pause' : 'play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>` : ''}
+        ${np.live && mode === 'toggle' ? `<button class="plc-icon-btn" data-ctltoggle title="${show ? 'Hide' : 'Show'} the remote buttons"><ha-icon icon="mdi:${show ? 'chevron-down' : 'remote-tv'}"></ha-icon></button>` : ''}</div>
+      ${show ? `<div class="plc-slim-ctl">${this._controls(np, false)}</div>` : ''}</div>`;
+  },
+
+  _progress() {
+    const r = this._root;
+    if (!r) return;
+    const np = nowPlaying(this._hass, this._tv());
+    if (!np?.live) return;
+    const d = Number(np.st.attributes.media_duration) || 0;
+    const p = this._seekTo ?? livePosition(np.st) ?? 0;
+    r.querySelectorAll('[data-bar] .plc-bar-fill').forEach((f) => { f.style.width = d ? `${Math.min(100, (p / d) * 100)}%` : '0'; });
+    r.querySelectorAll('[data-pos]').forEach((x) => { x.textContent = fmtTime(p); });
+    r.querySelectorAll('[data-dur]').forEach((x) => { x.textContent = d ? fmtTime(d) : ''; });
+    r.querySelectorAll('[data-ends]').forEach((x) => { x.textContent = d ? `Ends ${endsAt(d - p, cfg(this._c, 'clock'))}` : ''; });
+  },
+
+  _onScrub(e) {
+    const bar = e.target.closest?.('[data-bar].seek');
+    if (!bar) return;
+    const np = nowPlaying(this._hass, this._tv());
+    const d = Number(np?.st?.attributes?.media_duration) || 0;
+    if (!d) return;
+    const at = (ev) => { const b = bar.getBoundingClientRect(); return Math.max(0, Math.min(1, (ev.clientX - b.left) / b.width)) * d; };
+    this._seekTo = at(e); this._progress();
+    const move = (ev) => { this._seekTo = at(ev); this._progress(); };
+    const up = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      const to = this._seekTo; this._seekTo = null;
+      this._control('seek', to);
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    e.preventDefault();
+  },
+
+  _control(action, value) {
+    const tv = this._tv();
+    if (!tv) return;
+    this._hass.callService('plex_center', 'control', { tv: tv.id, action, ...(value != null ? { value: Number(value) } : {}) })
+      .catch((err) => this._toast(`${action}: ${err?.message || err}`));
+  },
+
+  _updateStates() {
+    if (!this._root) return;
+    for (const tv of this._tvs()) {
+      const el = this._root.querySelector(`[data-dot="${tv.id}"]`);
+      if (el) el.className = `plc-dot ${realOn(this._hass, tv) ? 'play' : (tv.state && !['off', 'unavailable', 'standby'].includes(tv.state) ? 'on' : '')}`;
+    }
+    this._renderNP();
+    if (this._v.tab === 'home') (this._c.home_rows || []).forEach((r, i) => this._renderUmcRow(i));
+  },
+
+  // ---- events
+
+  _onClick(e) {
+    const t = (sel) => e.target.closest?.(sel);
+    let el;
+    if ((el = t('[data-qplay]'))) { e.stopPropagation(); this._quickPlay(this._item(el.dataset.qplay), el.hasAttribute('data-direct')); return; }
+    if ((el = t('[data-qrestart]'))) { e.stopPropagation(); const { item } = this._item(el.dataset.qrestart); if (item) this._play(item, 'restart'); return; }
+    if ((el = t('[data-sheetplay]'))) { const it = this._sheetItem; this._closeSheet(); if (it) this._play(it, el.dataset.sheetplay === 'restart' ? 'restart' : (it.type === 'show' ? 'next' : 'play')); return; }
+    if (t('[data-surprise]')) { this._surprise(); return; }
+    if ((el = t('[data-close-sheet]')) && (e.target === el || el.tagName === 'BUTTON')) { this._closeSheet(); return; }
+    if ((el = t('[data-tv]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.tv); if (tv) this._setTv(tv); return; }
+    if ((el = t('[data-tab]'))) {
+      if (this._v.tab === el.dataset.tab) return;
+      Object.assign(this._v, { tab: el.dataset.tab, detail: null });
+      this._renderTop(); this._renderTabs(); this._renderMain(); this._renderDetail(); this._refresh(); return;
+    }
+    if ((el = t('[data-viewall]'))) {
+      const lib = this._libraries()[0];
+      if (lib) { Object.assign(this._v, { tab: lib.key, sort: 'added', detail: null }); this._renderTop(); this._renderTabs(); this._renderMain(); this._renderDetail(); }
+      return;
+    }
+    if ((el = t('[data-unw]'))) { this._v.unwatched = el.dataset.unw === '1'; this._v.detail = null; this._renderMain(); this._renderDetail(); return; }
+    if ((el = t('[data-hero]'))) {
+      const items = this._lists.get('continue') || [];
+      this._v.hero = ((this._v.hero || 0) + Number(el.dataset.hero) + items.length) % Math.max(1, items.length);
+      const sec = this._root.querySelector('[data-sec="continue"]'); if (sec) this._paintContinue(sec, items); return;
+    }
+    if ((el = t('[data-open]'))) {
+      const r = this._item(el.dataset.open);
+      if (!r.item) return;
+      if (cfg(this._c, 'tap_action') === 'play' && r.item.key) { this._quickPlay(r, false); return; }
+      this._openDetail(r); el.classList.add('sel'); return;
+    }
+    if (t('[data-close]')) { this._v.detail = null; this._root.querySelectorAll('.plc-tile.sel').forEach((n) => n.classList.remove('sel')); this._renderDetail(); return; }
+    if ((el = t('[data-play]'))) { if (this._detailItem) this._play(this._detailItem, el.dataset.play); return; }
+    if (t('[data-trailer]')) { if (this._detailItem?.trailer) this._trailer(this._detailItem.trailer); return; }
+    if ((el = t('[data-np]'))) { const [a, v] = el.dataset.np.split(':'); this._control(a, v); return; }
+    if (t('[data-ctltoggle]')) { this._v.ctl = !this._v.ctl; this._renderNP(true); }
+  },
+
+  _onInput(e) {
+    if (!e.target.matches?.('[data-search]')) return;
+    this._v.query = e.target.value.trim();
+    clearTimeout(this._qt);
+    this._qt = setTimeout(() => { const main = this._root.querySelector('.plc-main'); this._lists.set('grid', []); if (main.querySelector('.plc-grid')) { main.querySelector('.plc-grid').innerHTML = ''; this._page(main, 0); } }, 300);
+  },
+
+  _onChange(e) {
+    const el = e.target;
+    if (el.matches?.('[data-tvsel]')) { const tv = this._tvs().find((x) => x.id === el.value); if (tv) this._setTv(tv); return; }
+    if (el.matches?.('[data-pick]')) { this._pickTv = this._tvs().find((x) => x.id === el.value); this._renderDetail(); return; }
+    if (el.matches?.('[data-sort]')) { this._v.sort = el.value; this._renderMain(); return; }
+    if (el.matches?.('[data-season]')) { this._v.season = el.value; if (this._detailItem) this._paintSeasons(this._detailItem); }
+  },
+});
+
+// ------------------------------------------------------------------------------------------- editor
+
+const EDITOR_CSS = `
+        .plce {
+          /* Font sizes (by role, not by pixel) */
+          --ltek-fs-panel-title: 16px;  /* top-level panel / section title */
+          --ltek-fs-header: 15px;       /* editor header, panel summary */
+          --ltek-fs-group: 14px;        /* group heading inside a panel */
+          --ltek-fs-label: 13px;        /* standard field label / row */
+          --ltek-fs-body: 12px;         /* body text, most controls */
+          --ltek-fs-small: 11px;        /* hints, secondary text */
+          --ltek-fs-tiny: 10px;         /* badges, micro-labels */
+          /* Font weights */
+          --ltek-fw-normal: 400;        /* control labels (recede) */
+          --ltek-fw-medium: 500;
+          --ltek-fw-semibold: 600;
+          --ltek-fw-bold: 700;          /* titles, values (lead) */
+          /* Text colors */
+          --ltek-c-text: var(--primary-text-color, #e1e1e1);  /* primary */
+          --ltek-c-label: #ccc;         /* control labels */
+          --ltek-c-muted: #888;         /* hints / disabled */
+          --ltek-c-accent: var(--primary-color, #2196F3);
+          /* Accent tints — hover / active fills */
+          --ltek-c-accent-fade: rgba(var(--rgb-primary-color,33,150,243),0.12);       /* active / pressed fill */
+          --ltek-c-accent-fade-soft: rgba(var(--rgb-primary-color,33,150,243),0.08);  /* hover fill */
+          --ltek-c-error-fade: rgba(244,67,54,0.15);         /* delete hover fill */
+          /* Status colors — defer to the user's theme, fall back to Material. */
+          --ltek-c-error: var(--error-color, #f44336);
+          --ltek-c-success: var(--success-color, #4caf50);
+          --ltek-c-warning: var(--warning-color, #ffb300);
+          --ltek-c-info: var(--info-color, #2196F3);
+          /* Second accent: the green "library / shared" grouping (NOT tied to --primary-color). */
+          --ltek-c-accent-lib: #7fd18a;
+          --ltek-c-on-accent: #fff;   /* text/icon on a solid accent fill */
+          /* Action icons: neutral idle → brighten on hover; delete uses error on hover. */
+          --ltek-c-icon: #aaa;        /* idle action icon */
+          --ltek-c-icon-hover: #fff;  /* hovered action icon */
+          /* Surfaces */
+          --ltek-c-surface: rgba(255,255,255,0.015);        /* panels */
+          --ltek-c-surface-raised: rgba(255,255,255,0.02);  /* cards / rows */
+          /* Borders */
+          --ltek-c-panel-border: #3a3a3a;   /* panels */
+          --ltek-c-border: #444;            /* controls */
+          --ltek-c-border-soft: #333;       /* subtle inner dividers */
+          /* Radii */
+          --ltek-r-panel: 12px;   /* panels */
+          --ltek-r-card: 10px;    /* section cards */
+          --ltek-r-md: 8px;       /* blocks */
+          --ltek-r-ctrl: 6px;     /* inputs, selects, buttons */
+          /* Spacing scale (4px base) */
+          --ltek-sp-1: 4px;  --ltek-sp-2: 6px;  --ltek-sp-3: 8px;
+          --ltek-sp-4: 10px; --ltek-sp-5: 12px; --ltek-sp-6: 16px;
+          /* Control padding — uniform input/select/button height. */
+          --ltek-ctrl-pad: 6px 10px;
+          /* Icon sizes (two clear roles; one-off glyphs stay literal). */
+          --ltek-icon-sm: 16px;   /* inline / action icons */
+          --ltek-icon-lg: 20px;   /* panel-title icons */
+          /* Slider row geometry */
+          --ltek-slider-val-w: 44px;   /* value readout column width */
+          display: flex; flex-direction: column; gap: 8px; font-family: var(--paper-font-body1_-_font-family, sans-serif);
+        }
+        .plce ha-icon { --mdc-icon-size: 18px; vertical-align: middle; }
+        .plce-sec { border: 1px solid var(--ltek-c-panel-border); border-radius: var(--ltek-r-panel); background: var(--ltek-c-surface); overflow: hidden; }
+        .plce-sec[open] { border-color: var(--ltek-c-accent); }
+        .plce-sec > summary { display: flex; align-items: center; gap: var(--ltek-sp-3); padding: 14px 16px; cursor: pointer; user-select: none;
+          list-style: none; font-size: var(--ltek-fs-panel-title); font-weight: var(--ltek-fw-bold); color: var(--ltek-c-text); }
+        .plce-sec > summary::-webkit-details-marker { display: none; }
+        .plce-sec > summary > ha-icon:not(.chev) { color: var(--ltek-c-accent); --mdc-icon-size: var(--ltek-icon-lg); }
+        .plce-sec > summary .chev { margin-left: auto; color: #999; --mdc-icon-size: 20px; transition: transform .2s ease; transform: rotate(-90deg); }
+        .plce-sec[open] > summary .chev { transform: none; }
+        .plce-body { padding: 0 16px 16px; }
+        .plce-hint { color: var(--ltek-c-muted); font-size: var(--ltek-fs-small); margin: 0 0 var(--ltek-sp-3); }
+        .plce-hint code { font-size: var(--ltek-fs-tiny); }
+        .plce-group { color: var(--accent-color, var(--ltek-c-accent)); font-size: var(--ltek-fs-group); font-weight: var(--ltek-fw-semibold);
+          margin-top: var(--ltek-sp-4); padding-top: var(--ltek-sp-3); border-top: 1px solid var(--ltek-c-border-soft); }
+        .plce-group.first { margin-top: 0; padding-top: 0; border-top: none; }
+        .plce-row { display: flex; align-items: center; gap: var(--ltek-sp-4); padding: var(--ltek-sp-1) 0; flex-wrap: wrap; justify-content: flex-start; }
+        .plce-row label.lbl { color: var(--ltek-c-label); font-size: var(--ltek-fs-body); font-weight: var(--ltek-fw-normal); flex: none; }
+        .plce-row input[type="text"], .plce-row select { flex: 1 1 auto; min-width: 0; padding: var(--ltek-ctrl-pad);
+          background: var(--secondary-background-color, #2a2a2a); border: 1px solid var(--ltek-c-border); border-radius: var(--ltek-r-ctrl);
+          color: var(--ltek-c-text); font-size: var(--ltek-fs-body); }
+        .plce-row input[type="range"] { flex: 1 1 auto; min-width: 100px; accent-color: var(--ltek-c-accent); cursor: pointer; }
+        .plce-val { flex: 0 0 var(--ltek-slider-val-w); text-align: right; font-weight: var(--ltek-fw-bold); font-variant-numeric: tabular-nums;
+          white-space: nowrap; color: var(--ltek-c-text); font-size: var(--ltek-fs-body); }
+        .plce-nowrap { flex-wrap: nowrap; }
+        .plce-check { display: flex; align-items: center; gap: var(--ltek-sp-2); padding: var(--ltek-sp-1) 0; color: var(--ltek-c-label);
+          font-size: var(--ltek-fs-body); cursor: pointer; }
+        .plce-check input { accent-color: var(--ltek-c-accent); }
+        .plce-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0 var(--ltek-sp-4); }
+        .plce-color { display: flex; flex: 1 1 auto; gap: var(--ltek-sp-2); flex-wrap: wrap; min-width: 0; }
+        .plce-color select.plce-cmode { flex: 0 0 auto; min-width: 120px; }
+        .plce-color input[type="color"] { flex: 0 0 auto; width: 44px; height: 30px; padding: 0; border: none; background: none; cursor: pointer; }
+        .plce-reset { border: none; background: none; padding: 0; color: var(--ltek-c-icon); cursor: pointer; }
+        .plce-reset:hover { color: var(--ltek-c-icon-hover); }
+        .plce-reset ha-icon { --mdc-icon-size: var(--ltek-icon-sm); }
+        .plce-list { display: flex; flex-direction: column; gap: var(--ltek-sp-2); }
+        .plce-item { display: flex; flex-direction: column; gap: var(--ltek-sp-1); padding: var(--ltek-sp-2) var(--ltek-sp-3);
+          background: var(--ltek-c-surface-raised); border-radius: var(--ltek-r-card); }
+        .plce-item-h { display: flex; align-items: center; gap: var(--ltek-sp-2); }
+        .plce-item-h > ha-icon { color: var(--ltek-c-accent); --mdc-icon-size: var(--ltek-icon-lg); flex: none; }
+        .plce-name { flex: 1 1 auto; min-width: 0; color: var(--ltek-c-text); font-size: var(--ltek-fs-label); font-weight: var(--ltek-fw-normal);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .plce-badge { flex: none; color: var(--ltek-c-muted); font-size: var(--ltek-fs-tiny); border: 1px solid var(--ltek-c-border);
+          border-radius: var(--ltek-r-ctrl); padding: 0 var(--ltek-sp-1); }
+        .plce-del { border: none; background: none; padding: 0; cursor: pointer; color: var(--ltek-c-icon); flex: none; line-height: 0; }
+        .plce-del ha-icon { --mdc-icon-size: var(--ltek-icon-sm); }
+        .plce-del:hover { color: var(--ltek-c-error); }
+        .plce-add { align-self: flex-start; padding: var(--ltek-ctrl-pad); border: 1px dashed var(--ltek-c-accent); border-radius: var(--ltek-r-ctrl);
+          background: transparent; color: var(--ltek-c-accent); font-size: var(--ltek-fs-body); font-weight: var(--ltek-fw-semibold); cursor: pointer; }
+        .plce-add:hover { background: var(--ltek-c-accent-fade-soft); }
+        .plce-foot { color: var(--ltek-c-muted); font-size: var(--ltek-fs-tiny); text-align: right; }
+`;
+
+const INTEGRATION_USES = {
+  plex: ['Plex', 'required: the Plex server Plex Center reads'],
+  pipup: ['PiPup', 'plays on Android / Google TVs (app 0.32+, clicks allowed for Plex)'],
+  androidtv: ['Android TV (ADB)', 'plays without PiPup; screenshot when nothing plays'],
+  androidtv_remote: ['Android TV Remote', 'found; not needed by Plex Center'],
+  cast: ['Google Cast', 'found; not used (Cast plays in its own receiver, not the Plex app)'],
+  tautulli: ['Tautulli', 'found; Plex Center reads sessions from Plex directly'],
+  tautulli_active_streams: ['Tautulli Active Streams', 'found; history rows are on the roadmap'],
+  sonarr: ['Sonarr', 'its upcoming sensor can be a Home row'],
+  radarr: ['Radarr', 'its upcoming sensor can be a Home row'],
+  plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
+  upcoming_media: ['Upcoming media', 'can be a Home row'],
+};
+const REVEAL_KEYS = new Set(['layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls']);
+
+class PlexCenterCardEditor extends HTMLElement {
+  constructor() { super(); this._config = {}; this._open = new Set(['tvs']); this._cmode = {}; this._rendered = false; }
+
+  setConfig(config) {
+    const next = normalizeConfig(config);
+    const changed = JSON.stringify(next) !== JSON.stringify(this._config);
+    this._config = next;
+    if (!this._rendered || changed) this._render();
+  }
+  set hass(h) {
+    const first = !this._hass;
+    this._hass = h;
+    if (first) {
+      this._render();
+      cached(h, 'config', REFRESH_MS, () => ws(h, 'config')).then(() => this._render()).catch((e) => { this._err = e?.message || String(e); this._render(); });
+    }
+  }
+
+  _emit() {
+    this._config = normalizeConfig(this._config);
+    this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: { type: `custom:${CARD_TAG}`, ...this._config } }, bubbles: true, composed: true }));
+  }
+  _set(key, value) {
+    if (key === 'title' && value === '') { this._config.title = ''; this._emit(); return; }
+    if (value === '' || value === undefined || value === null || DEFAULTS[key] === value) delete this._config[key];
+    else this._config[key] = value;
+    this._emit();
+  }
+  _c(k) { return cfg(this._config, k); }
+
+  _panel(id, icon, title, body) {
+    return `<details class="plce-sec" data-panel="${id}"${this._open.has(id) ? ' open' : ''}>
+      <summary><ha-icon icon="${icon}"></ha-icon>${title}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></summary>
+      <div class="plce-body">${body}</div></details>`;
+  }
+  _check(key, label) { return `<label class="plce-check"><input type="checkbox" data-key="${key}"${this._c(key) ? ' checked' : ''}>${label}</label>`; }
+  _text(key, label, ph = '') {
+    const v = this._config[key] !== undefined ? this._config[key] : '';
+    return `<div class="plce-row"><label class="lbl">${label}</label><input type="text" data-key="${key}" value="${esc(v)}" placeholder="${esc(ph)}"></div>`;
+  }
+  _select(key, label, options) {
+    const cur = this._c(key);
+    return `<div class="plce-row"><label class="lbl">${label}</label><select data-key="${key}">${options.map(([v, n]) => `<option value="${esc(v)}"${String(v) === String(cur ?? '') ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>`;
+  }
+  _slider(key, label, min, max, unit = 'px') {
+    const v = Number(this._c(key));
+    return `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label><input type="range" data-skey="${key}" data-unit="${unit}" min="${min}" max="${max}" step="1" value="${v}">
+      <span class="plce-val" data-val="${key}">${v}${unit}</span>${this._config[key] !== undefined ? `<button class="plce-reset" data-reset="${key}" title="Back to default"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>`;
+  }
+  _colorControl(key) {
+    const [label, defLabel, seed] = COLOR_DEFS[key];
+    const cur = this._config[key] || '';
+    const mode = this._cmode[key] || colorMode(cur);
+    let field = '';
+    if (mode === 'theme') field = `<select class="plce-ctheme" data-ckey="${key}">${THEME_COLORS.map(([v, n]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
+    else if (mode === 'custom') field = `<input type="color" class="plce-chex" data-ckey="${key}" value="${/^#[0-9a-fA-F]{6}$/.test(cur) ? cur : seed}">`;
+    else if (mode === 'css') field = `<input type="text" class="plce-ccss" data-ckey="${key}" value="${esc(cur)}" placeholder="e.g. tomato, rgba(…), var(--my-color)">`;
+    const modes = [['default', defLabel], ['theme', 'Theme color'], ['custom', 'Custom color'], ['css', 'Custom CSS']];
+    return `<div class="plce-row"><label class="lbl">${label}</label><div class="plce-color">
+      <select class="plce-cmode" data-ckey="${key}" data-seed="${seed}">${modes.map(([m, n]) => `<option value="${m}"${m === mode ? ' selected' : ''}>${n}</option>`).join('')}</select>${field}</div></div>`;
+  }
+
+  get _conf() { return peek('config'); }
+
+  _tvsBody() {
+    const tvs = this._conf?.tvs || [];
+    const pick = this._config.tvs || [];
+    const routes = { pipup: 'PiPup', adb: 'ADB', plex: 'Plex remote control', open: 'PiPup (opens only)' };
+    const rows = tvs.map((t) => `<label class="plce-check"><input type="checkbox" data-tvpick="${esc(t.id)}"${!pick.length || pick.includes(t.id) ? ' checked' : ''}>
+      ${esc(t.name)} <span class="plce-badge">${esc(routes[t.route] || 'no player')}</span><span class="plce-badge">${esc(t.user || 'owner')}</span></label>`).join('');
+    return `<p class="plce-hint">TVs, their Plex Home users and players are set in the integration: Settings → Devices &amp; services → Plex Center → Configure. Here you pick which ones this card offers.</p>
+      ${this._err ? `<p class="plce-hint" style="color:var(--ltek-c-error)">${esc(this._err)}</p>` : ''}
+      <div class="plce-checks">${rows || '<p class="plce-hint">No TVs yet.</p>'}</div>
+      <div class="plce-group">TV picker</div>
+      ${this._select('tv_picker', 'Show the TV picker', [['chips', 'As buttons'], ['dropdown', 'As a dropdown'], ['hidden', 'Hidden (always the default TV)']])}
+      ${this._select('default_tv', 'Default TV', [['', 'First in the list'], ...tvs.map((t) => [t.id, t.name])])}
+      ${this._c('lock') ? '' : this._select('client_choice', 'When playing', [['card', "Use the card's TV"], ['ask', 'Ask which TV each time']])}
+      ${this._check('lock', 'Lock to the default TV (wall tablet: no picker, no TV choice)')}`;
+  }
+
+  _libraryBody() {
+    const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
+    const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
+    const pick = this._config.libraries || [];
+    return `<p class="plce-hint">Each TV shows what its Plex user is shared. Untick libraries this card should hide.</p>
+      ${libs.length ? `<div class="plce-checks">${libs.map((l) => `<label class="plce-check"><input type="checkbox" data-lib="${esc(l.title)}"${!pick.length || pick.includes(l.title) ? ' checked' : ''}>${esc(l.title)}</label>`).join('')}</div>` : '<p class="plce-hint">Libraries appear once Plex Center has loaded.</p>'}
+      ${this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])])}
+      ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}`;
+  }
+
+  _homeBody() {
+    const rows = this._config.home_rows || [];
+    const sensors = this._conf?.upcoming_sensors || [];
+    const opts = (cur) => [['', '— pick a sensor —'], ...sensors.map((id) => [id, this._hass.states[id]?.attributes?.friendly_name || id])]
+      .map(([v, n]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(n)}</option>`).join('');
+    return `${this._check('show_watching', 'Watching now (who is watching what, where)')}
+      ${this._check('show_continue', "Continue watching (the selected TV's Plex user)")}
+      ${this._check('show_recent', 'Recently added')}${this._check('surprise', 'Surprise me button')}
+      <div class="plce-group">Rows from upcoming-media sensors</div>
+      <p class="plce-hint">Radarr / Sonarr coming soon, Plex Recently Added… Plex items play on the TV; others offer their trailer.</p>
+      <div class="plce-list">${rows.map((r, i) => `<div class="plce-item"><div class="plce-item-h"><ha-icon icon="mdi:view-carousel"></ha-icon>
+          <select data-row="${i}" data-rowk="sensor">${opts(r.sensor)}</select><button class="plce-del" data-rowdel="${i}" title="Remove"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button></div>
+          <div class="plce-row"><label class="lbl">Title</label><input type="text" data-row="${i}" data-rowk="title" value="${esc(r.title || '')}" placeholder="The sensor's own title"></div></div>`).join('')}</div>
+      <button class="plce-add" data-rowadd>+ Row</button>
+      <p class="plce-hint">Extra cards under the rows: <code>home_cards:</code> with any card configs, in YAML.</p>`;
+  }
+
+  _npBody() {
+    const m = this._c('now_playing');
+    return `<p class="plce-hint">The side panel (tablets) shows the poster, big controls and every TV. The slim bar shows whenever the panel does not.</p>
+      ${this._select('now_playing', 'Now playing', [['auto', 'Automatic (side panel on tablets, slim bar on phones)'], ['panel', 'Side panel'], ['slim', 'Slim bar'], ['off', 'Off']])}
+      ${m === 'panel' || m === 'auto' ? this._select('panel_when', 'Side panel', [['always', 'Always'], ['playing', 'Only while something plays']]) : ''}
+      ${m !== 'off' ? `${this._select('slim_position', 'Slim bar position', [['bottom', 'Bottom'], ['top', 'Top']])}
+        ${this._select('slim_controls', 'Remote buttons in the slim bar', [['toggle', 'Button to show / hide them'], ['shown', 'Always shown'], ['hidden', 'Hidden']])}` : ''}`;
+  }
+
+  _styleBody() {
+    return `${this._select('image_style', 'Home row style', [['poster', 'Poster'], ['fanart', 'Fanart']])}
+      ${this._slider('max', 'Items per row', 1, 50, '')}${this._slider('poster_width', 'Poster width', 80, 260)}${this._slider('corner_radius', 'Corner radius', 0, 24)}
+      ${this._select('title_size', 'Title size', [['large', 'Large'], ['medium', 'Medium'], ['small', 'Small']])}
+      ${this._select('line_size', 'Line size', [['large', 'Large'], ['medium', 'Medium'], ['small', 'Small']])}
+      ${this._check('box_shadows', 'Poster shadows')}${this._check('text_shadows', 'Text shadows')}${this._check('flag', '"New" flag on unwatched items')}
+      <div class="plce-group">Colors</div>${Object.keys(COLOR_DEFS).map((k) => this._colorControl(k)).join('')}
+      <div class="plce-group">Row text (upcoming-media rows)</div>
+      <p class="plce-hint">Keywords: <code>$title $episode $number $release $date $day $time $aired $runtime $rating $genres $studio $empty</code>.
+        A part between <code>-</code> whose keyword is empty is left out. Blank = the sensor's default.</p>
+      ${['title_text', 'line1_text', 'line2_text', 'line3_text', 'line4_text'].map((k, i) => this._text(k, i ? `Line ${i}` : 'Title')).join('')}
+      ${this._text('date', 'Date format', 'mm/dd')}${this._select('clock', 'Clock', [['12', '12-hour'], ['24', '24-hour']])}`;
+  }
+
+  _integrationsBody() {
+    const found = new Set(this._conf?.integrations || []);
+    return `<p class="plce-hint">What Home Assistant has, and what Plex Center does with it.</p>
+      <div class="plce-list">${Object.entries(INTEGRATION_USES).map(([k, [name, use]]) => `<div class="plce-item"><div class="plce-item-h">
+        <ha-icon icon="${found.has(k) ? 'mdi:check-circle' : 'mdi:circle-outline'}"></ha-icon><span class="plce-name">${esc(name)}</span>
+        <span class="plce-badge">${found.has(k) ? 'found' : 'not installed'}</span></div><p class="plce-hint" style="margin:0">${esc(use)}</p></div>`).join('')}</div>
+      ${this._conf ? `<p class="plce-hint">Plex Center ${esc(this._conf.version)} · card ${BUILD_NUMBER}</p>` : ''}`;
+  }
+
+  _render() {
+    if (!this._hass) { this.innerHTML = ''; return; }
+    this.innerHTML = `<style>${EDITOR_CSS}</style><div class="plce">
+      ${this._panel('tvs', 'mdi:television-play', 'TVs', this._tvsBody())}
+      ${this._panel('library', 'mdi:plex', 'Library', this._libraryBody())}
+      ${this._panel('home', 'mdi:home-variant', 'Home tab', this._homeBody())}
+      ${this._panel('np', 'mdi:play-box-outline', 'Now playing', this._npBody())}
+      ${this._panel('layout', 'mdi:tablet-cellphone', 'Layout', `<p class="plce-hint">Automatic uses the phone layout when the card is narrower than ${PHONE_MAX_W}px.</p>
+        ${this._select('layout', 'Layout', [['auto', 'Automatic'], ['tablet', 'Tablet'], ['phone', 'Phone']])}${this._text('title', 'Title', 'Plex')}`)}
+      ${this._panel('style', 'mdi:palette', 'Look', this._styleBody())}
+      ${this._panel('integrations', 'mdi:puzzle', 'Integrations found', this._integrationsBody())}
+      <div class="plce-foot">Plex Center Card (Ltek) ${BUILD_NUMBER}</div></div>`;
+    this._rendered = true;
+    this._wire();
+  }
+
+  _wire() {
+    const all = (sel, fn) => this.querySelectorAll(sel).forEach(fn);
+    all('details.plce-sec', (d) => d.addEventListener('toggle', () => { if (d.open) this._open.add(d.dataset.panel); else this._open.delete(d.dataset.panel); }));
+    all('[data-key]', (el) => el.addEventListener('change', () => {
+      const k = el.dataset.key;
+      this._set(k, el.type === 'checkbox' ? el.checked : el.value.trim());
+      if (REVEAL_KEYS.has(k)) this._render();
+    }));
+    all('[data-skey]', (el) => {
+      const k = el.dataset.skey, unit = el.dataset.unit;
+      el.addEventListener('input', () => { const o = this.querySelector(`[data-val="${k}"]`); if (o) o.textContent = `${el.value}${unit}`; });
+      el.addEventListener('change', () => { this._set(k, Number(el.value)); this._render(); });
+    });
+    all('[data-reset]', (b) => b.addEventListener('click', () => { this._set(b.dataset.reset, ''); this._render(); }));
+    const checkedList = (attr, allValues) => {
+      const on = [...this.querySelectorAll(`[${attr}]`)].filter((x) => x.checked).map((x) => x.getAttribute(attr));
+      return on.length === allValues.length ? null : on;
+    };
+    all('[data-tvpick]', (el) => el.addEventListener('change', () => {
+      const v = checkedList('data-tvpick', this._conf?.tvs || []);
+      if (v) this._config.tvs = v; else delete this._config.tvs;
+      this._emit();
+    }));
+    all('[data-lib]', (el) => el.addEventListener('change', () => {
+      const v = checkedList('data-lib', [...this.querySelectorAll('[data-lib]')]);
+      if (v) this._config.libraries = v; else delete this._config.libraries;
+      this._emit();
+    }));
+    all('[data-rowadd]', (b) => b.addEventListener('click', () => { this._config.home_rows = [...(this._config.home_rows || []), { sensor: '' }]; this._render(); }));
+    all('[data-rowdel]', (b) => b.addEventListener('click', () => { this._config.home_rows.splice(Number(b.dataset.rowdel), 1); this._emit(); this._render(); }));
+    all('[data-rowk]', (el) => el.addEventListener('change', () => {
+      const r = this._config.home_rows[Number(el.dataset.row)]; if (!r) return;
+      const v = el.value.trim(); if (v) r[el.dataset.rowk] = v; else delete r[el.dataset.rowk];
+      this._emit();
+    }));
+    all('.plce-cmode', (sel) => sel.addEventListener('change', () => {
+      const k = sel.dataset.ckey, cur = this._config[k] || '', was = colorMode(cur);
+      let next = '';
+      if (sel.value === 'theme') next = was === 'theme' ? cur : 'var(--primary-color)';
+      else if (sel.value === 'custom') next = /^#[0-9a-fA-F]{6}$/.test(cur) ? cur : sel.dataset.seed;
+      else if (sel.value === 'css') next = cur;
+      this._cmode[k] = sel.value; this._set(k, next); this._render();
+    }));
+    all('.plce-ctheme', (el) => el.addEventListener('change', () => this._set(el.dataset.ckey, el.value)));
+    all('.plce-chex', (el) => el.addEventListener('input', () => this._set(el.dataset.ckey, el.value)));
+    all('.plce-ccss', (el) => el.addEventListener('change', () => this._set(el.dataset.ckey, el.value.trim())));
+  }
+}
+
+// ------------------------------------------------------------------------------------- registration
+
+PlexCenterCard._test = { normalizeConfig, cardVars, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+  formatDate, colorMode, CARD_CSS, CACHE, VIEW };
+
+if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);
+if (!customElements.get(EDITOR_TAG)) customElements.define(EDITOR_TAG, PlexCenterCardEditor);
+if (typeof window !== 'undefined') {
+  window.customCards = window.customCards || [];
+  if (!window.customCards.some((c) => c.type === CARD_TAG)) {
+    window.customCards.push({ type: CARD_TAG, name: 'Plex Center Card (Ltek)', preview: false,
+      description: 'Browse Plex and play on your TVs. Needs the Plex Center integration.' });
+  }
+  console.info(`%c PLEX-CENTER-CARD %c ${BUILD_NUMBER} `, 'color:#fff;background:#e5a00d;font-weight:700', 'color:#e5a00d;background:#222');
+}

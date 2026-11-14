@@ -1,0 +1,73 @@
+# Plex Center (Ltek)
+
+Browse your Plex library on a Home Assistant dashboard and play on your TVs, the way you would with the remote.
+Each TV shows the libraries, Continue Watching and watched marks of the Plex Home user its Plex app uses.
+
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Ltek&repository=plex-center&category=integration)
+
+One integration, with its Dashboard card included: no login, no tokens in the browser.
+
+## What you need
+
+| Part | Used for |
+|---|---|
+| **[Plex](https://www.home-assistant.io/integrations/plex/)** integration | the Plex server (Plex Center uses its connection) |
+| **[PiPup](https://github.com/mhoogenbosch/PiPup)** app 0.32+ on the TV, with **[ha-pipup](https://github.com/mhoogenbosch/ha-pipup)** 1.32+ | playing on Android / Google TVs, pause, seek, Stop, Home (recommended) |
+| or the **[Android TV (ADB)](https://www.home-assistant.io/integrations/androidtv/)** integration | the same without PiPup (no exact seek) |
+| optional: Plex Web / Plex HTPC | played on directly through Plex's own remote control |
+| optional: **upcoming-media sensors** | Home rows such as Radarr and Sonarr coming soon, Plex Recently Added |
+
+**PiPup setup:** on each TV, turn on media session access and allow clicks in Plex (ha-pipup's gear icon →
+*Advanced install*, or `install.sh --media --click com.plexapp.android <tv-ip>`).
+
+**Plex Home users:** give each TV's Plex app its own managed user **without a PIN** (LivingRoom, PlayRoom, …).
+Plex Center opens the server as that user, so each room has its own Continue Watching and watched marks. A TV
+signed in as the owner uses the owner's view.
+
+## Set up
+
+1. Install **Plex Center** from HACS (category *Integration*) and restart Home Assistant.
+2. **Settings → Devices & services → Add integration → Plex Center.** Pick your Plex server if you have several.
+   Your TVs are found automatically.
+3. Check them under **Plex Center → Configure**: each TV's Plex Home user and players. *Find new TVs* adds ones
+   set up later.
+4. Add the card to a dashboard:
+
+```yaml
+type: custom:plex-center-card
+```
+
+Everything else is in the card's editor: which TVs it offers, the TV picker (buttons, dropdown or hidden),
+libraries, Home rows, now-playing views (side panel, slim bar), layout and look.
+
+## Actions
+
+```yaml
+action: plex_center.play
+data:
+  tv: Living Room TV
+  title: Bill & Ted's Excellent Adventure   # or key: "720622"
+  mode: play                                # play (resume) | restart | next (next episode of a show)
+```
+
+```yaml
+action: plex_center.control
+data:
+  tv: Living Room TV
+  action: pause        # play | pause | play_pause | stop | home | seek | skip
+  value: -10           # seconds, for seek / skip
+```
+
+## Notes
+
+- **Stop** sends Back, which leaves the Plex player for the title's page (the new Plex app ignores the Stop key).
+- Plex plays a 30-second preview on a title's page; Plex Center doesn't treat it as playback.
+- Works with the new Plex app for Android TV (2026), which no longer accepts remote control from Home Assistant.
+
+## Credits
+
+The card's Home-row look and `$keyword` lines are adapted from
+[upcoming-media-card](https://github.com/custom-cards/upcoming-media-card) (MIT). The Plex link formats and button IDs
+were found by [Zaywest/ha-plex-shield-control](https://github.com/Zaywest/ha-plex-shield-control).
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.

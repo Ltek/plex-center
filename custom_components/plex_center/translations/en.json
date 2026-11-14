@@ -1,0 +1,106 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Plex Center",
+        "description": "Pick the Plex server. Plex Center uses Home Assistant's Plex integration: no login.",
+        "data": {
+          "server_id": "Plex server"
+        }
+      }
+    },
+    "abort": {
+      "no_plex": "Set up Home Assistant's Plex integration first.",
+      "already_configured": "This Plex server is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "TVs",
+        "menu_options": {
+          "add": "Add a TV",
+          "detect": "Find new TVs",
+          "remove": "Remove TVs"
+        }
+      },
+      "tv": {
+        "title": "TV: {name}",
+        "description": "The Plex Home user is the one this TV's Plex app uses: its Continue Watching and watched marks are shown for this TV.",
+        "data": {
+          "name": "Name",
+          "plex_user": "Plex Home user on this TV",
+          "pipup": "PiPup player",
+          "adb": "Android TV (ADB) player",
+          "plex_client": "Plex player of this TV",
+          "route": "Play with"
+        },
+        "data_description": {
+          "plex_client": "The Plex integration's player for this TV's Plex app (now playing; Plex Web / HTPC can also be played on directly).",
+          "route": "Automatic: Plex remote control when the player accepts it, else PiPup when its click service allows Plex, else ADB."
+        }
+      },
+      "remove": {
+        "title": "Remove TVs",
+        "data": {
+          "tvs": "TVs to remove"
+        }
+      }
+    },
+    "error": {
+      "no_player": "Pick at least one player (PiPup, ADB or Plex)."
+    }
+  },
+  "selector": {
+    "route": {
+      "options": {
+        "auto": "Automatic",
+        "pipup": "PiPup",
+        "adb": "ADB",
+        "plex": "Plex remote control (Plex Web, HTPC)"
+      }
+    }
+  },
+  "services": {
+    "play": {
+      "name": "Play",
+      "description": "Start a Plex title on a Plex Center TV, the way the remote would.",
+      "fields": {
+        "tv": {
+          "name": "TV",
+          "description": "Name or id of the TV."
+        },
+        "key": {
+          "name": "Plex key",
+          "description": "The rating key of the title."
+        },
+        "title": {
+          "name": "Title",
+          "description": "Or a title to search for (first match)."
+        },
+        "mode": {
+          "name": "Mode",
+          "description": "play (resume), restart (from the beginning) or next (next episode of a show)."
+        }
+      }
+    },
+    "control": {
+      "name": "Control",
+      "description": "Play, pause, stop (Back), Home, seek or skip on a Plex Center TV.",
+      "fields": {
+        "tv": {
+          "name": "TV",
+          "description": "Name or id of the TV."
+        },
+        "action": {
+          "name": "Action",
+          "description": "What to do."
+        },
+        "value": {
+          "name": "Value",
+          "description": "Seconds: position for seek, ± for skip."
+        }
+      }
+    }
+  }
+}

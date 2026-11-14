@@ -1,0 +1,39 @@
+play:
+  fields:
+    tv:
+      required: true
+      example: Living Room TV
+      selector:
+        text:
+    key:
+      example: "720622"
+      selector:
+        text:
+    title:
+      example: Bill & Ted's Excellent Adventure
+      selector:
+        text:
+    mode:
+      default: play
+      selector:
+        select:
+          options: [play, restart, next]
+control:
+  fields:
+    tv:
+      required: true
+      example: Living Room TV
+      selector:
+        text:
+    action:
+      required: true
+      selector:
+        select:
+          options: [play, pause, play_pause, stop, home, seek, skip]
+    value:
+      example: -10
+      selector:
+        number:
+          min: -3600
+          max: 86400
+          mode: box
