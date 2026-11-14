@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -90,11 +91,58 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
         _BUSY.discard(key)
 
 
-async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: float | None = None) -> None:
-    """play | pause | play_pause | stop (= Back) | home | seek (seconds) | skip (± seconds)."""
+VOLUME_ACTIONS = {"volume_up", "volume_down", "mute", "power_on", "power_off"}
+
+
+async def _volume_power(hass: HomeAssistant, tv: dict[str, Any], route: str, action: str) -> None:
+    """Volume and power: through the player that controls the TV (PiPup, ADB or the Plex client)."""
+    pip, adb = tv.get(TV_PIPUP), tv.get(TV_ADB)
+    ent = pip if pip and hass.states.get(pip) else adb if adb and hass.states.get(adb) else tv.get(TV_PLEX)
+    if not ent:
+        raise HomeAssistantError("No player to change the volume or power with")
+    if ent == adb and action in ("volume_up", "volume_down", "mute", "power_on", "power_off"):
+        key = {"volume_up": "VOLUME_UP", "volume_down": "VOLUME_DOWN", "mute": "VOLUME_MUTE", "power_on": "WAKEUP", "power_off": "SLEEP"}[action]
+        await _svc(hass, "androidtv", "adb_command", {"command": f"input keyevent KEYCODE_{key}"}, ent)
+        return
+    if action == "mute":
+        st = hass.states.get(ent)
+        await _svc(hass, "media_player", "volume_mute", {"is_volume_muted": not bool(st and st.attributes.get("is_volume_muted"))}, ent)
+    else:
+        await _svc(hass, "media_player", {"volume_up": "volume_up", "volume_down": "volume_down", "power_on": "turn_on", "power_off": "turn_off"}[action], {}, ent)
+
+
+YOUTUBE_TV = "com.google.android.youtube.tv"
+
+
+async def trailer(hass: HomeAssistant, tv: dict[str, Any], url: str | None = None, item: dict[str, Any] | None = None) -> None:
+    """A trailer on the TV: a YouTube link opens in the TV's YouTube app; a Plex trailer (an extra) opens in Plex."""
     route = route_for(hass, tv)
     if route is None:
         raise HomeAssistantError(f"{tv.get(TV_NAME) or 'This TV'} has no usable player")
+    if url:
+        if not re.match(r"^https://(www\.)?(youtube\.com|youtu\.be)/[A-Za-z0-9_?=&./-]+$", url):
+            raise HomeAssistantError("Only YouTube trailer links can be opened on the TV")
+        if tv.get(TV_PIPUP) and hass.states.get(tv[TV_PIPUP]):
+            await _svc(hass, "pipup", "launch_app", {"uri": url}, tv[TV_PIPUP])
+        elif tv.get(TV_ADB):
+            await _svc(hass, "androidtv", "adb_command", {"command": f"input keyevent KEYCODE_WAKEUP; am start -a android.intent.action.VIEW -d '{url}'"}, tv[TV_ADB])
+        else:
+            raise HomeAssistantError("Opening YouTube on this TV needs PiPup or ADB")
+        return
+    if item:
+        await start(hass, tv, item, "play")
+        return
+    raise HomeAssistantError("Give a trailer link or a Plex title with a trailer")
+
+
+async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: float | None = None) -> None:
+    """play | pause | play_pause | stop (= Back) | home | seek (seconds) | skip (± seconds) | volume_up | volume_down | mute | power_on | power_off."""
+    route = route_for(hass, tv)
+    if route is None and action not in VOLUME_ACTIONS:
+        raise HomeAssistantError(f"{tv.get(TV_NAME) or 'This TV'} has no usable player")
+    if action in VOLUME_ACTIONS:
+        await _volume_power(hass, tv, route, action)
+        return
     if route == "plex":
         ent = tv[TV_PLEX]
         mp = {"play": "media_play", "pause": "media_pause", "play_pause": "media_play_pause", "stop": "media_stop"}

@@ -54,8 +54,23 @@ data:
 action: plex_center.control
 data:
   tv: Living Room TV
-  action: pause        # play | pause | play_pause | stop | home | seek | skip
+  action: pause        # play | pause | play_pause | stop | home | seek | skip | volume_up | volume_down | mute | power_on | power_off
   value: -10           # seconds, for seek / skip
+```
+
+```yaml
+action: plex_center.play_trailer
+data:
+  tv: Living Room TV
+  key: "720622"        # a Plex title's own trailer, played in Plex; or url: a YouTube link, played in the TV's YouTube app
+```
+
+```yaml
+action: plex_center.mark
+data:
+  tv: Living Room TV
+  key: "720622"
+  watched: true        # for the TV's Plex user
 ```
 
 ## Notes

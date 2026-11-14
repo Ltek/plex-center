@@ -105,11 +105,47 @@
         },
         "action": {
           "name": "Action",
-          "description": "What to do."
+          "description": "Play, pause, stop (Back), Home, seek, skip, volume up / down, mute, power on / off."
         },
         "value": {
           "name": "Value",
           "description": "Seconds: position for seek, ± for skip."
+        }
+      }
+    },
+    "mark": {
+      "name": "Mark watched",
+      "description": "Mark a title watched or unwatched for a TV's Plex user.",
+      "fields": {
+        "tv": {
+          "name": "TV",
+          "description": "Name or id of the TV."
+        },
+        "key": {
+          "name": "Plex key",
+          "description": "The rating key of the title."
+        },
+        "watched": {
+          "name": "Watched",
+          "description": "On = watched, off = unwatched."
+        }
+      }
+    },
+    "play_trailer": {
+      "name": "Play trailer",
+      "description": "Play a trailer on a TV: a YouTube link in the TV's YouTube app, or a Plex title's own trailer in Plex.",
+      "fields": {
+        "tv": {
+          "name": "TV",
+          "description": "Name or id of the TV."
+        },
+        "key": {
+          "name": "Plex key",
+          "description": "A title whose Plex trailer to play."
+        },
+        "url": {
+          "name": "YouTube link",
+          "description": "Or a YouTube trailer link."
         }
       }
     }

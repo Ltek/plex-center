@@ -1,5 +1,24 @@
 # Changelog
 
+## v2026.11.14.14
+
+**New**
+- **Trailers on the TV**: *Trailer on <TV>* plays a Plex title's own trailer in Plex, or a Coming Soon title's
+  YouTube trailer in the TV's YouTube app. *Trailer here* and *On this device* stay for YouTube trailers. Action
+  `plex_center.play_trailer`.
+- **Search from Home** across every library the TV's user can see, with results grouped by library.
+- **More library filters** in the header: genre, decade, content rating and *Under 2 h* (movies). New header item
+  *Genre / decade / rating / length*.
+- **Plex rows**: *+ Plex row* adds a section from Plex's own rows ("Because you watched…", "Top rated", …), for one
+  library or the whole server, with the same style options as the other sections.
+- **Volume and power** in the player: volume down / mute / up with the level, and a power button (also when nothing
+  plays). `plex_center.control` gains `volume_up`, `volume_down`, `mute`, `power_on`, `power_off`.
+- **Mark watched / unwatched** from a title's details, for the TV's Plex user. Action `plex_center.mark`.
+
+**Changed**
+- A section's style is grouped in collapsible sub-sections: Header, Items, Item Size & Shape, Text & Colors,
+  Info Lines. A new section opens its style straight away.
+
 ## v2026.11.14.13
 
 **Changed**

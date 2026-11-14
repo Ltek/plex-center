@@ -12,12 +12,18 @@ import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN, TV_ID, TV_NAME, TV_USER
 from .media import item_dict
-from .play import control, start
+from .media import app_link
+from .play import control, start, trailer
 
 PLAY_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
                           vol.Optional("title"): cv.string, vol.Optional("mode", default="play"): vol.In(["play", "restart", "next"])})
+MARK_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Required("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
+                          vol.Required("watched"): cv.boolean})
+TRAILER_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
+                             vol.Optional("url"): cv.string})
 CONTROL_SCHEMA = vol.Schema({vol.Required("tv"): cv.string,
-                             vol.Required("action"): vol.In(["play", "pause", "play_pause", "stop", "home", "seek", "skip"]),
+                             vol.Required("action"): vol.In(["play", "pause", "play_pause", "stop", "home", "seek", "skip",
+                                                             "volume_up", "volume_down", "mute", "power_on", "power_off"]),
                              vol.Optional("value"): vol.Coerce(float)})
 
 
@@ -77,5 +83,36 @@ def async_register(hass: HomeAssistant) -> None:
         _entry, tv = find_tv(hass, call.data["tv"])
         await control(hass, tv, call.data["action"], call.data.get("value"))
 
+    async def mark(call: ServiceCall) -> None:
+        entry, tv = find_tv(hass, call.data["tv"])
+
+        def run(server):
+            item = server.fetchItem(int(call.data["key"]))
+            if call.data["watched"]:
+                item.markPlayed()
+            else:
+                item.markUnplayed()
+        await entry.runtime_data.conn.async_call(tv.get(TV_USER), run)
+
+    async def play_trailer(call: ServiceCall) -> None:
+        entry, tv = find_tv(hass, call.data["tv"])
+        if call.data.get("url"):
+            await trailer(hass, tv, url=call.data["url"])
+            return
+        if not call.data.get("key"):
+            raise HomeAssistantError("Give a trailer link or the Plex key of a title")
+
+        def find(server):
+            item = server.fetchItem(int(call.data["key"]))
+            extra = next((x for x in item.extras() if getattr(x, "subtype", None) == "trailer"), None)
+            if extra is None:
+                raise HomeAssistantError(f"{item.title} has no trailer in Plex")
+            d = item_dict(extra)
+            d["link"] = app_link(server.machineIdentifier, {"type": "clip", "key": str(extra.ratingKey)})
+            return d
+        await trailer(hass, tv, item=await entry.runtime_data.conn.async_call(tv.get(TV_USER), find))
+
+    hass.services.async_register(DOMAIN, "mark", mark, schema=MARK_SCHEMA)
+    hass.services.async_register(DOMAIN, "play_trailer", play_trailer, schema=TRAILER_SCHEMA)
     hass.services.async_register(DOMAIN, "play", play, schema=PLAY_SCHEMA)
     hass.services.async_register(DOMAIN, "control", ctl, schema=CONTROL_SCHEMA)

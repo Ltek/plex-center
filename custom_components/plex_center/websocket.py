@@ -35,7 +35,7 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 @callback
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
-    for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions):
+    for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
@@ -130,6 +130,7 @@ async def ws_config(hass: HomeAssistant, connection, msg) -> None:
     vol.Optional("size", default=60): vol.All(int, vol.Range(min=1, max=200)),
     vol.Optional("sort", default="title"): vol.In(list(SORTS)), vol.Optional("query"): str,
     vol.Optional("unwatched"): bool, vol.Optional("genre"): str, vol.Optional("year"): int,
+    vol.Optional("decade"): int, vol.Optional("content_rating"): str, vol.Optional("max_minutes"): vol.All(int, vol.Range(min=1, max=1000)),
 })
 @websocket_api.async_response
 async def ws_items(hass: HomeAssistant, connection, msg) -> None:
@@ -150,6 +151,12 @@ async def ws_items(hass: HomeAssistant, connection, msg) -> None:
             filters["genre"] = msg["genre"]
         if msg.get("year"):
             filters["year"] = msg["year"]
+        if msg.get("decade"):
+            filters["decade"] = msg["decade"]
+        if msg.get("content_rating"):
+            filters["contentRating"] = msg["content_rating"]
+        if msg.get("max_minutes") and sec.type == "movie":
+            filters["duration<<"] = msg["max_minutes"] * 60 * 1000
         if filters:
             kw["filters"] = filters
         items = sec.search(**kw)
@@ -230,6 +237,76 @@ async def ws_sessions(hass: HomeAssistant, connection, msg) -> None:
         return out
 
     await _run(hass, entry.runtime_data.conn, connection, msg, "", fetch)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/search", vol.Optional("entry_id"): str, vol.Optional("tv"): str,
+                                  vol.Required("query"): vol.All(str, vol.Length(min=1, max=100)),
+                                  vol.Optional("limit", default=12): vol.All(int, vol.Range(min=1, max=50))})
+@websocket_api.async_response
+async def ws_search(hass: HomeAssistant, connection, msg) -> None:
+    """Search every library the TV's user can see: [{library, items}] (movies, shows, episodes)."""
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    sign = _signer(hass, entry.runtime_data.conn.server_id)
+
+    def fetch(server):
+        groups: dict[str, list] = {}
+        allowed = {s.title for s in _sections(server)}
+        for hit in server.search(msg["query"], limit=msg["limit"]):
+            if getattr(hit, "type", None) not in ("movie", "show", "episode"):
+                continue
+            lib = getattr(hit, "librarySectionTitle", None) or ""
+            if lib and lib not in allowed:
+                continue
+            groups.setdefault(lib or "Other", []).append(item_dict(hit, sign))
+        return [{"library": k, "items": v} for k, v in groups.items()]
+
+    await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/filters", vol.Optional("entry_id"): str, vol.Optional("tv"): str,
+                                  vol.Required("library"): str})
+@websocket_api.async_response
+async def ws_filters(hass: HomeAssistant, connection, msg) -> None:
+    """Choices for a library's filters: genres, decades, content ratings."""
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+
+    def fetch(server):
+        sec = _section(server, msg["library"])
+        out = {"type": sec.type}
+        for field, key in (("genre", "genres"), ("decade", "decades"), ("contentRating", "content_ratings")):
+            try:
+                out[key] = [{"value": c.key if field != "genre" else c.title, "title": c.title} for c in sec.listFilterChoices(field)]
+            except Exception:  # noqa: BLE001 - a library type without that filter
+                out[key] = []
+        return out
+
+    await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/plex_hubs", vol.Optional("entry_id"): str, vol.Optional("tv"): str,
+                                  vol.Optional("library"): str, vol.Optional("hub"): str,
+                                  vol.Optional("size", default=20): vol.All(int, vol.Range(min=1, max=100))})
+@websocket_api.async_response
+async def ws_plex_hubs(hass: HomeAssistant, connection, msg) -> None:
+    """Plex's own rows ("Because you watched…", "Top rated", …) for the TV's user. Without `hub`: the list of
+    hubs (id + title); with `hub`: that hub's items."""
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    sign = _signer(hass, entry.runtime_data.conn.server_id)
+
+    def fetch(server):
+        hubs = _section(server, msg["library"]).hubs() if msg.get("library") else server.library.hubs()
+        if not msg.get("hub"):
+            return [{"id": h.hubIdentifier, "title": h.title} for h in hubs if h.type in ("movie", "show", "episode", "mixed", None)]
+        hub = next((h for h in hubs if h.hubIdentifier == msg["hub"] or h.title == msg["hub"]), None)
+        if hub is None:
+            return {"title": "", "items": []}
+        items = [i for i in hub.items() if getattr(i, "type", None) in ("movie", "show", "episode")][: msg["size"]]
+        return {"title": hub.title, "items": [item_dict(i, sign) for i in items]}
+
+    await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
 
 
 # ------------------------------------------------------------------------------------------- images

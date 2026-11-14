@@ -29,7 +29,7 @@ control:
       required: true
       selector:
         select:
-          options: [play, pause, play_pause, stop, home, seek, skip]
+          options: [play, pause, play_pause, stop, home, seek, skip, volume_up, volume_down, mute, power_on, power_off]
     value:
       example: -10
       selector:
@@ -37,3 +37,34 @@ control:
           min: -3600
           max: 86400
           mode: box
+mark:
+  fields:
+    tv:
+      required: true
+      example: Living Room TV
+      selector:
+        text:
+    key:
+      required: true
+      example: "720622"
+      selector:
+        text:
+    watched:
+      required: true
+      selector:
+        boolean:
+play_trailer:
+  fields:
+    tv:
+      required: true
+      example: Living Room TV
+      selector:
+        text:
+    key:
+      example: "720622"
+      selector:
+        text:
+    url:
+      example: https://www.youtube.com/watch?v=abcdefghijk
+      selector:
+        text:

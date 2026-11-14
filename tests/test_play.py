@@ -21,7 +21,8 @@ def calls(hass):
             raise HomeAssistantError("launch failed (404): action-button-watchFromStart not found")
     for dom, svc in [("pipup", "launch_app"), ("pipup", "send_key"), ("pipup", "seek"), ("androidtv", "adb_command"),
                      ("media_player", "play_media"), ("media_player", "media_pause"), ("media_player", "media_play"),
-                     ("media_player", "media_seek")]:
+                     ("media_player", "media_seek"), ("media_player", "volume_up"), ("media_player", "volume_mute"),
+                     ("media_player", "turn_on")]:
         hass.services.async_register(dom, svc, handler)
     return got
 
@@ -82,3 +83,19 @@ async def test_controls(hass, calls):
     hass.states.async_set("media_player.adb", "idle", {})
     with pytest.raises(HomeAssistantError):
         await play.control(hass, {"adb": "media_player.adb"}, "seek", 600)
+
+
+async def test_volume_power_and_trailer(hass, calls):
+    _pip(hass)
+    tv = {"pipup": "media_player.pip"}
+    await play.control(hass, tv, "volume_up")
+    await play.control(hass, tv, "mute")
+    await play.control(hass, tv, "power_on")
+    assert [c[1] for c in calls] == ["volume_up", "volume_mute", "turn_on"] and calls[1][2]["is_volume_muted"] is True
+    hass.states.async_set("media_player.adb", "idle", {})
+    await play.control(hass, {"adb": "media_player.adb"}, "power_off")
+    assert calls[-1][2]["command"] == "input keyevent KEYCODE_SLEEP"
+    await play.trailer(hass, tv, url="https://www.youtube.com/watch?v=abcdefghijk")
+    assert calls[-1][1] == "launch_app" and calls[-1][2]["uri"].startswith("https://www.youtube.com/")
+    with pytest.raises(HomeAssistantError):
+        await play.trailer(hass, tv, url="https://evil.example/x'; reboot")

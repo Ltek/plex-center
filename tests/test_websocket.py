@@ -59,9 +59,14 @@ class Section:
 
 
 MOVIES = Section(2, "Kids Movies", "movie", [BILL, movie(1285, "The Princess Bride", views=1), movie(7718, "The Princess Bride")])
+MOVIES.listFilterChoices = lambda field: {"genre": [NS(key="12", title="Comedy")], "decade": [NS(key="1980", title="1980s")],
+                                          "contentRating": [NS(key="PG", title="PG")]}[field]
+MOVIES.hubs = lambda: [NS(hubIdentifier="movie.similar.720622", title="Because you watched Bill & Ted", type="movie", items=lambda: [BILL])]
 TV = Section(3, "TV", "show", [SHOW])
 MUSIC = Section(4, "Music", "artist", [])
-LR_SERVER = NS(library=NS(sections=lambda: [MOVIES, TV, MUSIC]), continueWatching=lambda: [EP2, BILL],
+BILL.librarySectionTitle = "Kids Movies"
+LR_SERVER = NS(library=NS(sections=lambda: [MOVIES, TV, MUSIC], hubs=lambda: [NS(hubIdentifier="home.top", title="Top", type="mixed", items=lambda: [BILL, SHOW])]),
+               search=lambda q, limit=None: [BILL, NS(type="artist", title="x")], continueWatching=lambda: [EP2, BILL],
                fetchItem=lambda k: {715098: SHOW, 720622: BILL, 715099: SEASON}[k],
                sessions=lambda: [NS(**{**vars(BILL), "usernames": ["LivingRoom"], "players": [NS(title="Living Room", product="Plex for Android (TV)", state="playing")]})])
 
@@ -151,3 +156,23 @@ def test_links_are_safe():
     assert app_link(SID, {"type": "movie", "key": "1"}) == f"plex://libraries/{SID}/movie/x/1"
     assert app_link(SID, {"type": "movie", "key": "1'; reboot"}) is None
     assert SAFE_LINK.match(app_link(SID, {"type": "episode", "key": "5"}))
+
+
+async def test_search_filters_and_plex_hubs(ws):
+    r = await ws(type="plex_center/search", tv="living_room_tv", query="bill")
+    assert r["success"], r
+    assert r["result"][0]["library"] == "Kids Movies" and r["result"][0]["items"][0]["key"] == "720622"
+    r = await ws(type="plex_center/filters", tv="living_room_tv", library="2")
+    assert r["result"]["genres"] == [{"value": "Comedy", "title": "Comedy"}] and r["result"]["decades"][0]["value"] == "1980"
+    r = await ws(type="plex_center/plex_hubs", tv="living_room_tv", library="2")
+    assert r["result"] == [{"id": "movie.similar.720622", "title": "Because you watched Bill & Ted"}]
+    r = await ws(type="plex_center/plex_hubs", tv="living_room_tv", library="2", hub="movie.similar.720622")
+    assert r["result"]["items"][0]["key"] == "720622"
+    r = await ws(type="plex_center/plex_hubs", tv="living_room_tv", hub="home.top")
+    assert [i["key"] for i in r["result"]["items"]] == ["720622", "715098"]
+
+
+async def test_items_extra_filters(ws):
+    await ws(type="plex_center/items", tv="living_room_tv", library="2", genre="Comedy", decade=1980, content_rating="PG", max_minutes=120)
+    kw = MOVIES.searches[-1]
+    assert kw["filters"] == {"genre": "Comedy", "decade": 1980, "contentRating": "PG", "duration<<": 7200000}
