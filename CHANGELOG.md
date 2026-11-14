@@ -1,5 +1,27 @@
 # Changelog
 
+## v2026.11.14.2
+
+**Fixed**
+- **Fanart** now changes every row on the Home tab and the library grid (wide backdrops), not only upcoming-media rows.
+- **TV picker** shows buttons when set to buttons, also on narrow cards and phones (it always fell back to a dropdown).
+- **Slim controls** move to the bottom of the card when set to bottom. They were also being overwritten by the time read-out.
+
+**Changed**
+- Card editor: only one top section open at a time, and all start closed. "Look" is now **Appearance**, "Home tab" is now
+  **Home**, "Slim bar" is now **Slim controls**.
+- TVs in the editor are listed in one column; each TV's player badge glows green when reachable and red when not.
+- Layout options moved to the top of Appearance; Appearance's groups are collapsible (Layout, Card, Posters & rows,
+  Text, Colors, Row text).
+
+**New**
+- **Home**: order the sections (Watching now, Continue watching, Recently added, each sensor row, extra cards) and
+  show / hide each one.
+- **Card** look: background (theme, transparent, custom color or CSS), border width and color, corner radius, shadow
+  and padding.
+- **Text sizes in pixels** with sliders: card title, section headings, poster titles, poster lines. Older
+  large / medium / small settings convert automatically.
+
 ## v2026.11.14.1
 
 First release: the Plex Center integration and its Dashboard card.

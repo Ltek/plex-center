@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "plex_center"
-VERSION = "2026.11.14.1"
+VERSION = "2026.11.14.2"
 
 CONF_SERVER_ID = "server_id"
 CONF_TVS = "tvs"
