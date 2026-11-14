@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.14.6
+
+**New**
+- **Header layout** (new *Header* section in the card editor). Every header item (title, tabs, search, Surprise me,
+  All / Unwatched, sort, TV picker) can be:
+  - shown or hidden,
+  - put in the **Library / Home** header or the **Player** header (above the player side panel on tablets),
+  - placed in row 1, 2 or 3, on the left, in the middle or on the right,
+  - ordered, for items in the same place.
+
+  Rows with nothing to show are left out. Without the side panel, Player items appear in the Library header.
+  The default is unchanged.
+- **TV buttons as icons**: show the name, an icon, or both; pick any MDI icon per TV (default `mdi:television`).
+
 ## v2026.11.14.5
 
 **Changed**
