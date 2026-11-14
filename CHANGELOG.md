@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.14.3
+
+**Fixed**
+- **Tablet side panel** no longer runs past the bottom of the screen: the card fits the screen height, the poster
+  shrinks to fit, and the *Play on* list scrolls if there are many TVs.
+- **The library scrolls on its own** while the player / status side stays in place (the header with the tabs stays
+  at the top of the library side).
+
+**New**
+- *Now playing → Fit the card to the screen height* (on by default) and *Space above / below the card*, for the
+  dashboard header and margins.
+
 ## v2026.11.14.2
 
 **Fixed**

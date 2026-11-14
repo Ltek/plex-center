@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.14.2
+// Version: v2026.11.14.3
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.14.2';
+const BUILD_NUMBER = 'v2026.11.14.3';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -59,6 +59,8 @@ const DEFAULTS = {
   slim_position: 'bottom',
   slim_controls: 'toggle',
   panel_when: 'always',
+  fit_screen: true,
+  screen_offset: 80,
   image_style: 'poster',
   max: 12,
   date: 'mm/dd',
@@ -144,7 +146,8 @@ function haCardStyle(c) {
 function cardVars(c) {
   const v = [`--plc-poster-w:${Number(cfg(c, 'poster_width')) || 130}px`, `--plc-radius:${Number(cfg(c, 'corner_radius'))}px`,
     `--plc-title-px:${Number(cfg(c, 'title_size'))}px`, `--plc-line-px:${Number(cfg(c, 'line_size'))}px`,
-    `--plc-head-px:${Number(cfg(c, 'header_size'))}px`, `--plc-sec-px:${Number(cfg(c, 'section_size'))}px`, `--plc-pad:${Number(cfg(c, 'card_padding'))}px`];
+    `--plc-head-px:${Number(cfg(c, 'header_size'))}px`, `--plc-sec-px:${Number(cfg(c, 'section_size'))}px`, `--plc-pad:${Number(cfg(c, 'card_padding'))}px`,
+    `--plc-offset:${Number(cfg(c, 'screen_offset'))}px`];
   for (const [k, d] of Object.entries(COLOR_DEFS)) if (c[k] && d[3]) v.push(`${d[3]}:${String(c[k]).replace(/[;{}<>]/g, '')}`);
   return v.join(';');
 }
@@ -378,6 +381,14 @@ const CARD_CSS = `
 .plc-content { min-width: 0; display: flex; flex-direction: column; }
 .plc-side { align-self: start; position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; }
 .plc-side-card { position: relative; border-radius: calc(var(--plc-r) + 6px); overflow: hidden; background: #0b0b0b; color: #fff; }
+.plc.side.fit .plc-wrap { height: calc(100dvh - var(--plc-offset, 80px)); min-height: 360px; }
+.plc.side.fit .plc-side { position: static; height: 100%; min-height: 0; overflow: hidden; }
+.plc.side.fit .plc-side-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.plc.side.fit .plc-side-art { flex: 1 1 auto; min-height: 100px; aspect-ratio: auto; background-size: contain; background-color: #000; }
+.plc.side.fit .plc-side-info { flex: none; }
+.plc.side.fit .plc-playon { flex: 0 1 auto; min-height: 0; max-height: 38%; overflow-y: auto; }
+.plc.side.fit .plc-content { height: 100%; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+.plc.side.fit .plc-top { position: sticky; top: 0; z-index: 5; background: var(--ha-card-background, var(--card-background-color, #1c1c1c)); padding-bottom: 4px; }
 .plc-side-art { aspect-ratio: 2 / 3; background: rgba(255,255,255,.06) center / cover no-repeat; display: flex; align-items: center; justify-content: center;
   color: rgba(255,255,255,.45); font-size: .9em; }
 .plc-side-info { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; text-align: center; }
@@ -762,7 +773,7 @@ class PlexCenterCard extends HTMLElement {
   }
 }
 
-const STYLE_KEYS = ['poster_width', 'corner_radius', 'title_size', 'line_size', 'header_size', 'section_size', 'card_padding', 'card_radius',
+const STYLE_KEYS = ['screen_offset', 'poster_width', 'corner_radius', 'title_size', 'line_size', 'header_size', 'section_size', 'card_padding', 'card_radius',
   'card_border_width', 'card_shadow', 'box_shadows', 'text_shadows', 'layout', ...Object.keys(COLOR_DEFS)];
 function sig(node, s, paint) { if (node.dataset.sig === s) return; node.dataset.sig = s; paint(); }
 const cssUrl = (u) => String(u).replace(/['"\\()\s]/g, (c) => encodeURIComponent(c));
@@ -960,6 +971,7 @@ Object.assign(PlexCenterCard.prototype, {
     if (!force && this._npSig === s) return;
     this._npSig = s;
     this._root.classList.toggle('side', !!panel);
+    this._root.classList.toggle('fit', !!panel && !!cfg(this._c, 'fit_screen'));
     const side = this._root.querySelector('.plc-side');
     side.hidden = !panel;
     side.innerHTML = panel ? this._panelHtml(np) : '';
@@ -1260,7 +1272,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; }
@@ -1384,7 +1396,9 @@ class PlexCenterCardEditor extends HTMLElement {
     const m = this._c('now_playing');
     return `<p class="plce-hint">The side panel (tablets) shows the poster, big controls and every TV. Slim controls show whenever the panel does not.</p>
       ${this._select('now_playing', 'Now playing', [['auto', 'Automatic (side panel on tablets, slim controls on phones)'], ['panel', 'Side panel'], ['slim', 'Slim controls'], ['off', 'Off']])}
-      ${m === 'panel' || m === 'auto' ? this._select('panel_when', 'Side panel', [['always', 'Always'], ['playing', 'Only while something plays']]) : ''}
+      ${m === 'panel' || m === 'auto' ? `${this._select('panel_when', 'Side panel', [['always', 'Always'], ['playing', 'Only while something plays']])}
+        ${this._check('fit_screen', 'Fit the card to the screen height: the player stays put, the library scrolls')}
+        ${this._c('fit_screen') ? `${this._slider('screen_offset', 'Space above / below the card', 0, 300)}<p class="plce-hint">Room for the dashboard header and margins. Raise it if the card runs past the bottom of the screen.</p>` : ''}` : ''}
       ${m !== 'off' ? `${this._select('slim_position', 'Slim controls position', [['bottom', 'Bottom'], ['top', 'Top']])}
         ${this._select('slim_controls', 'Remote buttons in the slim controls', [['toggle', 'Button to show / hide them'], ['shown', 'Always shown'], ['hidden', 'Hidden']])}` : ''}`;
   }
