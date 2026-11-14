@@ -1,5 +1,20 @@
 # Changelog
 
+## v2026.11.14.10
+
+**New**
+- **Coming Soon** section, built in: upcoming movies and episodes from the Radarr / Sonarr upcoming-media sensors,
+  found automatically, merged and sorted by date. Trailers play from it. Replaces upcoming-media-card.
+- **More sections**: *+ Recently Added* and *+ Coming Soon* in *Home* add as many as you like, each with its own
+  title, order, show / hide and style.
+- **Movies, TV or both** per section, and optional **All / Movies / TV chips** in the section's header.
+- **Section header**: show or hide the title, the number of items and the icon; title in the section style
+  (all caps, accent color) or plain; collapsible on or off.
+- **Item height** for the list layout, and **size and color for each line** (lines 1–4) besides the title.
+
+**Changed**
+- "Recently added" is now titled **Recently Added**, matching **Coming Soon**.
+
 ## v2026.11.14.9
 
 **New**
