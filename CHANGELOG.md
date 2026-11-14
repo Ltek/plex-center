@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.14.5
+
+**Changed**
+- **One header row**: the card title, then the tabs (Home, Movies, TV, …) right after it on every tab, then on the
+  right the search, Surprise me, the All / Unwatched chips and the sort. The TV picker has its own row below.
+  The tabs were missing on library tabs before.
+
+**New**
+- **Surprise me** button: icon only (default), icon and text, or text only; your own text and any MDI icon
+  (default `mdi:auto-fix`).
+
 ## v2026.11.14.4
 
 **Changed**

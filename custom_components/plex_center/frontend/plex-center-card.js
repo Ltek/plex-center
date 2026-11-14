@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.14.4
+// Version: v2026.11.14.5
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.14.4';
+const BUILD_NUMBER = 'v2026.11.14.5';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -54,6 +54,9 @@ const DEFAULTS = {
   tap_action: 'details',
   start_tab: 'home',
   surprise: true,
+  surprise_style: 'icon',
+  surprise_icon: 'mdi:auto-fix',
+  surprise_label: 'Surprise me',
   lock: false,
   now_playing: 'auto',
   slim_position: 'bottom',
@@ -425,7 +428,13 @@ const CARD_CSS = `
 .plc-sess-art { aspect-ratio: 2 / 3; border-radius: 6px; background: rgba(127,127,127,.2) center / cover no-repeat; }
 .plc-sess .plc-bar-track { height: 4px; background: color-mix(in srgb, var(--primary-text-color) 18%, transparent); margin-top: 6px; }
 .plc-viewall { margin-left: auto; border: none; background: none; color: var(--secondary-text-color); font-size: .9em; letter-spacing: .04em; }
-.plc-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0 10px; }
+.plc-top { display: block; margin-bottom: 8px; }
+.plc-bar1 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.plc-bar1 .plc-tabs { margin: 0; flex: 0 1 auto; min-width: 0; }
+.plc-bar2 { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.plc-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 auto; min-width: 0; }
+.plc-tools .plc-search { flex: 1 1 160px; max-width: 280px; }
+.plc-chip ha-icon { --mdc-icon-size: 18px; }
 .plc-count { font-size: 2.6em; font-weight: 800; color: var(--plc-a); text-align: center; }
 .plc-cast { color: var(--secondary-text-color); font-size: .85em; }
 `;
@@ -555,7 +564,7 @@ class PlexCenterCard extends HTMLElement {
     this._built = true;
     this.innerHTML = `<ha-card><div class="plc"><style>${CARD_CSS}</style><div class="plc-wrap">
       <div class="plc-side" hidden></div>
-      <div class="plc-content"><div class="plc-slim-slot" data-slot="top"></div><div class="plc-top"></div><div class="plc-tabs" role="tablist"></div>
+      <div class="plc-content"><div class="plc-slim-slot" data-slot="top"></div><div class="plc-top"></div>
         <div class="plc-body"><div class="plc-main"></div><div class="plc-detail-slot"></div></div>
         <div class="plc-slim-slot" data-slot="bottom"></div></div></div>
       <div class="plc-sheet-slot"></div></div></ha-card>`;
@@ -633,19 +642,27 @@ class PlexCenterCard extends HTMLElement {
         : `<div class="plc-tvs">${tvs.map((t) => `<button class="plc-chip${t === cur ? ' on' : ''}" data-tv="${esc(t.id)}">${dot(t)}${esc(tvLabel(t))}</button>`).join('')}</div>`;
     } else if (cur && mode !== 'hidden') picker = `<span class="plc-chip on">${dot(cur)}${esc(tvLabel(cur))}</span>`;
     const title = this._c.title === undefined ? DEFAULTS.title : this._c.title;
-    const search = this._v.tab !== 'home' ? `<input class="plc-search" type="search" placeholder="Search" value="${esc(this._v.query)}" data-search>` : '';
-    const surprise = cfg(this._c, 'surprise') && this._libraries().length ? '<button class="plc-icon-btn" data-surprise title="Surprise me"><ha-icon icon="mdi:dice-5"></ha-icon></button>' : '';
-    top.innerHTML = `${title ? `<h1 class="plc-title">${esc(title)}</h1>` : ''}<span class="plc-sp"></span>${search}${surprise}${picker}`;
-  }
-
-  _renderTabs() {
-    const tabs = this._root.querySelector('.plc-tabs');
     const libs = this._libraries();
     if (this._v.tab !== 'home' && this._conf && !libs.some((l) => l.key === this._v.tab || l.title === this._v.tab)) this._v.tab = 'home';
-    const on = (k, t) => this._v.tab === k || this._v.tab === t;
-    tabs.innerHTML = [`<button class="plc-tab${this._v.tab === 'home' ? ' on' : ''}" data-tab="home">Home</button>`,
-      ...libs.map((l) => `<button class="plc-tab${on(l.key, l.title) ? ' on' : ''}" data-tab="${esc(l.key)}">${esc(l.title)}</button>`)].join('');
+    const on = (l) => this._v.tab === l.key || this._v.tab === l.title;
+    const tabs = `<div class="plc-tabs" role="tablist"><button class="plc-tab${this._v.tab === 'home' ? ' on' : ''}" data-tab="home">Home</button>${
+      libs.map((l) => `<button class="plc-tab${on(l) ? ' on' : ''}" data-tab="${esc(l.key)}">${esc(l.title)}</button>`).join('')}</div>`;
+    const inLib = this._v.tab !== 'home';
+    const v = this._v;
+    const search = inLib ? `<input class="plc-search" type="search" placeholder="Search" value="${esc(v.query)}" data-search>` : '';
+    const style = cfg(this._c, 'surprise_style'), icon = cfg(this._c, 'surprise_icon') || DEFAULTS.surprise_icon;
+    const label = cfg(this._c, 'surprise_label') || DEFAULTS.surprise_label;
+    const surprise = !cfg(this._c, 'surprise') || !libs.length ? ''
+      : style === 'icon' ? `<button class="plc-icon-btn" data-surprise title="${esc(label)}"><ha-icon icon="${esc(icon)}"></ha-icon></button>`
+        : `<button class="plc-chip" data-surprise>${style === 'both' ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ''}${esc(label)}</button>`;
+    const sorts = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
+    const tools = inLib ? `<button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button>
+      <select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>` : '';
+    top.innerHTML = `<div class="plc-bar1">${title ? `<h1 class="plc-title">${esc(title)}</h1>` : ''}${tabs}<span class="plc-sp"></span>
+      <div class="plc-tools">${search}${surprise}${tools}</div></div>${picker ? `<div class="plc-bar2">${picker}</div>` : ''}`;
   }
+
+  _renderTabs() { /* the tabs live in the header row: _renderTop() draws them */ }
 
   // ---- tiles
 
@@ -787,12 +804,7 @@ Object.assign(PlexCenterCard.prototype, {
   _renderLibrary(main) {
     const lib = this._libKey();
     if (!lib) { main.innerHTML = '<div class="plc-msg">Loading…</div>'; return; }
-    const v = this._v;
-    const sorts = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
-    main.innerHTML = `<div class="plc-tools"><button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button>
-        <button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button><span class="plc-sp"></span>
-        <select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select></div>
-      <div class="plc-gridwrap"><div class="plc-grid${cfg(this._c, 'image_style') === 'fanart' ? ' fanart' : ''}"></div><div class="plc-sentinel"></div></div>`;
+    main.innerHTML = `      <div class="plc-gridwrap"><div class="plc-grid${cfg(this._c, 'image_style') === 'fanart' ? ' fanart' : ''}"></div><div class="plc-sentinel"></div></div>`;
     this._lists.set('grid', []);
     this._page(main, 0);
   },
@@ -1094,7 +1106,7 @@ Object.assign(PlexCenterCard.prototype, {
       if (lib) { Object.assign(this._v, { tab: lib.key, sort: 'added', detail: null }); this._renderTop(); this._renderTabs(); this._renderMain(); this._renderDetail(); }
       return;
     }
-    if ((el = t('[data-unw]'))) { this._v.unwatched = el.dataset.unw === '1'; this._v.detail = null; this._renderMain(); this._renderDetail(); return; }
+    if ((el = t('[data-unw]'))) { this._v.unwatched = el.dataset.unw === '1'; this._v.detail = null; this._renderTop(); this._renderMain(); this._renderDetail(); return; }
     if ((el = t('[data-hero]'))) {
       const items = this._lists.get('continue') || [];
       this._v.hero = ((this._v.hero || 0) + Number(el.dataset.hero) + items.length) % Math.max(1, items.length);
@@ -1272,7 +1284,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; }
@@ -1383,6 +1395,9 @@ class PlexCenterCardEditor extends HTMLElement {
         <button class="plce-act" data-hvis="${esc(id)}" title="${homeVisible(this._config, id) ? 'Hide' : 'Show'}"><ha-icon icon="mdi:${homeVisible(this._config, id) ? 'eye' : 'eye-off'}"></ha-icon></button></div></div>`).join('');
     return `<p class="plce-hint">Order and show / hide the sections of the Home tab.</p><div class="plce-list">${list}</div>
       ${this._check('surprise', 'Surprise me button')}
+      ${this._c('surprise') ? `${this._select('surprise_style', 'Surprise me shows', [['icon', 'Icon only'], ['both', 'Icon and text'], ['text', 'Text only']])}
+        ${this._c('surprise_style') !== 'icon' ? this._text('surprise_label', 'Text', DEFAULTS.surprise_label) : ''}
+        ${this._c('surprise_style') !== 'text' ? `<div class="plce-row"><label class="lbl">Icon</label><ha-icon-picker data-icon="surprise_icon" value="${esc(this._c('surprise_icon'))}"></ha-icon-picker></div>` : ''}` : ''}
       <div class="plce-group">Rows from upcoming-media sensors</div>
       <p class="plce-hint">Radarr / Sonarr coming soon, Plex Recently Added… Plex items play on the TV; others offer their trailer.</p>
       <div class="plce-list">${rows.map((r, i) => `<div class="plce-item"><div class="plce-item-h"><ha-icon icon="mdi:view-carousel"></ha-icon>
@@ -1476,6 +1491,7 @@ class PlexCenterCardEditor extends HTMLElement {
       el.addEventListener('change', () => { this._set(k, Number(el.value)); this._render(); });
     });
     all('[data-reset]', (b) => b.addEventListener('click', () => { this._set(b.dataset.reset, ''); this._render(); }));
+    all('ha-icon-picker[data-icon]', (el) => el.addEventListener('value-changed', (e) => this._set(el.dataset.icon, (e.detail?.value || '').trim())));
     const checkedList = (attr, allValues) => {
       const on = [...this.querySelectorAll(`[${attr}]`)].filter((x) => x.checked).map((x) => x.getAttribute(attr));
       return on.length === allValues.length ? null : on;
