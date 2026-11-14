@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.14.15
+// Version: v2026.11.14.16
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.14.15';
+const BUILD_NUMBER = 'v2026.11.14.16';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -80,6 +80,7 @@ const DEFAULTS = {
   start_tab: 'home',
   surprise: true,
   popup_target: true,
+  local_app: 'auto',
   popup_timeout: 30,
   surprise_style: 'icon',
   surprise_icon: 'mdi:auto-fix',
@@ -1315,7 +1316,7 @@ Object.assign(PlexCenterCard.prototype, {
         ${it.cast?.length ? `<div class="plc-cast">${esc(it.cast.join(', '))}</div>` : ''}
         ${it.type === 'show' ? '<div class="plc-eps" data-eps><div class="plc-msg">Loading seasons…</div></div>' : ''}
         ${this._pickHtml()}
-        <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:play"></ha-icon>${esc(resume)} ${this._target() === 'local' ? 'in Plex Web' : `on ${esc(tvLabel(this._target()))}`}</button>
+        <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:play"></ha-icon>${esc(resume)} ${this._target() === 'local' ? 'on this device' : `on ${esc(tvLabel(this._target()))}`}</button>
           ${it.type !== 'show' && (it.offset || it.watched) ? '<button class="plc-btn" data-play="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>' : ''}` : ''}
           <button class="plc-btn" data-trailergo title="${it.trailer_key || it.trailer ? '' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer${it.trailer_key || it.trailer ? '' : ' (YouTube search)'}</button>
           ${it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<button class="plc-btn" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div></div></div>`;
@@ -1325,6 +1326,28 @@ Object.assign(PlexCenterCard.prototype, {
       catch { return; }
       if (this._v.detail === d) this._renderDetail();
     }
+  },
+
+  /** Open a title on this device: the Plex app on phones / tablets (falls back to Plex Web if it doesn't open), Plex Web on computers. */
+  _openLocal(key) {
+    const sid = String(this._conf?.server_id || '').replace(/[^A-Za-z0-9]/g, '');
+    const k = String(key || '').replace(/[^0-9]/g, '');
+    if (!sid || !k) return;
+    const meta = encodeURIComponent(`/library/metadata/${k}`);
+    const web = `https://app.plex.tv/desktop/#!/server/${sid}/details?key=${meta}`;
+    const app = `plex://libraries/${sid}/unmatched/${meta}`;
+    const pref = cfg(this._c, 'local_app');
+    const ua = navigator.userAgent || '';
+    const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) || !!window.externalApp || !!window.webkit?.messageHandlers?.getExternalAuth;
+    if (pref === 'web' || (pref === 'auto' && !mobile)) { window.open(web, '_blank', 'noopener'); return; }
+    let left = false;
+    const away = () => { if (document.visibilityState === 'hidden') left = true; };
+    document.addEventListener('visibilitychange', away);
+    window.open(app, '_blank');
+    setTimeout(() => {
+      document.removeEventListener('visibilitychange', away);
+      if (!left && pref === 'auto') window.open(web, '_blank', 'noopener');
+    }, 2000);
   },
 
   /** The popup's target: a TV, or 'local' (this device). */
@@ -1363,11 +1386,7 @@ Object.assign(PlexCenterCard.prototype, {
   async _play(it, mode) {
     const tv = this._target();
     if (!tv || !it?.key) return;
-    if (tv === 'local') {
-      const sid = this._conf?.server_id;
-      window.open(`https://app.plex.tv/desktop/#!/server/${encodeURIComponent(sid || '')}/details?key=${encodeURIComponent(`/library/metadata/${it.key}`)}`, '_blank', 'noopener');
-      return;
-    }
+    if (tv === 'local') { this._openLocal(it.type === 'episode' ? it.key : it.key); return; }
     const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : (it.show || it.title);
     this._toast(`${mode === 'restart' ? 'Starting over' : 'Playing'} ${what} on ${tvLabel(tv)}…`);
     try { await this._hass.callService('plex_center', 'play', { tv: tv.id, key: String(it.key), mode }); }
@@ -1432,10 +1451,7 @@ Object.assign(PlexCenterCard.prototype, {
     const search = `https://www.youtube.com/results?search_query=${encodeURIComponent(`${it.show || it.title} ${it.year || ''} trailer`.replace(/\s+/g, ' ').trim())}`;
     if (tgt === 'local') {
       if (it.trailer) { this._trailer(it.trailer); return; }
-      if (it.trailer_key && this._conf?.server_id) {
-        window.open(`https://app.plex.tv/desktop/#!/server/${encodeURIComponent(this._conf.server_id)}/details?key=${encodeURIComponent(`/library/metadata/${it.key}`)}`, '_blank', 'noopener');
-        return;
-      }
+      if (it.trailer_key && it.key) { this._openLocal(it.key); return; }
       window.open(search, '_blank', 'noopener');
       return;
     }
@@ -1976,6 +1992,8 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])])}
       ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}
       ${this._sub('popups', 'Details &amp; popups', `${this._check('popup_target', 'Target dropdown (a TV or this device) in details and popups')}
+        ${this._select('local_app', '"This device" opens', [['auto', 'Automatic: the Plex app on phones and tablets, Plex Web on computers'], ['app', 'The Plex app'], ['web', 'Plex Web']])}
+        <p class="plce-hint">The Plex app and Plex Web open the title's page; press Play there.</p>
         ${this._slider('popup_timeout', 'Auto-close time', 0, 300, ' s')}<p class="plce-hint">Details (full screen on phones) and popups close after this long without a press. 0 = never. A trailer playing in the card and Surprise me don't close.</p>`)}`;
   }
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.14.16
+
+**Fixed**
+- **Target: This device on a phone** now opens the title in the **Plex app** (its own link,
+  `plex://libraries/<server>/unmatched/…`). On phones, app.plex.tv dropped the title and showed its main menu. If the
+  app doesn't open within 2 s, Plex Web opens instead. Computers keep Plex Web. The app and Plex Web open the title's
+  page; press Play there.
+
+**New**
+- *Library → Details & popups → "This device" opens*: Automatic (default), the Plex app, or Plex Web.
+
 ## v2026.11.14.15
 
 **Fixed**
