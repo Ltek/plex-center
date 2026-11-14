@@ -1,5 +1,10 @@
 # Changelog
 
+## v2026.11.14.7
+
+**New**
+- **Search box width**: a slider under *Header* (100–800 px, default 280 px).
+
 ## v2026.11.14.6
 
 **New**

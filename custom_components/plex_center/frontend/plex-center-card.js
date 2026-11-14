@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.14.6
+// Version: v2026.11.14.7
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.14.6';
+const BUILD_NUMBER = 'v2026.11.14.7';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -59,6 +59,7 @@ const DEFAULTS = {
   layout: 'auto',
   tv_picker: 'chips',
   tv_label: 'name',
+  search_width: 280,
   client_choice: 'card',
   tap_action: 'details',
   start_tab: 'home',
@@ -183,7 +184,7 @@ function cardVars(c) {
   const v = [`--plc-poster-w:${Number(cfg(c, 'poster_width')) || 130}px`, `--plc-radius:${Number(cfg(c, 'corner_radius'))}px`,
     `--plc-title-px:${Number(cfg(c, 'title_size'))}px`, `--plc-line-px:${Number(cfg(c, 'line_size'))}px`,
     `--plc-head-px:${Number(cfg(c, 'header_size'))}px`, `--plc-sec-px:${Number(cfg(c, 'section_size'))}px`, `--plc-pad:${Number(cfg(c, 'card_padding'))}px`,
-    `--plc-offset:${Number(cfg(c, 'screen_offset'))}px`];
+    `--plc-offset:${Number(cfg(c, 'screen_offset'))}px`, `--plc-search-w:${Number(cfg(c, 'search_width'))}px`];
   for (const [k, d] of Object.entries(COLOR_DEFS)) if (c[k] && d[3]) v.push(`${d[3]}:${String(c[k]).replace(/[;{}<>]/g, '')}`);
   return v.join(';');
 }
@@ -469,7 +470,7 @@ const CARD_CSS = `
 .plc-hc { flex: 0 1 auto; justify-content: center; }
 .plc-hr { flex: 1 1 auto; justify-content: flex-end; }
 .plc-hrow .plc-tabs { margin: 0; min-width: 0; }
-.plc-hrow .plc-search { flex: 1 1 160px; max-width: 280px; }
+.plc-hrow .plc-search { flex: 0 1 var(--plc-search-w, 280px); width: var(--plc-search-w, 280px); max-width: 100%; min-width: 100px; }
 .plc-phead { padding: 2px 2px 0; }
 .plc-chip.icononly { padding: 6px 9px; }
 .plc-bar1 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
@@ -868,7 +869,7 @@ class PlexCenterCard extends HTMLElement {
   }
 }
 
-const STYLE_KEYS = ['screen_offset', 'poster_width', 'corner_radius', 'title_size', 'line_size', 'header_size', 'section_size', 'card_padding', 'card_radius',
+const STYLE_KEYS = ['search_width', 'screen_offset', 'poster_width', 'corner_radius', 'title_size', 'line_size', 'header_size', 'section_size', 'card_padding', 'card_radius',
   'card_border_width', 'card_shadow', 'box_shadows', 'text_shadows', 'layout', ...Object.keys(COLOR_DEFS)];
 function sig(node, s, paint) { if (node.dataset.sig === s) return; node.dataset.sig = s; paint(); }
 const cssUrl = (u) => String(u).replace(/['"\\()\s]/g, (c) => encodeURIComponent(c));
@@ -1468,6 +1469,7 @@ class PlexCenterCardEditor extends HTMLElement {
         (tablets). Each item goes in a row (up to three) and on the left, in the middle or on the right; items in the same place are shown in this
         list's order. Rows with nothing to show are left out. When the side panel isn't showing, Player items appear in the Library header.</p>
       <div class="plce-list">${rows}</div>
+      ${this._slider('search_width', 'Search box width', 100, 800)}
       ${this._config.header ? '<button class="plce-add" data-hreset>Back to the default header</button>' : ''}`;
   }
 
