@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.14.9
+
+**New**
+- **Style per Home section** for *Recently added* and each sensor row (Radarr / Sonarr coming soon, …): a *Style*
+  panel under each section in *Home*.
+  - **Layout**: a row of posters, or the **upcoming-media list**: a stack of items with the title and four lines on
+    the left, the backdrop fading in on the right, and a "new" corner flag.
+  - **Image**: poster or fanart; **Collapsible** with a header bar (icon, title, item count, start collapsed).
+  - Icon, number of items, item width, corner radius, title and line size, title / line / flag colors, item
+    background and border. Unset values follow the card's Appearance settings.
+- Recently added items now get the same lines as upcoming-media sensors: episode, added date and time,
+  SxxEyy · rating · runtime, genres; the "new" flag marks unwatched items.
+
 ## v2026.11.14.8
 
 **New**
