@@ -61,7 +61,7 @@ controls toggle) and **side panel** (tablet); Up next, Surprise me, profile lock
 Integrations panel lists what was detected (Plex, PiPup, ADB, Android TV Remote, Cast, Tautulli, Sonarr, Radarr,
 upcoming-media sensors).
 
-## Steps (each tested before the next)
+## Steps (each tested before the next): all done by v2026.11.14.15
 
 1. Integration skeleton: manifest, config flow (server pick), options (TVs ↔ users ↔ players), per-user servers.
    Tests with pytest + HA test harness or plain mocks.
@@ -72,8 +72,45 @@ upcoming-media sensors).
 
 Not planned: management of the library, Plex sign-in, notifications (automations' job).
 
-## Roadmap (later)
+## Roadmap / to-do (updated 2026-11-14, v2026.11.14.15)
 
-- **Calendar** (upcoming movies and episodes, a day at a time): look at Prismarr as the source. User's idea, 2026-11-14.
-- Optional Tautulli Active Streams rows (popular this week, recently watched by user), only if installed.
-- Per-device Plex sign-in: not planned; the integration's per-TV users cover it.
+### Done
+- Integration: no-login per-TV Plex users, TV detection + Configure page with explanations, websocket API, image proxy,
+  playback routes (PiPup `method: ok`, ADB, Plex remote control), actions `play`, `control` (incl. volume / power),
+  `play_trailer`, `mark`; search, filter choices, Plex hubs.
+- Card: Home with Watching now, Continue watching, Recently Added / Coming Soon / Plex row sections (any number; sensor
+  choice; Movies / TV filter + toggle chips; Row / Column; items to show, scroll, Auto Rotate ticker / fade with fade
+  time; header, divider, item size & shape, text & colors, info lines), Home search across libraries, library tabs
+  with order, filters (unwatched, genre, decade, rating, under 2 h) and sort, details (target TV or this device,
+  Resume / Start over, next episode, trailer with YouTube search fallback, mark watched, auto-close), now playing
+  (side panel fitting the screen, slim controls top / bottom with remote buttons, scrub, volume, power), configurable
+  header (two headers, three rows, left / middle / right, TV icons, search width), Appearance, tablet / phone layouts.
+- Old upcoming-media sensor rows migrate into sections.
+
+### To check on the user's system (built, not yet confirmed)
+- [ ] Plex's own trailer (an extra) opens and plays from its `plex://libraries/…/unmatched/…` link + Watch press.
+- [ ] *Under 2 h* filter (Plex `duration<<`).
+- [ ] Power off through PiPup: the TV may go into a standby PiPup can't wake from (seen 2026-11-13); remote needed.
+- [ ] Mark watched / unwatched refreshes everywhere for the TV's user.
+- [ ] Plex rows (hubs) list and items for managed users.
+- [ ] SHIELD (media room): PiPup + `method: ok` (only TCLs tested).
+
+### Next (recommended, in order)
+1. [ ] **Entity per TV** `media_player.<tv>_plex_center` (now playing with poster / show / episode; controls routed) and
+   **`sensor.plex_center_watching`**. Lets the Theater Movie Lighting automation use one entity per room.
+2. [ ] **"New title added" event** (`plex_center_new_title`) for notifications; replaces the Plex Recently Added sensor
+   for automations.
+3. [ ] **Health checks** in HA Repairs: PiPup too old, clicks not allowed for Plex, ADB disconnected.
+4. [ ] **Kids limit per TV** (max content rating, enforced in the integration).
+5. [ ] **Collections and playlists** as tabs or chips.
+6. [ ] **Voice** (Assist custom sentences → `plex_center.play`).
+
+### Later
+- [ ] **Calendar** (upcoming movies and episodes, a day at a time), source: Prismarr. User's idea, 2026-11-14.
+- [ ] Optional Tautulli Active Streams rows (popular this week, recently watched by user), only if installed.
+- [ ] PiPup feature request (posted): foreground app + screenshot endpoint, so ADB is no longer needed for the
+  screenshot background.
+
+### Not planned
+- Library management, Plex sign-in in the browser, notifications from the card (automations' job), Google Cast
+  playback (plays in Cast's own receiver, not the Plex app).
