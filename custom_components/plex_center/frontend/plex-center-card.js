@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.14.12
+// Version: v2026.11.14.13
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.14.12';
+const BUILD_NUMBER = 'v2026.11.14.13';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -197,7 +197,7 @@ function headerLayout(c) {
 }
 
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
-const SEC_KEYS = { show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
+const SEC_KEYS = { fade_ms: 'num', show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
@@ -222,14 +222,14 @@ function secStyle(c, id) {
     icon: s.icon || SEC_TYPE_ICON[type] || '', show_icon: s.show_icon ?? (collapsible || !!s.icon), show_title: s.show_title ?? true,
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
     show: Math.max(1, Number(s.show ?? s.max ?? (['recent', 'upcoming'].includes(type) ? 5 : cfg(c, 'max'))) || 5),
-    scroll: !!s.scroll, auto: s.auto || 'off', speed: Number(s.speed ?? (s.auto === 'fade' ? 6 : 30)),
+    scroll: !!s.scroll, auto: s.auto || 'off', speed: Number(s.speed ?? (s.auto === 'fade' ? 6 : 30)), fade_ms: Math.max(0, Number(s.fade_ms ?? 600)),
     flag: s.flag ?? cfg(c, 'flag'), list_w: Number(s.list_w ?? 340), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
     get max() { return this.total; } };
 }
 /** The section's own CSS custom properties (inline on the section; inherit the card's when unset). */
 function secVars(st) {
-  const s = st.s, clean = (v) => String(v).replace(/[;{}<>]/g, ''), v = [`--plc-li-w:${st.list_w}px`, `--plc-show:${st.show}`];
+  const s = st.s, clean = (v) => String(v).replace(/[;{}<>]/g, ''), v = [`--plc-li-w:${st.list_w}px`, `--plc-show:${st.show}`, `--plc-fade-ms:${st.fade_ms}ms`];
   if (s.item_h !== undefined) v.push(`--plc-li-h:${Number(s.item_h)}px`);
   for (const n of [1, 2, 3, 4]) {
     if (s[`l${n}_px`] !== undefined) v.push(`--plc-l${n}-px:${Number(s[`l${n}_px`])}px`);
@@ -615,7 +615,7 @@ const CARD_CSS = `
 .plc-sec-body.limit .plc-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--plc-li-w, 340px)), 1fr)); }
 .plc-sec-body.auto .plc-row, .plc-sec-body.auto .plc-list { scrollbar-width: none; }
 .plc-sec-body.auto .plc-row::-webkit-scrollbar, .plc-sec-body.auto .plc-list::-webkit-scrollbar { display: none; }
-.plc-fade { transition: opacity .6s ease; }
+.plc-fade { transition: opacity var(--plc-fade-ms, 600ms) ease; }
 .plc-fade.out { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .plc-fade { transition: none; } }
 .plc-viewall { margin-left: auto; border: none; background: none; color: var(--secondary-text-color); font-size: .9em; letter-spacing: .04em; }
@@ -1152,8 +1152,8 @@ class PlexCenterCard extends HTMLElement {
           body.innerHTML = this._sectionItems(st, items, listId, this._fadePage[id]);
           const nb = body.querySelector('.plc-fade');
           if (nb) { nb.classList.add('out'); setTimeout(() => nb.classList.remove('out'), 30); }
-        }, 600);
-      }, Math.max(2, st.speed) * 1000);
+        }, st.fade_ms);
+      }, Math.max(2, st.speed) * 1000 + st.fade_ms);
     }
   }
 
@@ -1655,13 +1655,17 @@ const EDITOR_CSS = `
         .plce-tvlist { display: flex; flex-direction: column; gap: var(--ltek-sp-1); }
         .plce-badge.ok { color: var(--ltek-c-success); border-color: var(--ltek-c-success); box-shadow: 0 0 6px color-mix(in srgb, var(--ltek-c-success) 60%, transparent); }
         .plce-badge.bad { color: var(--ltek-c-error); border-color: var(--ltek-c-error); box-shadow: 0 0 6px color-mix(in srgb, var(--ltek-c-error) 60%, transparent); }
-        .plce-sub { border-top: 1px solid var(--ltek-c-border-soft); border-radius: var(--ltek-r-ctrl); }
-        .plce-sub[open] { border: 1px solid var(--accent-color, var(--ltek-c-accent)); margin: var(--ltek-sp-1) 0; }
-        .plce-sub > summary { display: flex; align-items: center; gap: var(--ltek-sp-2); padding: var(--ltek-sp-3) var(--ltek-sp-2); cursor: pointer;
-          list-style: none; color: var(--ltek-c-accent); font-size: var(--ltek-fs-label); font-weight: var(--ltek-fw-semibold);
+        .plce-sub { border: 1px solid transparent; border-radius: var(--ltek-r-ctrl); }
+        .plce-sub + .plce-sub { border-top-color: var(--divider-color, #333); }
+        .plce-sub[open] { border-color: var(--accent-color, var(--ltek-c-accent)); margin: var(--ltek-sp-1) 0; }
+        .plce-sub[open] + .plce-sub { border-top-color: transparent; }
+        .plce-sub > summary { display: flex; align-items: center; gap: var(--ltek-sp-2); padding: 10px 2px 8px; cursor: pointer; user-select: none;
+          list-style: none; color: var(--ltek-c-accent); font-size: var(--ltek-fs-body); font-weight: var(--ltek-fw-semibold);
           text-transform: uppercase; letter-spacing: 0.04em; }
+        .plce-sub[open] > summary { padding-left: var(--ltek-sp-3); padding-right: var(--ltek-sp-3); }
         .plce-sub > summary::-webkit-details-marker { display: none; }
-        .plce-sub > summary .chev { margin-left: auto; color: #999; --mdc-icon-size: 20px; transition: transform .2s ease; transform: rotate(-90deg); }
+        .plce-sub > summary::marker { content: ""; }
+        .plce-sub > summary .chev { margin-left: auto; color: var(--ltek-c-accent); --mdc-icon-size: 22px; transition: transform .2s ease; transform: rotate(-90deg); }
         .plce-sub[open] > summary .chev { transform: none; }
         .plce-sub-body { padding: 0 var(--ltek-sp-4) var(--ltek-sp-4); }
         .plce-act { border: none; background: none; padding: 0; cursor: pointer; color: var(--ltek-c-icon); flex: none; line-height: 0; }
@@ -1883,16 +1887,17 @@ class PlexCenterCardEditor extends HTMLElement {
       ${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}
       ${sl('show', 'Items to show', 1, 20, st.show, '')}
       ${chk('scroll', 'Scroll to see more items', false)}
-      ${sel('auto', 'Auto play', [['', 'Off'], ['scroll', 'Ticker (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
+      ${sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Ticker (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
       ${st.auto === 'scroll' ? sl('speed', 'Ticker speed', 5, 200, st.speed, ' px/s') : ''}
-      ${st.auto === 'fade' ? sl('speed', 'Next set every', 2, 60, st.speed, ' s') : ''}
+      ${st.auto === 'fade' ? `${sl('speed', 'Next set every', 2, 60, st.speed, ' s')}${sl('fade_ms', 'Fade speed', 0, 3000, st.fade_ms, ' ms')}` : ''}
       ${st.scroll || st.auto !== 'off' ? sl('total', 'Items to load', st.show, 100, st.total, '') : ''}
-      ${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : ''}
-      ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
+      ${this._sub(`shape:${id}`, 'Item Size &amp; Shape', `${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show and the card\'s poster width.</p>'}
+        ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
+        ${list ? `${col('item_bg', 'Item background', '#0d0d0d', true)}${col('border_color', 'Item border', '#000000', true)}` : ''}`)}
       ${sl('title_px', 'Title size', 8, 30, this._c('title_size'))}${sl('line_px', 'Line size', 8, 24, this._c('line_size'))}
       ${col('title_color', 'Title color', '#d3d3d3')}${col('line_color', 'Line color (all lines)', '#9a9a9a')}${col('flag_color', 'Flag color', '#0099cc')}
-      ${this._sub(`lines:${id}`, 'Each line', `<p class="plce-hint">Size and color per line; unset = the values above.</p>${lineRows}`)}
-      ${list ? `${col('item_bg', 'Item background', '#0d0d0d', true)}${col('border_color', 'Item border', '#000000', true)}` : ''}`;
+      ${this._sub(`lines:${id}`, 'Info Lines', `<p class="plce-hint">Size and color per line; unset = the values above.</p>${lineRows}`)}
+`;
   }
 
   _npBody() {

@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.14.13
+
+**Changed**
+- Collapsible sub-sections in the card editor look like the other Ltek cards: uppercase title in the accent color,
+  a 22 px accent chevron on the right, and a divider line between them.
+- "Auto play" is now **Auto Rotate**, and "Each line" is now **Info Lines**.
+- A section's width, height, corner radius, item background and item border are grouped under **Item Size & Shape**.
+
+**New**
+- **Fade speed** for Auto Rotate's fade (0–3000 ms), next to how often the next set comes.
+
 ## v2026.11.14.12
 
 **New** (Recently Added and Coming Soon, in each section's style)
