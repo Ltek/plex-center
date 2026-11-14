@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.14.12
+
+**New** (Recently Added and Coming Soon, in each section's style)
+- **Items to show**, default 5. The row or column fits exactly that many.
+- **Scroll to see more items**: the rest are a scroll away (up to *Items to load*).
+- **Auto play**: *Ticker* scrolls on its own at the speed you set (px/s); *Fade* fades out the current set and
+  fades in the next one every few seconds. Both pause while the pointer is over the section, loop at the end, and
+  stay still when the device asks for reduced motion.
+
+**Fixed**
+- *Home*'s section list: each section has its own icon, and the pencil and trash icons always sit in the same
+  columns, so the icons line up from row to row.
+
 ## v2026.11.14.11
 
 **Changed**
