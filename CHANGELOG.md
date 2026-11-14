@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.14.4
+
+**Changed**
+- **Configure** (the integration's TV settings) now explains itself: a list of the TVs with their Plex user, players
+  and whether they're reachable, and when to use *Edit*, *Find new TVs*, *Add a TV by hand* and *Remove TVs*. The menu
+  showed raw names (add, detect, remove) before.
+- Every field on a TV's page has a short explanation.
+- **Find new TVs** now shows what it found and lets you pick which to add, or says that nothing new was found.
+
 ## v2026.11.14.3
 
 **Fixed**

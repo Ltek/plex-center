@@ -17,16 +17,12 @@
   "options": {
     "step": {
       "init": {
-        "title": "TVs",
-        "menu_options": {
-          "add": "Add a TV",
-          "detect": "Find new TVs",
-          "remove": "Remove TVs"
-        }
+        "title": "Plex Center TVs",
+        "description": "Plex Center plays on these TVs. Each one has the **Plex Home user** its Plex app is signed in as (the card shows that user's libraries, Continue Watching and watched marks) and the **players** that control it.\n\n{tvs}\n\n**When to use what**\n- **Edit a TV**: a TV's Plex app switched to another Plex user, a player was renamed or replaced, or a TV shows *no reachable player*.\n- **Find new TVs**: after you set up PiPup or Android TV (ADB) on another TV. Plex Center lists the players it doesn't use yet and adds the ones you pick. Existing TVs aren't changed.\n- **Add a TV by hand**: a TV that *Find new TVs* doesn't find, such as Plex Web in a browser or Plex HTPC (pick only its Plex player).\n- **Remove TVs**: a TV you no longer have, or one that shouldn't appear in the card.\n\nNothing here needs changing for day-to-day use. Close this dialog when the list is right."
       },
       "tv": {
         "title": "TV: {name}",
-        "description": "The Plex Home user is the one this TV's Plex app uses: its Continue Watching and watched marks are shown for this TV.",
+        "description": "Set the Plex user and the players for this TV. Leave a player empty if the TV doesn't have it. At least one player is needed.",
         "data": {
           "name": "Name",
           "plex_user": "Plex Home user on this TV",
@@ -36,12 +32,24 @@
           "route": "Play with"
         },
         "data_description": {
-          "plex_client": "The Plex integration's player for this TV's Plex app (now playing; Plex Web / HTPC can also be played on directly).",
-          "route": "Automatic: Plex remote control when the player accepts it, else PiPup when its click service allows Plex, else ADB."
+          "name": "Shown on the card's TV picker, and used by the plex_center.play and plex_center.control actions.",
+          "plex_user": "The user this TV's Plex app is signed in as (in the Plex app: Settings → Account / switch user). Its Continue Watching and watched marks are shown for this TV. A user with a PIN uses the server owner's view.",
+          "pipup": "The PiPup integration's media player for this TV. Recommended: it opens the title and presses Play, and gives exact seek. Needs PiPup app 0.32+ with clicks allowed for Plex.",
+          "adb": "The Android TV (ADB) integration's media player. Used to play when there is no PiPup (no exact seek), and for the TV's screenshot when nothing plays.",
+          "plex_client": "The Plex integration's player for this TV's Plex app. Gives the poster and episode while something plays. Plex Web and Plex HTPC can also be played on directly through it.",
+          "route": "Automatic: Plex remote control when the player accepts it (Plex Web, HTPC), else PiPup when its clicks allow Plex, else ADB. Pick one only if Automatic chooses wrongly."
+        }
+      },
+      "detect": {
+        "title": "New TVs found",
+        "description": "{count} TV(s) found that Plex Center doesn't use yet. Untick any you don't want; you can edit each one afterwards.",
+        "data": {
+          "add": "TVs to add"
         }
       },
       "remove": {
         "title": "Remove TVs",
+        "description": "Removed TVs disappear from the card. This doesn't change the TVs or their players in Home Assistant, and *Find new TVs* can add them again later.",
         "data": {
           "tvs": "TVs to remove"
         }
@@ -49,6 +57,9 @@
     },
     "error": {
       "no_player": "Pick at least one player (PiPup, ADB or Plex)."
+    },
+    "abort": {
+      "no_new_tvs": "No new TVs found. Every PiPup and Android TV (ADB) player is already used by a TV. Set up PiPup or ADB on the new TV first, or use *Add a TV by hand*."
     }
   },
   "selector": {

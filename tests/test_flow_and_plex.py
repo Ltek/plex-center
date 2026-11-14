@@ -48,3 +48,23 @@ def test_user_connections_switch_once_and_retry_on_401():
         return "ok"
     assert conn.call("LivingRoom", fn) == "ok"
     assert calls == [lr1, lr2]
+
+
+async def test_options_menu_labels_and_detect(hass):
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    tvs = [{"id": "lr", "name": "Living Room TV", "pipup": "media_player.lr", "plex_user": "LivingRoom"}]
+    entry = MockConfigEntry(domain=DOMAIN, data={"server_id": SID}, unique_id=SID, options={"tvs": tvs})
+    entry.add_to_hass(hass)
+    new = {"id": "play_room", "name": "Play Room", "pipup": "media_player.pr", "plex_user": "PlayRoom"}
+    with patch("custom_components.plex_center.config_flow._users", return_value=[]), \
+         patch("custom_components.plex_center.config_flow.detect_tvs", return_value=[dict(tvs[0]), new]), \
+         patch("custom_components.plex_center.async_setup_entry", return_value=True):
+        res = await hass.config_entries.options.async_init(entry.entry_id)
+        assert res["type"] is FlowResultType.MENU
+        assert res["menu_options"] == {"edit_0": "Edit Living Room TV", "detect": "Find new TVs", "add": "Add a TV by hand", "remove": "Remove TVs"}
+        assert "Living Room TV" in res["description_placeholders"]["tvs"]
+        res = await hass.config_entries.options.async_configure(res["flow_id"], {"next_step_id": "detect"})
+        assert res["type"] is FlowResultType.FORM and res["description_placeholders"]["count"] == "1"
+        res = await hass.config_entries.options.async_configure(res["flow_id"], {"add": ["0"]})
+        assert res["type"] is FlowResultType.CREATE_ENTRY
+        assert [t["id"] for t in res["data"]["tvs"]] == ["lr", "play_room"]

@@ -17,7 +17,9 @@ from homeassistant.util import slugify
 
 from .const import CONF_SERVER_ID, CONF_TVS, DOMAIN, ROUTES, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_ROUTE, TV_USER
 from .plex import PlexConnections, plex_servers
-from .tvs import detect_tvs
+from .tvs import detect_tvs, route_for
+
+ROUTE_NAMES = {"pipup": "PiPup", "adb": "ADB", "plex": "Plex remote control", "open": "PiPup (opens the title only)"}
 
 
 async def _users(hass, server_id: str) -> list[dict[str, Any]]:
@@ -88,6 +90,7 @@ class PlexCenterOptionsFlow(OptionsFlow):
         self._tvs: list[dict[str, Any]] | None = None
         self._edit: int | None = None
         self._users: list[dict[str, Any]] | None = None
+        self._found: list[dict[str, Any]] = []
 
     async def _load(self) -> None:
         if self._tvs is None:
@@ -98,12 +101,25 @@ class PlexCenterOptionsFlow(OptionsFlow):
     def _save(self) -> ConfigFlowResult:
         return self.async_create_entry(data={**self.config_entry.options, CONF_TVS: self._tvs})
 
+    def _summary(self) -> str:
+        if not self._tvs:
+            return "No TVs yet."
+        rows = []
+        for t in self._tvs:
+            players = [n for k, n in ((TV_PIPUP, "PiPup"), (TV_ADB, "ADB"), (TV_PLEX, "Plex")) if t.get(k)]
+            route = route_for(self.hass, t)
+            rows.append(f"- **{t[TV_NAME]}**: Plex user {t.get(TV_USER) or 'server owner'}; players {', '.join(players) or 'none'}; "
+                        + (f"plays with {ROUTE_NAMES.get(route, route)}" if route else "**no reachable player**"))
+        return "\n".join(rows)
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self._load()
-        opts = ["add", "detect", *[f"edit_{i}" for i in range(len(self._tvs))], *(["remove"] if self._tvs else [])]
-        return self.async_show_menu(step_id="init", menu_options={
-            **{o: o for o in opts if not o.startswith("edit_")},
-            **{f"edit_{i}": f"Edit {t[TV_NAME]}" for i, t in enumerate(self._tvs)}})
+        options = {f"edit_{i}": f"Edit {t[TV_NAME]}" for i, t in enumerate(self._tvs)}
+        options["detect"] = "Find new TVs"
+        options["add"] = "Add a TV by hand"
+        if self._tvs:
+            options["remove"] = "Remove TVs"
+        return self.async_show_menu(step_id="init", menu_options=options, description_placeholders={"tvs": self._summary()})
 
     def __getattr__(self, name: str):
         if name.startswith("async_step_edit_"):
@@ -151,15 +167,24 @@ class PlexCenterOptionsFlow(OptionsFlow):
             selector.SelectSelectorConfig(options=[{"value": t[TV_ID], "label": t[TV_NAME]} for t in self._tvs], multiple=True))}))
 
     async def async_step_detect(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Add TVs found since setup (existing ones are kept as they are)."""
+        """Show the PiPup / ADB players not used by any TV yet; add the ones picked (existing TVs are kept as they are)."""
         await self._load()
-        have = {e for t in self._tvs for e in (t.get(TV_PIPUP), t.get(TV_ADB))}
-        new = [t for t in detect_tvs(self.hass, self._users) if not ({t.get(TV_PIPUP), t.get(TV_ADB)} - {None}) & have]
+        if user_input is None:
+            have = {e for t in self._tvs for e in (t.get(TV_PIPUP), t.get(TV_ADB), t.get(TV_PLEX))}
+            self._found = [t for t in detect_tvs(self.hass, self._users) if not ({t.get(TV_PIPUP), t.get(TV_ADB)} - {None}) & have]
+            if not self._found:
+                return self.async_abort(reason="no_new_tvs")
+            opts = [{"value": str(i), "label": f"{t[TV_NAME]} ({', '.join(n for k, n in ((TV_PIPUP, 'PiPup'), (TV_ADB, 'ADB'), (TV_PLEX, 'Plex')) if t.get(k))}"
+                     f"; Plex user {t.get(TV_USER) or 'server owner'})"} for i, t in enumerate(self._found)]
+            return self.async_show_form(step_id="detect", data_schema=vol.Schema({vol.Optional("add", default=[o["value"] for o in opts]):
+                selector.SelectSelector(selector.SelectSelectorConfig(options=opts, multiple=True))}),
+                description_placeholders={"count": str(len(self._found))})
         taken = {t[TV_ID] for t in self._tvs}
-        for t in new:
+        for i in user_input.get("add", []):
+            t = dict(self._found[int(i)])
             base, n = t[TV_ID], 2
             while t[TV_ID] in taken:
                 t[TV_ID], n = f"{base}_{n}", n + 1
             taken.add(t[TV_ID])
-        self._tvs.extend(new)
+            self._tvs.append(t)
         return self._save()
