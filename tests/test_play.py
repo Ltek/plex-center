@@ -97,5 +97,9 @@ async def test_volume_power_and_trailer(hass, calls):
     assert calls[-1][2]["command"] == "input keyevent KEYCODE_SLEEP"
     await play.trailer(hass, tv, url="https://www.youtube.com/watch?v=abcdefghijk")
     assert calls[-1][1] == "launch_app" and calls[-1][2]["uri"].startswith("https://www.youtube.com/")
+    await play.trailer(hass, tv, url="https://www.youtube.com/results?search_query=Bill%20%26%20Ted%201989%20trailer")
+    assert "search_query" in calls[-1][2]["uri"]
     with pytest.raises(HomeAssistantError):
         await play.trailer(hass, tv, url="https://evil.example/x'; reboot")
+    with pytest.raises(HomeAssistantError):
+        await play.trailer(hass, tv, url="https://www.youtube.com/watch?v=x'; reboot")

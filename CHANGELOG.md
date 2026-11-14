@@ -1,5 +1,20 @@
 # Changelog
 
+## v2026.11.14.15
+
+**Fixed**
+- Auto Rotate's fade now fades **in** as slowly as it fades out (the new set used to appear at once). The setting is
+  renamed **Fade time**.
+- **Every title has a Trailer button.** Plex only knows a trailer when Plex Pass trailers are on; without one, the
+  button searches YouTube for "<title> <year> trailer".
+
+**New**
+- **Target** dropdown in a title's details and in the Resume / Start over popup: any TV, or **This device**. On this
+  device, Play opens the title in Plex Web, and a trailer plays in the card (YouTube) or opens in YouTube / Plex Web.
+  Option *Library → Details & popups → Target dropdown* (on by default).
+- **Auto-close time** for popups and the full-screen details on phones: 30 s without a press by default, 0 = never.
+  A trailer playing in the card and Surprise me stay open.
+
 ## v2026.11.14.14
 
 **New**

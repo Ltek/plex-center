@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.14.14
+// Version: v2026.11.14.15
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.14.14';
+const BUILD_NUMBER = 'v2026.11.14.15';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -79,6 +79,8 @@ const DEFAULTS = {
   tap_action: 'details',
   start_tab: 'home',
   surprise: true,
+  popup_target: true,
+  popup_timeout: 30,
   surprise_style: 'icon',
   surprise_icon: 'mdi:auto-fix',
   surprise_label: 'Surprise me',
@@ -721,7 +723,7 @@ class PlexCenterCard extends HTMLElement {
   }
   disconnectedCallback() {
     clearInterval(this._tick); clearInterval(this._poll); this._tick = this._poll = null;
-    for (const t of Object.values(this._anim || {})) clearInterval(t); this._anim = {};
+    for (const t of Object.values(this._anim || {})) clearInterval(t); this._anim = {}; clearTimeout(this._popTimer);
     this._ro?.disconnect(); this._ro = null; this._io?.disconnect();
   }
 
@@ -784,6 +786,7 @@ class PlexCenterCard extends HTMLElement {
     this._root.addEventListener('input', (e) => this._onInput(e));
     this._root.addEventListener('change', (e) => this._onChange(e));
     this._root.addEventListener('pointerdown', (e) => this._onScrub(e));
+    for (const ev of ['pointerdown', 'keydown', 'input']) this._root.addEventListener(ev, (e) => { if (e.target.closest?.('.plc-sheet, .plc-detail')) this._armPopup(); }, true);
     this._renderAll();
     this._refresh(true);
   }
@@ -1216,7 +1219,7 @@ class PlexCenterCard extends HTMLElement {
           if (!body.isConnected) return;
           body.innerHTML = this._sectionItems(st, items, listId, this._fadePage[id]);
           const nb = body.querySelector('.plc-fade');
-          if (nb) { nb.classList.add('out'); setTimeout(() => nb.classList.remove('out'), 30); }
+          if (nb) { nb.classList.add('out'); void nb.offsetWidth; setTimeout(() => nb.classList.remove('out'), 20); }
         }, st.fade_ms);
       }, Math.max(2, st.speed) * 1000 + st.fade_ms);
     }
@@ -1284,6 +1287,7 @@ Object.assign(PlexCenterCard.prototype, {
   _item(ref) { const [list, i] = String(ref || '').split('|'); return { list, i: Number(i), item: (this._lists.get(list) || [])[Number(i)] }; },
 
   async _renderDetail() {
+    this._armPopup();
     const slot = this._root.querySelector('.plc-detail-slot');
     const body = this._root.querySelector('.plc-body');
     const d = this._v.detail;
@@ -1311,12 +1315,9 @@ Object.assign(PlexCenterCard.prototype, {
         ${it.cast?.length ? `<div class="plc-cast">${esc(it.cast.join(', '))}</div>` : ''}
         ${it.type === 'show' ? '<div class="plc-eps" data-eps><div class="plc-msg">Loading seasons…</div></div>' : ''}
         ${this._pickHtml()}
-        <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:play"></ha-icon>${esc(resume)} on ${esc(tvLabel(this._pickTv || tv))}</button>
+        <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:play"></ha-icon>${esc(resume)} ${this._target() === 'local' ? 'in Plex Web' : `on ${esc(tvLabel(this._target()))}`}</button>
           ${it.type !== 'show' && (it.offset || it.watched) ? '<button class="plc-btn" data-play="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>' : ''}` : ''}
-          ${it.trailer_key ? `<button class="plc-btn" data-trailertv><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer on ${esc(tvLabel(this._pickTv || tv))}</button>` : ''}
-          ${it.trailer ? `<button class="plc-btn" data-trailertv><ha-icon icon="mdi:television-play"></ha-icon>Trailer on ${esc(tvLabel(this._pickTv || tv))}</button>
-            <button class="plc-btn" data-trailer><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer here</button>
-            <a class="plc-btn" href="${esc(it.trailer)}" target="_blank" rel="noopener"><ha-icon icon="mdi:open-in-new"></ha-icon>On this device</a>` : ''}
+          <button class="plc-btn" data-trailergo title="${it.trailer_key || it.trailer ? '' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer${it.trailer_key || it.trailer ? '' : ' (YouTube search)'}</button>
           ${it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<button class="plc-btn" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div></div></div>`;
     if (it.type === 'show') this._paintSeasons(it);
     if (key && !peek(key)) {
@@ -1326,11 +1327,17 @@ Object.assign(PlexCenterCard.prototype, {
     }
   },
 
+  /** The popup's target: a TV, or 'local' (this device). */
+  _target() { return this._pickTv === 'local' ? 'local' : (this._pickTv || this._tv()); },
+
   _pickHtml() {
     const tvs = this._tvs();
-    if (cfg(this._c, 'client_choice') !== 'ask' || tvs.length < 2 || cfg(this._c, 'lock')) return '';
-    const cur = this._pickTv || this._tv();
-    return `<label class="plc-meta">Play on <select class="plc-select" data-pick>${tvs.map((t) => `<option value="${esc(t.id)}"${t === cur ? ' selected' : ''}>${esc(tvLabel(t))}</option>`).join('')}</select></label>`;
+    if (cfg(this._c, 'lock')) return '';
+    const ask = cfg(this._c, 'client_choice') === 'ask', show = cfg(this._c, 'popup_target');
+    if (!ask && !show) return '';
+    const cur = this._target();
+    return `<label class="plc-meta plc-target">Target <select class="plc-select" data-pick>${tvs.map((t) => `<option value="${esc(t.id)}"${t === cur ? ' selected' : ''}>${esc(tvLabel(t))}</option>`).join('')}
+      <option value="local"${cur === 'local' ? ' selected' : ''}>This device</option></select></label>`;
   },
 
   async _paintSeasons(show) {
@@ -1354,8 +1361,13 @@ Object.assign(PlexCenterCard.prototype, {
   // ---- play
 
   async _play(it, mode) {
-    const tv = this._pickTv || this._tv();
+    const tv = this._target();
     if (!tv || !it?.key) return;
+    if (tv === 'local') {
+      const sid = this._conf?.server_id;
+      window.open(`https://app.plex.tv/desktop/#!/server/${encodeURIComponent(sid || '')}/details?key=${encodeURIComponent(`/library/metadata/${it.key}`)}`, '_blank', 'noopener');
+      return;
+    }
     const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : (it.show || it.title);
     this._toast(`${mode === 'restart' ? 'Starting over' : 'Playing'} ${what} on ${tvLabel(tv)}…`);
     try { await this._hass.callService('plex_center', 'play', { tv: tv.id, key: String(it.key), mode }); }
@@ -1368,7 +1380,8 @@ Object.assign(PlexCenterCard.prototype, {
     if (!it) return;
     if (cfg(this._c, 'client_choice') === 'ask' && this._tvs().length > 1 && !direct && !cfg(this._c, 'lock')) { this._openDetail(r); return; }
     if (it.offset && !direct) {
-      this._sheet(`<div class="plc-detail-body"><h2 class="plc-big">${esc(it.show || it.title)}</h2><div class="plc-meta">${esc(tvLabel(this._tv()))}</div>
+      this._pickTv = null;
+      this._sheet(`<div class="plc-detail-body"><h2 class="plc-big">${esc(it.show || it.title)}</h2>${this._pickHtml() || `<div class="plc-meta">${esc(tvLabel(this._tv()))}</div>`}
         <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Resume ${fmtTime(it.offset)}</button>
         <button class="plc-btn" data-sheetplay="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>
         <button class="plc-btn" data-close-sheet>Cancel</button></div></div>`, it);
@@ -1379,22 +1392,65 @@ Object.assign(PlexCenterCard.prototype, {
 
   _openDetail(r) {
     this._v.detail = { list: r.list, i: r.i }; this._v.season = null; this._pickTv = null;
+    this._detailItem = null;
     this._root.querySelectorAll('.plc-tile.sel').forEach((n) => n.classList.remove('sel'));
     this._renderDetail();
   },
 
-  _sheet(html, item = null) {
+  _sheet(html, item = null, autoClose = true) {
     this._sheetItem = item;
     this._root.querySelector('.plc-sheet-slot').innerHTML = `<div class="plc-sheet" data-close-sheet><div class="plc-sheet-in">${html}</div></div>`;
+    this._sheetAuto = autoClose;
+    this._armPopup();
   },
-  _closeSheet() { clearInterval(this._count); this._root.querySelector('.plc-sheet-slot').innerHTML = ''; this._sheetItem = null; },
+  _closeSheet(keepTarget = false) {
+    clearInterval(this._count); clearTimeout(this._popTimer);
+    this._root.querySelector('.plc-sheet-slot').innerHTML = ''; this._sheetItem = null;
+    if (!keepTarget) this._pickTv = null;
+    this._armPopup();
+  },
+
+  /** Popups close by themselves after popup_timeout seconds without a press (0 = never). Pressing anything in one restarts the time. */
+  _armPopup() {
+    clearTimeout(this._popTimer);
+    const secs = Number(cfg(this._c, 'popup_timeout')) || 0;
+    if (!secs || !this._root) return;
+    const sheet = this._root.querySelector('.plc-sheet');
+    const detailPopup = this._phone && this._v.detail;
+    if (!(sheet && this._sheetAuto) && !detailPopup) return;
+    this._popTimer = setTimeout(() => {
+      if (this._root.querySelector('.plc-sheet') && this._sheetAuto) { this._closeSheet(); return; }
+      if (this._phone && this._v.detail) { this._v.detail = null; this._pickTv = null; this._renderDetail(); }
+    }, secs * 1000);
+  },
+
+  /** A trailer on the popup's target. TV: Plex's own trailer in Plex, else the YouTube trailer (or a YouTube search) in
+   * the TV's YouTube app. This device: the YouTube trailer in the card, else YouTube / Plex Web in a new tab. */
+  _playTrailer(it) {
+    if (!it) return;
+    const tgt = this._target();
+    const search = `https://www.youtube.com/results?search_query=${encodeURIComponent(`${it.show || it.title} ${it.year || ''} trailer`.replace(/\s+/g, ' ').trim())}`;
+    if (tgt === 'local') {
+      if (it.trailer) { this._trailer(it.trailer); return; }
+      if (it.trailer_key && this._conf?.server_id) {
+        window.open(`https://app.plex.tv/desktop/#!/server/${encodeURIComponent(this._conf.server_id)}/details?key=${encodeURIComponent(`/library/metadata/${it.key}`)}`, '_blank', 'noopener');
+        return;
+      }
+      window.open(search, '_blank', 'noopener');
+      return;
+    }
+    if (!tgt) return;
+    this._toast(`Playing the trailer on ${tvLabel(tgt)}…`);
+    const data = it.trailer_key ? { key: String(it.key) } : { url: it.trailer || search };
+    this._hass.callService('plex_center', 'play_trailer', { tv: tgt.id, ...data }).catch((err) => this._toast(`Trailer: ${err?.message || err}`));
+  },
 
   _trailer(url) {
     const m = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{6,})/.exec(String(url || ''));
     if (!m) { window.open(url, '_blank', 'noopener'); return; }
     this._sheet(`<iframe class="plc-frame" src="https://www.youtube.com/embed/${m[1]}?autoplay=1" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
       <div class="plc-btns" style="padding:0 14px"><a class="plc-btn" href="https://www.youtube.com/watch?v=${m[1]}" target="_blank" rel="noopener">Open in YouTube</a>
-      <button class="plc-btn" data-close-sheet>Close</button></div>`);
+      <button class="plc-btn" data-close-sheet>Close</button></div>`, null, false);
   },
 
   async _surprise() {
@@ -1408,7 +1464,7 @@ Object.assign(PlexCenterCard.prototype, {
       <div class="plc-detail-body"><div class="plc-meta">${esc([it.year, it.duration ? fmtTime(it.duration) : '', (it.genres || []).join(', ')].filter(Boolean).join(' · '))}</div>
       ${it.summary ? `<div>${esc(it.summary)}</div>` : ''}<div class="plc-count">${n}</div>
       <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Play now</button>
-      <button class="plc-btn" data-surprise>Something else</button><button class="plc-btn" data-close-sheet>Not tonight</button></div></div>`, it);
+      <button class="plc-btn" data-surprise>Something else</button><button class="plc-btn" data-close-sheet>Not tonight</button></div></div>`, it, false);
     paint();
     clearInterval(this._count);
     this._count = setInterval(() => {
@@ -1580,7 +1636,7 @@ Object.assign(PlexCenterCard.prototype, {
     }
     if ((el = t('[data-qplay]'))) { e.stopPropagation(); this._quickPlay(this._item(el.dataset.qplay), el.hasAttribute('data-direct')); return; }
     if ((el = t('[data-qrestart]'))) { e.stopPropagation(); const { item } = this._item(el.dataset.qrestart); if (item) this._play(item, 'restart'); return; }
-    if ((el = t('[data-sheetplay]'))) { const it = this._sheetItem; this._closeSheet(); if (it) this._play(it, el.dataset.sheetplay === 'restart' ? 'restart' : (it.type === 'show' ? 'next' : 'play')); return; }
+    if ((el = t('[data-sheetplay]'))) { const it = this._sheetItem; this._closeSheet(true); if (it) this._play(it, el.dataset.sheetplay === 'restart' ? 'restart' : (it.type === 'show' ? 'next' : 'play')); return; }
     if (t('[data-surprise]')) { this._surprise(); return; }
     if ((el = t('[data-close-sheet]')) && (e.target === el || el.tagName === 'BUTTON')) { this._closeSheet(); return; }
     if ((el = t('[data-tv]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.tv); if (tv) this._setTv(tv); return; }
@@ -1607,16 +1663,9 @@ Object.assign(PlexCenterCard.prototype, {
       if (cfg(this._c, 'tap_action') === 'play' && r.item.key) { this._quickPlay(r, false); return; }
       this._openDetail(r); el.classList.add('sel'); return;
     }
-    if (t('[data-close]')) { this._v.detail = null; this._root.querySelectorAll('.plc-tile.sel').forEach((n) => n.classList.remove('sel')); this._renderDetail(); return; }
+    if (t('[data-close]')) { this._v.detail = null; this._pickTv = null; this._root.querySelectorAll('.plc-tile.sel').forEach((n) => n.classList.remove('sel')); this._renderDetail(); return; }
     if ((el = t('[data-play]'))) { if (this._detailItem) this._play(this._detailItem, el.dataset.play); return; }
-    if (t('[data-trailertv]')) {
-      const it = this._detailItem, tv = this._pickTv || this._tv();
-      if (!it || !tv) return;
-      this._toast(`Playing the trailer on ${tvLabel(tv)}…`);
-      this._hass.callService('plex_center', 'play_trailer', { tv: tv.id, ...(it.trailer_key ? { key: String(it.key) } : { url: it.trailer }) })
-        .catch((err) => this._toast(`Trailer: ${err?.message || err}`));
-      return;
-    }
+    if (t('[data-trailergo]')) { this._playTrailer(this._detailItem); return; }
     if ((el = t('[data-mark]'))) {
       const it = this._detailItem, tv = this._tv();
       if (!it || !tv) return;
@@ -1644,7 +1693,11 @@ Object.assign(PlexCenterCard.prototype, {
   _onChange(e) {
     const el = e.target;
     if (el.matches?.('[data-tvsel]')) { const tv = this._tvs().find((x) => x.id === el.value); if (tv) this._setTv(tv); return; }
-    if (el.matches?.('[data-pick]')) { this._pickTv = this._tvs().find((x) => x.id === el.value); this._renderDetail(); return; }
+    if (el.matches?.('[data-pick]')) {
+      this._pickTv = el.value === 'local' ? 'local' : this._tvs().find((x) => x.id === el.value);
+      if (el.closest('.plc-sheet')) { this._armPopup(); return; }
+      this._renderDetail(); return;
+    }
     if (el.matches?.('[data-sort]')) { this._v.sort = el.value; this._renderTop(); this._renderMain(); return; }
     if (el.matches?.('[data-filter]')) { this._v[el.dataset.filter] = el.value; this._v.detail = null; this._renderMain(); this._renderDetail(); return; }
     if (el.matches?.('[data-season]')) { this._v.season = el.value; if (this._detailItem) this._paintSeasons(this._detailItem); }
@@ -1921,7 +1974,9 @@ class PlexCenterCardEditor extends HTMLElement {
         <button class="plce-act" data-tdown="${i}" title="Move right"${i < all.length - 1 ? '' : ' disabled'}><ha-icon icon="mdi:arrow-down"></ha-icon></button></div></div>`).join('')}</div>
       ${this._config.tab_order ? '<button class="plce-add" data-treset>Back to the default order</button>' : ''}
       ${this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])])}
-      ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}`;
+      ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}
+      ${this._sub('popups', 'Details &amp; popups', `${this._check('popup_target', 'Target dropdown (a TV or this device) in details and popups')}
+        ${this._slider('popup_timeout', 'Auto-close time', 0, 300, ' s')}<p class="plce-hint">Details (full screen on phones) and popups close after this long without a press. 0 = never. A trailer playing in the card and Surprise me don't close.</p>`)}`;
   }
 
   _homeBody() {
@@ -2016,7 +2071,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${chk('scroll', 'Scroll to see more items', false)}
         ${sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Ticker (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
         ${st.auto === 'scroll' ? sl('speed', 'Ticker speed', 5, 200, st.speed, ' px/s') : ''}
-        ${st.auto === 'fade' ? `${sl('speed', 'Next set every', 2, 60, st.speed, ' s')}${sl('fade_ms', 'Fade speed', 0, 3000, st.fade_ms, ' ms')}` : ''}
+        ${st.auto === 'fade' ? `${sl('speed', 'Next set every', 2, 60, st.speed, ' s')}${sl('fade_ms', 'Fade time', 0, 3000, st.fade_ms, ' ms')}` : ''}
         ${st.scroll || st.auto !== 'off' ? sl('total', 'Items to load', st.show, 100, st.total, '') : ''}
         ${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}`)}
       ${sub('shape', 'Item Size &amp; Shape', `${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}

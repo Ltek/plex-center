@@ -120,7 +120,7 @@ async def trailer(hass: HomeAssistant, tv: dict[str, Any], url: str | None = Non
     if route is None:
         raise HomeAssistantError(f"{tv.get(TV_NAME) or 'This TV'} has no usable player")
     if url:
-        if not re.match(r"^https://(www\.)?(youtube\.com|youtu\.be)/[A-Za-z0-9_?=&./-]+$", url):
+        if not re.match(r"^https://(www\.)?(youtube\.com|youtu\.be)/[A-Za-z0-9_?=&./%+-]+$", url):
             raise HomeAssistantError("Only YouTube trailer links can be opened on the TV")
         if tv.get(TV_PIPUP) and hass.states.get(tv[TV_PIPUP]):
             await _svc(hass, "pipup", "launch_app", {"uri": url}, tv[TV_PIPUP])
