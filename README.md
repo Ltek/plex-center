@@ -15,7 +15,7 @@ One integration, with its Dashboard card included: no login, no tokens in the br
 | **[PiPup](https://github.com/mhoogenbosch/PiPup)** app 0.32+ on the TV, with **[ha-pipup](https://github.com/mhoogenbosch/ha-pipup)** 1.32+ | playing on Android / Google TVs, pause, seek, Stop, Home (recommended) |
 | or the **[Android TV (ADB)](https://www.home-assistant.io/integrations/androidtv/)** integration | the same without PiPup (no exact seek) |
 | optional: Plex Web / Plex HTPC | played on directly through Plex's own remote control |
-| optional: **upcoming-media sensors** | Home rows such as Radarr and Sonarr coming soon, Plex Recently Added |
+| optional: **upcoming-media sensors** (Radarr / Sonarr) | the *Coming Soon* sections, found automatically |
 
 **PiPup setup:** on each TV, turn on media session access and allow clicks in Plex (ha-pipup's gear icon →
 *Advanced install*, or `install.sh --media --click com.plexapp.android <tv-ip>`).

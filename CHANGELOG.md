@@ -1,5 +1,21 @@
 # Changelog
 
+## v2026.11.14.11
+
+**Changed**
+- **Sensor rows are merged into the sections.** *Coming Soon* has a *Sensors* choice (none ticked = automatic:
+  Radarr / Sonarr), and *Recently Added* a *Source* (Plex Center, recommended, or a sensor such as
+  `sensor.plex_recently_added`). Existing sensor rows convert on their own into Coming Soon / Recently Added
+  sections, keeping their title, place, visibility and style. The separate "Rows from upcoming-media sensors" list
+  is gone (its rows couldn't be removed from the ordered list).
+- **Movies and TV chips** in a section's header turn each kind on or off; the *All* chip is gone.
+- The style of a section opens with the **pencil** next to it in *Home*; the extra "Style" heading is gone.
+- Layout names: **Row** and **Column** (was "Row of posters" and "List (upcoming-media style)").
+
+**New**
+- **Divider line** under any section's header, or none, with its own color (default: the color of the section's
+  title).
+
 ## v2026.11.14.10
 
 **New**
