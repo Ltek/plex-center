@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.14.7
+// Version: v2026.11.14.8
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.14.7';
+const BUILD_NUMBER = 'v2026.11.14.8';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -121,7 +121,7 @@ function normalizeConfig(raw) {
     c.home_rows = c.home_rows.filter((r) => r && r.sensor).map((r) => (r.title ? { sensor: r.sensor, title: r.title } : { sensor: r.sensor }));
     if (!c.home_rows.length) delete c.home_rows;
   } else delete c.home_rows;
-  for (const k of ['libraries', 'tvs', 'home_cards', 'home_hidden']) if (!Array.isArray(c[k]) || !c[k].length) delete c[k];
+  for (const k of ['libraries', 'tvs', 'home_cards', 'home_hidden', 'tab_order']) if (!Array.isArray(c[k]) || !c[k].length) delete c[k];
   if (Array.isArray(c.header)) {
     const h = headerLayout(c);
     if (JSON.stringify(h) === JSON.stringify(DEFAULT_HEADER)) delete c.header; else c.header = h;
@@ -152,6 +152,13 @@ function headerLayout(c) {
   }
   for (const d of DEFAULT_HEADER) if (!seen.has(d.id)) out.push({ ...d });
   return out;
+}
+
+/** Tabs in the user's order: [{id: 'home'} | library]. tab_order holds 'home' and library titles; new ones are appended. */
+function tabOrder(c, libs) {
+  const all = [{ id: 'home', title: 'Home' }, ...libs.map((l) => ({ ...l, id: l.title }))];
+  const want = (Array.isArray(c.tab_order) ? c.tab_order : []).filter((id) => all.some((t) => t.id === id));
+  return [...want.map((id) => all.find((t) => t.id === id)), ...all.filter((t) => !want.includes(t.id))];
 }
 
 /** Home sections in their default order: [id, label]. Rows are keyed by their sensor. */
@@ -702,8 +709,9 @@ class PlexCenterCard extends HTMLElement {
     const sorts = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
     return {
       title: title ? `<h1 class="plc-title">${esc(title)}</h1>` : '',
-      tabs: `<div class="plc-tabs" role="tablist"><button class="plc-tab${v.tab === 'home' ? ' on' : ''}" data-tab="home">Home</button>${
-        libs.map((l) => `<button class="plc-tab${on(l) ? ' on' : ''}" data-tab="${esc(l.key)}">${esc(l.title)}</button>`).join('')}</div>`,
+      tabs: `<div class="plc-tabs" role="tablist">${tabOrder(this._c, libs).map((t) => (t.id === 'home'
+        ? `<button class="plc-tab${v.tab === 'home' ? ' on' : ''}" data-tab="home">Home</button>`
+        : `<button class="plc-tab${on(t) ? ' on' : ''}" data-tab="${esc(t.key)}">${esc(t.title)}</button>`)).join('')}</div>`,
       search: inLib ? `<input class="plc-search" type="search" placeholder="Search" value="${esc(v.query)}" data-search>` : '',
       surprise: !cfg(this._c, 'surprise') || !libs.length ? ''
         : style === 'icon' ? `<button class="plc-icon-btn" data-surprise title="${esc(label)}"><ha-icon icon="${esc(icon)}"></ha-icon></button>`
@@ -1479,6 +1487,12 @@ class PlexCenterCardEditor extends HTMLElement {
     const pick = this._config.libraries || [];
     return `<p class="plce-hint">Each TV shows what its Plex user is shared. Untick libraries this card should hide.</p>
       ${libs.length ? `<div class="plce-checks">${libs.map((l) => `<label class="plce-check"><input type="checkbox" data-lib="${esc(l.title)}"${!pick.length || pick.includes(l.title) ? ' checked' : ''}>${esc(l.title)}</label>`).join('')}</div>` : '<p class="plce-hint">Libraries appear once Plex Center has loaded.</p>'}
+      <div class="plce-group">Tab order</div>
+      <div class="plce-list">${tabOrder(this._config, libs.filter((l) => !pick.length || pick.includes(l.title))).map((t, i, all) => `<div class="plce-item"><div class="plce-item-h">
+        <ha-icon icon="${t.id === 'home' ? 'mdi:home-variant' : 'mdi:folder-play-outline'}"></ha-icon><span class="plce-name">${esc(t.title)}</span>
+        <button class="plce-act" data-tup="${i}" title="Move left"${i ? '' : ' disabled'}><ha-icon icon="mdi:arrow-up"></ha-icon></button>
+        <button class="plce-act" data-tdown="${i}" title="Move right"${i < all.length - 1 ? '' : ' disabled'}><ha-icon icon="mdi:arrow-down"></ha-icon></button></div></div>`).join('')}</div>
+      ${this._config.tab_order ? '<button class="plce-add" data-treset>Back to the default order</button>' : ''}
       ${this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])])}
       ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}`;
   }
@@ -1600,6 +1614,14 @@ class PlexCenterCardEditor extends HTMLElement {
     all('[data-hidown]', (b) => b.addEventListener('click', () => { const l = hl(), i = Number(b.dataset.hidown); [l[i + 1], l[i]] = [l[i], l[i + 1]]; putH(l); }));
     all('[data-hivis]', (b) => b.addEventListener('click', () => { const l = hl(), h = l[Number(b.dataset.hivis)]; if (h.hidden) delete h.hidden; else h.hidden = true; putH(l); }));
     all('[data-hk]', (el) => el.addEventListener('change', () => { const l = hl(), h = l[Number(el.dataset.hi)]; h[el.dataset.hk] = el.dataset.hk === 'row' ? Number(el.value) : el.value; putH(l); }));
+    const tabIds = () => { const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
+      const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
+      const pick = this._config.libraries || [];
+      return tabOrder(this._config, libs.filter((l) => !pick.length || pick.includes(l.title))).map((t) => t.id); };
+    const moveTab = (i, d) => { const o = tabIds(); const j = i + d; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; this._config.tab_order = o; this._emit(); this._render(); };
+    all('[data-tup]', (b) => b.addEventListener('click', () => moveTab(Number(b.dataset.tup), -1)));
+    all('[data-tdown]', (b) => b.addEventListener('click', () => moveTab(Number(b.dataset.tdown), 1)));
+    all('[data-treset]', (b) => b.addEventListener('click', () => { delete this._config.tab_order; this._emit(); this._render(); }));
     all('[data-hreset]', (b) => b.addEventListener('click', () => { delete this._config.header; this._emit(); this._render(); }));
     all('ha-icon-picker[data-tvicon]', (el) => el.addEventListener('value-changed', (e) => {
       const icons = { ...(this._config.tv_icons || {}) }, v = (e.detail?.value || '').trim();

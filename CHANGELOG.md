@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.14.8
+
+**New**
+- **Tab order**: under *Library → Tab order*, move Home and each library left or right. Libraries added later go
+  at the end.
+
 ## v2026.11.14.7
 
 **New**
