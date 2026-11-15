@@ -1,5 +1,24 @@
 # Changelog
 
+## v2026.11.15.25
+
+**Changed**
+- **Four screens, each with its own settings**: *Layout* has *Tablet / computer: landscape*, *Tablet / computer:
+  portrait*, *Phone: portrait* and *Phone: landscape*. The card uses the one that matches the device and how it's
+  held. Every screen sets, separately (nothing is shared or copied):
+  - Scale, **Posters across** (defaults 6 / 4 / 3 / 5; every Home row, the library grid and search), Libraries show;
+  - Header layout (the main layout, one row, or its own), Tabs (tabs / dropdown / bottom bar), **Search** (a box, or
+    an icon that opens a search bar), **TV picker** (buttons / dropdown / one button that opens a list / hidden),
+    Library filters (in the header / popover), hide the header while scrolling, swipe to change tab;
+  - Now playing (side panel on tablets / slim controls / off) and the slim controls' position.
+- "Compact" is gone: its parts (one-row header, search icon, TV button) are now separate choices.
+- **Editor order**, in two groups. *Card*: Layout, Header, Home, Now playing, Appearance. *Apps & devices*: TVs,
+  Library, Integrations found. The Header panel edits the main layout and any screen set to *its own layout*.
+- Home sections follow the screen's *Posters across*; a section can still set its own count for tablets and for
+  phones. *Items per row* and *Poster width* are replaced by *Posters across*.
+- Old settings migrate: card-wide ones (scale, libraries show, TV picker, filters, Now playing, slim position,
+  items per row) fill both tablet screens; the phone settings fill both phone screens.
+
 ## v2026.11.15.24
 
 **Changed**
