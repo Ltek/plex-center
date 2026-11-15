@@ -1,5 +1,20 @@
 # Changelog
 
+## v2026.11.14.17
+
+**Fixed**
+- **Phone header**: each header group gets its own full-width line, so the tabs are no longer squeezed and cut off
+  (they scroll sideways when there are many). Empty groups take no space.
+
+**New**
+- **Filters popover**: one *Filters* button (with the number of active filters) opens a panel with All / Unwatched,
+  sort, genre, decade, rating and *Under 2 h*, plus *Clear*; changes apply at once. *Header → Library filters*:
+  Automatic (popover on phones, inline on tablets, the default), always popover, or always inline.
+
+**Changed**
+- With the target *This device*, the button reads **Open on this device** (Plex Web and the Plex app open the
+  title's page; they can't start playback from a link).
+
 ## v2026.11.14.16
 
 **Fixed**

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.14.16
+// Version: v2026.11.14.17
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.14.16';
+const BUILD_NUMBER = 'v2026.11.14.17';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -74,6 +74,7 @@ const DEFAULTS = {
   layout: 'auto',
   tv_picker: 'chips',
   tv_label: 'name',
+  filters_mode: 'auto',
   search_width: 280,
   client_choice: 'card',
   tap_action: 'details',
@@ -625,7 +626,22 @@ const CARD_CSS = `
 .plc-main.searching > .plc-sec:not([data-sec="search"]), .plc-main.searching > .plc-cards { display: none; }
 .plc-viewall { margin-left: auto; border: none; background: none; color: var(--secondary-text-color); font-size: .9em; letter-spacing: .04em; }
 .plc-top { display: block; margin-bottom: 8px; }
-.plc-hrow { display: flex; align-items: center; gap: 10px; }
+.plc-hrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.plc.phone .plc-hrow { flex-direction: column; align-items: stretch; gap: 8px; }
+.plc.phone .plc-hl, .plc.phone .plc-hc, .plc.phone .plc-hr { flex: 1 1 auto; width: 100%; flex-wrap: nowrap; }
+.plc.phone .plc-hl:empty, .plc.phone .plc-hc:empty, .plc.phone .plc-hr:empty { display: none; }
+.plc.phone .plc-hr { justify-content: flex-start; }
+.plc.phone .plc-hrow .plc-search { flex: 1 1 auto; width: auto; max-width: none; }
+.plc.phone .plc-hrow .plc-tabs { flex: 1 1 auto; overflow-x: auto; }
+.plc-hrow .plc-tabs { flex-shrink: 0; max-width: 100%; }
+.plc-tabs .plc-tab { flex: none; }
+.plc-fbtn ha-icon { --mdc-icon-size: 18px; }
+.plc-fcount { display: inline-flex; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--plc-a); color: #fff; font-size: .75em; align-items: center; justify-content: center; }
+.plc-fpanel-h { display: flex; align-items: center; gap: 8px; }
+.plc-fgrid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; align-items: center; margin-top: 8px; }
+.plc-fgrid > label { color: var(--secondary-text-color); font-size: .9em; }
+.plc-fgrid .plc-select { width: 100%; }
+.plc-fgrid .plc-chips { margin: 0; }
 .plc-hrow + .plc-hrow { margin-top: 8px; }
 .plc-hl, .plc-hc, .plc-hr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .plc-hl { flex: 1 1 auto; justify-content: flex-start; }
@@ -869,31 +885,50 @@ class PlexCenterCard extends HTMLElement {
     const style = cfg(this._c, 'surprise_style'), icon = cfg(this._c, 'surprise_icon') || DEFAULTS.surprise_icon;
     const label = cfg(this._c, 'surprise_label') || DEFAULTS.surprise_label;
     const sorts = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
+    const pop = inLib && (cfg(this._c, 'filters_mode') === 'popover' || (cfg(this._c, 'filters_mode') === 'auto' && this._phone));
+    const active = [v.unwatched, v.genre, v.decade, v.rating, v.short, v.sort && v.sort !== 'title'].filter(Boolean).length;
+    const filterBtn = `<button class="plc-chip plc-fbtn${active ? ' on' : ''}" data-fpop><ha-icon icon="mdi:filter-variant"></ha-icon>Filters${active ? ` <span class="plc-fcount">${active}</span>` : ''}</button>`;
     return {
       title: title ? `<h1 class="plc-title">${esc(title)}</h1>` : '',
       tabs: `<div class="plc-tabs" role="tablist">${tabOrder(this._c, libs).map((t) => (t.id === 'home'
         ? `<button class="plc-tab${v.tab === 'home' ? ' on' : ''}" data-tab="home">Home</button>`
         : `<button class="plc-tab${on(t) ? ' on' : ''}" data-tab="${esc(t.key)}">${esc(t.title)}</button>`)).join('')}</div>`,
       search: `<input class="plc-search" type="search" placeholder="${inLib ? 'Search' : 'Search all libraries'}" value="${esc(v.query)}" data-search>`,
-      more: inLib ? this._moreFilters() : '',
+      more: inLib && !pop ? this._moreFilters() : '',
       surprise: !cfg(this._c, 'surprise') || !libs.length ? ''
         : style === 'icon' ? `<button class="plc-icon-btn" data-surprise title="${esc(label)}"><ha-icon icon="${esc(icon)}"></ha-icon></button>`
           : `<button class="plc-chip" data-surprise>${style === 'both' ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ''}${esc(label)}</button>`,
-      filters: inLib ? `<button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button>` : '',
-      sort: inLib ? `<select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>` : '',
+      filters: !inLib ? '' : pop ? filterBtn : `<button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button>`,
+      sort: inLib && !pop ? `<select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>` : '',
       tvs: picker,
     };
   }
 
+  /** The Filters popover: every library filter and the sort in one panel; changes apply at once. */
+  _filtersPopover() {
+    const v = this._v;
+    const sorts = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
+    this._sheet(`<div class="plc-detail-body plc-fpanel"><div class="plc-fpanel-h"><h2 class="plc-big">Filters</h2><span class="plc-sp"></span>
+        <button class="plc-btn" data-fclear>Clear</button><button class="plc-btn main" data-close-sheet>Done</button></div>
+      <div class="plc-fgrid"><label>Show</label><div class="plc-chips"><button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button></div>
+        <label>Sort</label><select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>
+        ${this._moreFilters(true)}</div></div>`, null, false);
+  }
+
   /** Genre / decade / content rating selects and an "Under 2 h" chip for the current library. */
-  _moreFilters() {
+  _moreFilters(labelled = false) {
     const tv = this._tv(), lib = this._libKey();
     if (!tv || !lib) return '';
     const key = `filters:${tv.id}:${lib}`, f = peek(key);
-    if (!f) { cached(this._hass, key, REFRESH_MS * 10, () => ws(this._hass, 'filters', { tv: tv.id, library: lib })).then(() => this._renderTop()).catch(() => {}); return ''; }
+    if (!f) { cached(this._hass, key, REFRESH_MS * 10, () => ws(this._hass, 'filters', { tv: tv.id, library: lib })).then(() => { this._renderTop(); if (labelled && this._root.querySelector('.plc-fpanel')) this._filtersPopover(); }).catch(() => {}); return labelled ? '<label></label><div class="plc-msg">Loading…</div>' : ''; }
     const v = this._v;
     const sel = (k, label, list) => (list?.length ? `<select class="plc-select" data-filter="${k}"><option value="">${label}</option>${
       list.map((o) => `<option value="${esc(o.value)}"${String(v[k] ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.title)}</option>`).join('')}</select>` : '');
+    if (labelled) {
+      const row = (k, label, list) => (list?.length ? `<label>${label}</label>${sel(k, `Any ${label.toLowerCase()}`, list)}` : '');
+      return `${row('genre', 'Genre', f.genres)}${row('decade', 'Decade', f.decades)}${row('rating', 'Rating', f.content_ratings)}${
+        f.type === 'movie' ? `<label>Length</label><div class="plc-chips"><button class="plc-chip${v.short ? ' on' : ''}" data-short>Under 2 h</button></div>` : ''}`;
+    }
     return `${sel('genre', 'Genre', f.genres)}${sel('decade', 'Decade', f.decades)}${sel('rating', 'Rating', f.content_ratings)}${
       f.type === 'movie' ? `<button class="plc-chip${v.short ? ' on' : ''}" data-short>Under 2 h</button>` : ''}`;
   }
@@ -1316,7 +1351,7 @@ Object.assign(PlexCenterCard.prototype, {
         ${it.cast?.length ? `<div class="plc-cast">${esc(it.cast.join(', '))}</div>` : ''}
         ${it.type === 'show' ? '<div class="plc-eps" data-eps><div class="plc-msg">Loading seasons…</div></div>' : ''}
         ${this._pickHtml()}
-        <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:play"></ha-icon>${esc(resume)} ${this._target() === 'local' ? 'on this device' : `on ${esc(tvLabel(this._target()))}`}</button>
+        <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:${this._target() === 'local' ? 'open-in-new' : 'play'}"></ha-icon>${this._target() === 'local' ? 'Open on this device' : `${esc(resume)} on ${esc(tvLabel(this._target()))}`}</button>
           ${it.type !== 'show' && (it.offset || it.watched) ? '<button class="plc-btn" data-play="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>' : ''}` : ''}
           <button class="plc-btn" data-trailergo title="${it.trailer_key || it.trailer ? '' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer${it.trailer_key || it.trailer ? '' : ' (YouTube search)'}</button>
           ${it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<button class="plc-btn" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div></div></div>`;
@@ -1666,8 +1701,13 @@ Object.assign(PlexCenterCard.prototype, {
       if (lib) { Object.assign(this._v, { tab: lib.key, sort: 'added', detail: null }); this._renderTop(); this._renderTabs(); this._renderMain(); this._renderDetail(); }
       return;
     }
-    if (t('[data-short]')) { this._v.short = !this._v.short; this._v.detail = null; this._renderTop(); this._renderMain(); this._renderDetail(); return; }
-    if ((el = t('[data-unw]'))) { this._v.unwatched = el.dataset.unw === '1'; this._v.detail = null; this._renderTop(); this._renderMain(); this._renderDetail(); return; }
+    if (t('[data-fpop]')) { this._filtersPopover(); return; }
+    if (t('[data-fclear]')) {
+      Object.assign(this._v, { unwatched: false, genre: '', decade: '', rating: '', short: false, sort: 'title', detail: null });
+      this._renderTop(); this._renderMain(); this._renderDetail(); this._filtersPopover(); return;
+    }
+    if (t('[data-short]')) { this._v.short = !this._v.short; this._v.detail = null; this._renderTop(); this._renderMain(); this._renderDetail(); if (this._root.querySelector('.plc-fpanel')) this._filtersPopover(); return; }
+    if ((el = t('[data-unw]'))) { this._v.unwatched = el.dataset.unw === '1'; this._v.detail = null; this._renderTop(); this._renderMain(); if (this._root.querySelector('.plc-fpanel')) this._filtersPopover(); this._renderDetail(); return; }
     if ((el = t('[data-hero]'))) {
       const items = this._lists.get('continue') || [];
       this._v.hero = ((this._v.hero || 0) + Number(el.dataset.hero) + items.length) % Math.max(1, items.length);
@@ -1715,7 +1755,7 @@ Object.assign(PlexCenterCard.prototype, {
       this._renderDetail(); return;
     }
     if (el.matches?.('[data-sort]')) { this._v.sort = el.value; this._renderTop(); this._renderMain(); return; }
-    if (el.matches?.('[data-filter]')) { this._v[el.dataset.filter] = el.value; this._v.detail = null; this._renderMain(); this._renderDetail(); return; }
+    if (el.matches?.('[data-filter]')) { this._v[el.dataset.filter] = el.value; this._v.detail = null; this._renderTop(); this._renderMain(); this._renderDetail(); return; }
     if (el.matches?.('[data-season]')) { this._v.season = el.value; if (this._detailItem) this._paintSeasons(this._detailItem); }
   },
 });
@@ -1973,6 +2013,7 @@ class PlexCenterCardEditor extends HTMLElement {
         (tablets). Each item goes in a row (up to three) and on the left, in the middle or on the right; items in the same place are shown in this
         list's order. Rows with nothing to show are left out. When the side panel isn't showing, Player items appear in the Library header.</p>
       <div class="plce-list">${rows}</div>
+      ${this._select('filters_mode', 'Library filters', [['auto', 'Automatic: a Filters popover on phones, inline on tablets'], ['popover', 'Always in a Filters popover'], ['inline', 'Always inline in the header']])}
       ${this._slider('search_width', 'Search box width', 100, 800)}
       ${this._config.header ? '<button class="plce-add" data-hreset>Back to the default header</button>' : ''}`;
   }
