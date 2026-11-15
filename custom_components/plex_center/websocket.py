@@ -35,7 +35,7 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 @callback
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
-    for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs):
+    for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
@@ -162,6 +162,26 @@ async def ws_items(hass: HomeAssistant, connection, msg) -> None:
         items = sec.search(**kw)
         return {"library": str(sec.key), "start": msg["start"], "items": [item_dict(i, sign) for i in items],
                 "more": len(items) >= msg["size"]}
+
+    await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/letters", vol.Optional("entry_id"): str, vol.Optional("tv"): str,
+                                  vol.Required("library"): str})
+@websocket_api.async_response
+async def ws_letters(hass: HomeAssistant, connection, msg) -> None:
+    """First letters of a library's titles with how many titles start with each (for the A-Z jump bar)."""
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+
+    def fetch(server):
+        sec = _section(server, msg["library"])
+        out, start = [], 0
+        for fc in sec.firstCharacter():
+            size = int(getattr(fc, "size", 0) or 0)
+            out.append({"letter": str(getattr(fc, "title", "") or getattr(fc, "key", "")), "size": size, "start": start})
+            start += size
+        return {"library": str(sec.key), "letters": out}
 
     await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
 

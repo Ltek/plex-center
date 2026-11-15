@@ -29,9 +29,11 @@ def episode(key, title, season, ep, offset=0):
 
 
 EP2 = episode(715101, "The Target", 1, 2, offset=1200000)
+EP1 = episode(715100, "The End", 1, 1)
 BILL = movie(720622, "Bill & Ted's Excellent Adventure", offset=786000, day=3)
 SEASON = NS(ratingKey=715099, type="season", title="Season 1", index=1, parentTitle="Fallout", parentRatingKey=715098, leafCount=8,
-            viewedLeafCount=1, thumb=None, art=None, _server=SERVER, episodes=lambda: [episode(715100, "The End", 1, 1), EP2])
+            viewedLeafCount=1, thumb=None, art=None, _server=SERVER, episodes=lambda: [EP1, EP2])
+EP1.season = lambda: SEASON
 SHOW = NS(ratingKey=715098, type="show", title="Fallout", year=2024, leafCount=16, viewedLeafCount=1, thumb="/library/metadata/715098/thumb/1",
           art=None, _server=SERVER, seasons=lambda: [SEASON], onDeck=lambda: EP2, roles=[], directors=[])
 
@@ -61,6 +63,10 @@ class Section:
 MOVIES = Section(2, "Kids Movies", "movie", [BILL, movie(1285, "The Princess Bride", views=1), movie(7718, "The Princess Bride")])
 MOVIES.listFilterChoices = lambda field: {"genre": [NS(key="12", title="Comedy")], "decade": [NS(key="1980", title="1980s")],
                                           "contentRating": [NS(key="PG", title="PG")]}[field]
+MOVIES.firstCharacter = lambda: [NS(title="B", size=1), NS(title="T", size=2)]
+BILL.media = [NS(videoResolution="4k", audioChannels=8, parts=[NS(videoStreams=lambda: [NS(DOVIPresent=True)],
+                                                                  audioStreams=lambda: [NS(displayTitle="TrueHD Atmos 7.1")])])]
+BILL.audienceRating, BILL.audienceRatingImage = 9.1, "rottentomatoes://image.rating.upright"
 MOVIES.hubs = lambda: [NS(hubIdentifier="movie.similar.720622", title="Because you watched Bill & Ted", type="movie", items=lambda: [BILL])]
 TV = Section(3, "TV", "show", [SHOW])
 MUSIC = Section(4, "Music", "artist", [])
@@ -176,3 +182,13 @@ async def test_items_extra_filters(ws):
     await ws(type="plex_center/items", tv="living_room_tv", library="2", genre="Comedy", decade=1980, content_rating="PG", max_minutes=120)
     kw = MOVIES.searches[-1]
     assert kw["filters"] == {"genre": "Comedy", "decade": 1980, "contentRating": "PG", "duration<<": 7200000}
+
+
+async def test_details_badges_ratings_next_episode_and_letters(ws):
+    m = await ws(type="plex_center/item", tv="living_room_tv", key="720622")
+    assert m["result"]["badges"] == ["4K", "Dolby Vision", "Atmos"]
+    assert m["result"]["ratings"] == [{"source": "Rotten Tomatoes", "kind": "audience", "value": 9.1, "fresh": True}]
+    from custom_components.plex_center.media import details
+    assert details(EP1)["next"]["key"] == "715101"
+    m = await ws(type="plex_center/letters", tv="living_room_tv", library="2")
+    assert m["result"]["letters"] == [{"letter": "B", "size": 1, "start": 0}, {"letter": "T", "size": 2, "start": 1}]

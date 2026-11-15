@@ -108,6 +108,17 @@ def details(item, sign=None) -> dict[str, Any]:
         trailer = None
     if trailer is not None:
         d["trailer_key"] = str(trailer.ratingKey)
+    if badges := _badges(item):
+        d["badges"] = badges
+    if ratings := _ratings(item):
+        d["ratings"] = ratings
+    if d["type"] == "episode":
+        try:
+            nxt = _next_episode(item)
+        except Exception:  # noqa: BLE001 - best effort
+            nxt = None
+        if nxt is not None:
+            d["next"] = item_dict(nxt, sign)
     if d["type"] == "show":
         d["seasons"] = [item_dict(s, sign) for s in item.seasons()]
         try:
@@ -119,3 +130,72 @@ def details(item, sign=None) -> dict[str, Any]:
     elif d["type"] == "season":
         d["episodes"] = [item_dict(e, sign) for e in item.episodes()]
     return {k: v for k, v in d.items() if v not in (None, "", [])}
+
+
+def _badges(item) -> list[str]:
+    """4K / HD, HDR / Dolby Vision, Atmos / 5.1 / 7.1 from the first media version (best effort)."""
+    out: list[str] = []
+    try:
+        m = (getattr(item, "media", None) or [None])[0]
+        if m is None:
+            return out
+        res = str(getattr(m, "videoResolution", "") or "").lower()
+        if res in ("4k", "2160"):
+            out.append("4K")
+        elif res in ("1080", "720"):
+            out.append("HD")
+        part = (getattr(m, "parts", None) or [None])[0]
+        vids = part.videoStreams() if part is not None and hasattr(part, "videoStreams") else []
+        auds = part.audioStreams() if part is not None and hasattr(part, "audioStreams") else []
+        v = vids[0] if vids else None
+        if v is not None and getattr(v, "DOVIPresent", False):
+            out.append("Dolby Vision")
+        elif v is not None and str(getattr(v, "colorTrc", "") or "").lower() in ("smpte2084", "arib-std-b67"):
+            out.append("HDR")
+        a = auds[0] if auds else None
+        title = str(getattr(a, "displayTitle", "") or getattr(a, "extendedDisplayTitle", "") or "") if a is not None else ""
+        ch = getattr(m, "audioChannels", None)
+        if "atmos" in title.lower():
+            out.append("Atmos")
+        elif ch and int(ch) >= 8:
+            out.append("7.1")
+        elif ch and int(ch) >= 6:
+            out.append("5.1")
+    except Exception:  # noqa: BLE001 - media info is optional
+        return out
+    return out
+
+
+def _ratings(item) -> list[dict[str, Any]]:
+    """Critic and audience ratings with their source (IMDb, Rotten Tomatoes, TMDB), as Plex shows them."""
+    src = {"imdb": "IMDb", "rottentomatoes": "Rotten Tomatoes", "themoviedb": "TMDB"}
+    out = []
+    for attr, img_attr, kind in (("rating", "ratingImage", "critic"), ("audienceRating", "audienceRatingImage", "audience")):
+        val, img = getattr(item, attr, None), str(getattr(item, img_attr, "") or "")
+        if val in (None, "") or not img:
+            continue
+        name = src.get(img.split("://", 1)[0], "")
+        if not name:
+            continue
+        r = {"source": name, "kind": kind, "value": float(val)}
+        if name == "Rotten Tomatoes":
+            r["fresh"] = "ripe" in img or "upright" in img
+        out.append(r)
+    return out
+
+
+def _next_episode(ep):
+    """The episode after this one: the next in its season, else the first of the next season."""
+    season = ep.season()
+    eps = sorted(season.episodes(), key=lambda e: e.index or 0)
+    later = [e for e in eps if (e.index or 0) > (ep.index or 0)]
+    if later:
+        return later[0]
+    show = ep.show()
+    seasons = sorted(show.seasons(), key=lambda s: s.index or 0)
+    for s in seasons:
+        if (s.index or 0) > (season.index or 0):
+            nxt = sorted(s.episodes(), key=lambda e: e.index or 0)
+            if nxt:
+                return nxt[0]
+    return None

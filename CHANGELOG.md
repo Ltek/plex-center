@@ -1,5 +1,26 @@
 # Changelog
 
+## v2026.11.15.21
+
+**New**
+- **Episode picker**: seasons as chips (with a tick or "3/8 watched"), and each episode as a row with its still,
+  number, title, length, how much is watched, a two-line summary, a progress bar and a watched tick. Tap the still
+  to play or resume; *Start over* on started or watched episodes. The next episode to watch is outlined.
+- **Details header**: the backdrop with the poster, title, ratings (IMDb, Rotten Tomatoes critic 🍅 / audience 🍿,
+  TMDB, as Plex has them) and video / audio badges (4K, HD, HDR, Dolby Vision, Atmos, 7.1, 5.1).
+- **Up next**: near the end of an episode (default the last 2 minutes), Now playing and the slim bar show the next
+  episode with a countdown, *Play next* and *Stop after this* (stops playback when the episode ends). Optional
+  auto-play for when the Plex app's own auto-play is off.
+- **A–Z jump bar** beside A → Z libraries (hidden while searching or filtering).
+- **List view**: a *Grid / list* button in the header (and in the Filters popover); the list shows a small poster,
+  title, year · rating · length and two lines of summary. *Libraries show* sets the default.
+- **Recent searches** under the search box when it's focused and empty (saved on Enter or when you open a result;
+  last 8, with *Clear*).
+- **Remembered on each device**: the tab, sort, filters and view come back the next time the dashboard opens.
+
+**Integration**
+- Details carry `badges`, `ratings`, and `next` for episodes; new websocket command `plex_center/letters`.
+
 ## v2026.11.15.20
 
 **Fixed**

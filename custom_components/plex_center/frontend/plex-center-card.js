@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.20
+// Version: v2026.11.15.21
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.20';
+const BUILD_NUMBER = 'v2026.11.15.21';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -46,18 +46,19 @@ const COLOR_DEFS = {
 const SIZE_PX = { title_size: { large: 17, medium: 14, small: 12 }, line_size: { large: 14, medium: 12, small: 11 } };
 const SHADOWS = { none: 'none', soft: '0 2px 8px rgba(0,0,0,.25)', strong: '0 8px 28px rgba(0,0,0,.55)' };
 const HEADER_ITEMS = [['title', 'Title'], ['tabs', 'Tabs (Home and libraries)'], ['search', 'Search'], ['surprise', 'Surprise me'],
-  ['filters', 'All / Unwatched'], ['more', 'Genre / decade / rating / length'], ['sort', 'Sort'], ['tvs', 'TV picker']];
+  ['filters', 'All / Unwatched'], ['more', 'Genre / decade / rating / length'], ['sort', 'Sort'], ['view', 'Grid / list switch'], ['tvs', 'TV picker']];
 const DEFAULT_HEADER = [
   { id: 'title', section: 'library', row: 1, align: 'left' }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   { id: 'filters', section: 'library', row: 1, align: 'right' }, { id: 'more', section: 'library', row: 1, align: 'right' },
-  { id: 'sort', section: 'library', row: 1, align: 'right' },
+  { id: 'sort', section: 'library', row: 1, align: 'right' }, { id: 'view', section: 'library', row: 1, align: 'right' },
   { id: 'tvs', section: 'library', row: 2, align: 'left' }];
 const DEFAULT_HEADER_PHONE = [
   { id: 'title', section: 'library', row: 1, align: 'left', hidden: true }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   { id: 'filters', section: 'library', row: 1, align: 'right' }, { id: 'more', section: 'library', row: 1, align: 'right' },
-  { id: 'sort', section: 'library', row: 1, align: 'right' }, { id: 'tvs', section: 'library', row: 1, align: 'right' }];
+  { id: 'sort', section: 'library', row: 1, align: 'right' }, { id: 'view', section: 'library', row: 1, align: 'right', hidden: true },
+  { id: 'tvs', section: 'library', row: 1, align: 'right' }];
 const ALIGNS = ['left', 'center', 'right'];
 const HOME_BUILTIN = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['recent', 'Recently Added'], ['soon', 'Coming Soon']];
 const SEC_TYPE_TITLE = { recent: 'Recently Added', upcoming: 'Coming Soon', plexhub: 'Plex row' };
@@ -92,6 +93,13 @@ const DEFAULTS = {
   preset_landscape_scale: 110,
   after_play: 'nowplaying',
   phone_across: 3,
+  library_view: 'grid',
+  jump_bar: true,
+  remember_view: true,
+  recent_searches: true,
+  up_next: true,
+  up_next_secs: 120,
+  up_next_autoplay: false,
   preset_portrait_across: 3,
   preset_landscape_across: 5,
   search_width: 280,
@@ -316,6 +324,16 @@ function haCardStyle(c) {
   return o.join(';');
 }
 
+const SAVED_KEYS = ['tab', 'sort', 'unwatched', 'genre', 'decade', 'rating', 'short', 'view'];
+const pickSaved = (v) => Object.fromEntries(SAVED_KEYS.filter((k) => v[k] !== undefined && v[k] !== null).map((k) => [k, v[k]]));
+const RECENT_KEY = 'plc-recent-searches';
+function recentSearches() { try { const a = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(a) ? a.filter((x) => typeof x === 'string').slice(0, 8) : []; } catch { return []; } }
+function addRecent(q) {
+  q = String(q || '').trim();
+  if (q.length < 2) return;
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify([q, ...recentSearches().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 8))); } catch { /* */ }
+}
+
 /** Phone preset: the most compact header, and a larger display, by orientation (only on phone-sized screens). */
 function presetFor(c, portrait) {
   return { layout: 'phone', phone_compact: true, phone_header: true, phone_tabs: portrait ? 'dropdown' : 'tabs', hide_on_scroll: true,
@@ -533,6 +551,9 @@ const CARD_CSS = `
 .plc-detail { border-radius: calc(var(--plc-r) + 4px); background: var(--plc-bg2); overflow: hidden; align-self: start; position: sticky; top: 0; }
 .plc-detail-img { aspect-ratio: 16 / 10; background: center / cover no-repeat; position: relative; }
 .plc-detail-img .plc-big { position: absolute; left: 14px; right: 14px; bottom: 12px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
+.plc-detail-img::after { content: ''; position: absolute; inset: 40% 0 0 0; background: linear-gradient(transparent, rgba(0,0,0,.75)); pointer-events: none; }
+.plc-detail-head { z-index: 1; }
+.plc-detail-close { z-index: 2; }
 .plc-detail-body { padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
 .plc-detail-close { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.55); border: none; color: #fff; }
 .plc.phone .plc-detail { position: fixed; inset: 0; z-index: 8; border-radius: 0; overflow-y: auto; background: var(--card-background-color, var(--ha-card-background, #1c1c1c)); }
@@ -683,6 +704,59 @@ const CARD_CSS = `
 .plc-hrow .plc-tabs { flex-shrink: 0; max-width: 100%; }
 .plc-tabs .plc-tab { flex: none; }
 .plc-fbtn ha-icon { --mdc-icon-size: 18px; }
+/* details header */
+.plc-detail-head { position: absolute; left: 14px; right: 14px; bottom: 12px; display: flex; gap: 12px; align-items: flex-end; }
+.plc-detail-poster { flex: none; width: 84px; aspect-ratio: 2 / 3; border-radius: 6px; background: #222 center / cover no-repeat; box-shadow: 0 4px 14px rgba(0,0,0,.6); }
+.plc-detail-ttl { min-width: 0; }
+.plc-detail-head .plc-big { position: static; margin: 0; }
+.plc-rates { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.plc-rate, .plc-av { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 5px; font-size: .78em; background: rgba(0,0,0,.55); color: #fff; }
+.plc-rate b { color: #f5c518; font-weight: 700; }
+.plc-av { border: 1px solid rgba(255,255,255,.5); background: rgba(0,0,0,.35); font-weight: 600; letter-spacing: .03em; }
+/* episode picker */
+.plc-seasons { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+.plc-seasons .plc-chip { flex: none; }
+.plc-seasons ha-icon { --mdc-icon-size: 15px; }
+.plc-seasons small { opacity: .7; }
+.plc-ep { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--divider-color, #333); }
+.plc-ep:last-child { border-bottom: none; }
+.plc-ep.next .plc-ep-img { outline: 2px solid var(--plc-a); }
+.plc-ep.seen .plc-ep-txt { opacity: .7; }
+.plc-ep-img { position: relative; flex: none; width: 112px; aspect-ratio: 16 / 9; border: none; padding: 0; border-radius: 6px; background: #222 center / cover no-repeat; color: #fff; cursor: pointer; overflow: hidden; }
+.plc-ep-img > ha-icon { position: absolute; inset: 0; margin: auto; width: 30px; height: 30px; --mdc-icon-size: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: rgba(0,0,0,.5); }
+.plc-ep-txt { flex: 1 1 auto; min-width: 0; }
+.plc-ep .plc-watched { top: 3px; right: 3px; }
+.plc-icon-gap { flex: none; width: 36px; }
+.plc.phone .plc-ep-img { width: 96px; }
+/* Up next */
+.plc-upnext { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; padding: 10px; border-radius: var(--plc-radius, 10px); background: rgba(127,127,127,.12); border-left: 3px solid var(--plc-a); }
+.plc-upnext.compact { margin-top: 8px; padding: 6px 8px; width: 100%; box-sizing: border-box; }
+.plc-upnext-img { flex: none; width: 96px; aspect-ratio: 16 / 9; border-radius: 6px; background: #222 center / cover no-repeat; }
+.plc-upnext-txt { flex: 1 1 140px; min-width: 0; }
+.plc-upnext-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.plc-btn.on { border-color: var(--plc-a); color: var(--plc-a); }
+/* list view */
+.plc-grid.list { grid-template-columns: minmax(0, 1fr) !important; gap: 8px; }
+.plc-lrow { position: relative; display: flex; gap: 12px; align-items: stretch; width: 100%; padding: 6px; border: none; border-radius: var(--plc-radius, 10px);
+  background: rgba(127,127,127,.08); color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.plc-lrow.sel { outline: 2px solid var(--plc-a); }
+.plc-lrow-img { position: relative; flex: none; width: 64px; aspect-ratio: 2 / 3; border-radius: 6px; background: #222 center / cover no-repeat; overflow: hidden; }
+.plc-lrow-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding-right: 48px; }
+.plc-lrow-sum { color: var(--secondary-text-color); font-size: .82em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.plc-lrow .plc-play { top: 50%; bottom: auto; transform: translateY(-50%); }
+.plc-lrow .plc-watched { top: 3px; right: 3px; }
+/* A–Z jump bar */
+.plc-gridwrap.jump { position: relative; padding-right: 26px; }
+.plc-jump-slot { position: absolute; top: 0; right: 0; bottom: 0; width: 22px; }
+.plc-jump { position: sticky; top: calc(var(--header-height, 0px) + 8px); display: flex; flex-direction: column; align-items: center; max-height: calc(100vh - var(--header-height, 56px) - 24px); overflow-y: auto; scrollbar-width: none; }
+.plc-jump-l { border: none; background: none; color: var(--secondary-text-color); font: inherit; font-size: 11px; font-weight: 600; line-height: 1; padding: 3px 4px; cursor: pointer; min-height: 18px; }
+.plc-jump-l.on, .plc-jump-l:hover { color: var(--plc-a); }
+/* recent searches */
+.plc-recent { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.plc-recent-h { color: var(--secondary-text-color); font-size: .8em; text-transform: uppercase; letter-spacing: .06em; }
+.plc-recent .plc-chip { padding: 4px 10px; font-size: .85em; }
+.plc-recent ha-icon { --mdc-icon-size: 15px; }
+.plc-recent-clear { opacity: .7; }
 /* compact phone header: one row, tabs scroll, buttons on the right */
 .plc.phone.compact .plc-hrow { flex-direction: row; flex-wrap: nowrap; align-items: center; }
 .plc.phone.compact .plc-hl { flex: 1 1 auto; min-width: 0; width: auto; overflow: hidden; }
@@ -851,9 +925,20 @@ class PlexCenterCard extends HTMLElement {
 
   get _key() { return `${this._c.title || ''}|${this._c.default_tv || ''}`; }
   get _v() {
-    if (!VIEW.has(this._key)) VIEW.set(this._key, { tab: cfg(this._c, 'start_tab'), unwatched: false, sort: 'title', query: '',
-      detail: null, season: null, hero: 0, ctl: cfg(this._c, 'slim_controls') === 'shown' });
+    if (!VIEW.has(this._key)) {
+      const v = { tab: cfg(this._c, 'start_tab'), unwatched: false, sort: 'title', query: '', view: cfg(this._c, 'library_view'),
+        detail: null, season: null, hero: 0, ctl: cfg(this._c, 'slim_controls') === 'shown' };
+      if (cfg(this._c, 'remember_view')) {
+        try { Object.assign(v, pickSaved(JSON.parse(localStorage.getItem(`plc-view:${this._key}`) || '{}'))); } catch { /* none saved */ }
+      }
+      VIEW.set(this._key, v);
+    }
     return VIEW.get(this._key);
+  }
+  /** Keep this device's tab, filters, sort and view for next time. */
+  _saveView() {
+    if (!cfg(this._c, 'remember_view')) return;
+    try { localStorage.setItem(`plc-view:${this._key}`, JSON.stringify(pickSaved(this._v))); } catch { /* private mode */ }
   }
   get _conf() { return peek('config'); }
   _tvs() {
@@ -907,6 +992,9 @@ class PlexCenterCard extends HTMLElement {
     this._root.addEventListener('change', (e) => this._onChange(e));
     this._root.addEventListener('pointerdown', (e) => this._onScrub(e));
     this._wireGestures();
+    this._root.addEventListener('focusin', (e) => { if (e.target.matches?.('[data-search]')) this._showRecent(); });
+    this._root.addEventListener('focusout', (e) => { if (e.target.matches?.('[data-search]')) setTimeout(() => { if (!this._root.querySelector('[data-search]:focus')) this._root.querySelector('.plc-recent')?.remove(); }, 250); });
+    this._root.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches?.('[data-search]')) { addRecent(e.target.value); this._root.querySelector('.plc-recent')?.remove(); } });
     for (const ev of ['pointerdown', 'keydown', 'input']) this._root.addEventListener(ev, (e) => { if (e.target.closest?.('.plc-sheet, .plc-detail')) this._armPopup(); }, true);
     this._renderAll();
     this._refresh(true);
@@ -1051,6 +1139,7 @@ class PlexCenterCard extends HTMLElement {
           : `<button class="plc-chip" data-surprise>${style === 'both' ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ''}${esc(label)}</button>`,
       filters: !inLib ? '' : pop ? filterBtn : `<button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button>`,
       sort: inLib && !pop ? `<select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>` : '',
+      view: inLib && !pop ? `<button class="plc-icon-btn" data-view="${v.view === 'list' ? 'grid' : 'list'}" title="${v.view === 'list' ? 'Show as a grid' : 'Show as a list'}"><ha-icon icon="mdi:${v.view === 'list' ? 'view-grid-outline' : 'view-list-outline'}"></ha-icon></button>` : '',
       tvs: picker,
     };
   }
@@ -1074,6 +1163,7 @@ class PlexCenterCard extends HTMLElement {
     this._sheet(`<div class="plc-detail-body plc-fpanel"><div class="plc-fpanel-h"><h2 class="plc-big">Filters</h2><span class="plc-sp"></span>
         <button class="plc-btn" data-fclear>Clear</button><button class="plc-btn main" data-close-sheet>Done</button></div>
       <div class="plc-fgrid"><label>Show</label><div class="plc-chips"><button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button></div>
+        <label>View</label><div class="plc-chips"><button class="plc-chip${v.view !== 'list' ? ' on' : ''}" data-view="grid">Grid</button><button class="plc-chip${v.view === 'list' ? ' on' : ''}" data-view="list">List</button></div>
         <label>Sort</label><select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>
         ${this._moreFilters(true)}</div></div>`, null, false);
   }
@@ -1094,6 +1184,17 @@ class PlexCenterCard extends HTMLElement {
     }
     return `${sel('genre', 'Genre', f.genres)}${sel('decade', 'Decade', f.decades)}${sel('rating', 'Rating', f.content_ratings)}${
       f.type === 'movie' ? `<button class="plc-chip${v.short ? ' on' : ''}" data-short>Under 2 h</button>` : ''}`;
+  }
+
+  /** Recent searches under the search box while it is focused and empty. */
+  _showRecent() {
+    const top = this._root.querySelector('.plc-top');
+    top?.querySelector('.plc-recent')?.remove();
+    if (!cfg(this._c, 'recent_searches') || this._v.query || !top) return;
+    const list = recentSearches();
+    if (!list.length) return;
+    top.insertAdjacentHTML('beforeend', `<div class="plc-recent"><span class="plc-recent-h">Recent</span>${list.map((q) => `<button class="plc-chip" data-recent="${esc(q)}"><ha-icon icon="mdi:history"></ha-icon>${esc(q)}</button>`).join('')}
+      <button class="plc-chip plc-recent-clear" data-recentclear>Clear</button></div>`);
   }
 
   /** Active-filter chips (optional): one removable chip per filter in use. */
@@ -1134,6 +1235,7 @@ class PlexCenterCard extends HTMLElement {
   }
 
   _renderTop() {
+    this._saveView();
     const pieces = this._headerPieces();
     const playerShown = this._panelVisible();
     const compact = this._phone && cfg(this._c, 'phone_compact');
@@ -1169,6 +1271,17 @@ class PlexCenterCard extends HTMLElement {
     const prog = it.progress ? `<div class="plc-prog"><div style="width:${Math.min(100, Number(it.progress))}%"></div></div>` : '';
     const qp = it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<span class="plc-play" data-qplay="${esc(listId)}|${i}" role="button" title="Play"><ha-icon icon="mdi:play"></ha-icon></span>` : '';
     return `<button class="plc-tile${sel}" data-open="${esc(listId)}|${i}"><div class="plc-poster"${art ? ` style="background-image:url('${cssUrl(art)}')"` : ''}>${art ? '' : esc(it.title)}${flag}${watched}${qp}${prog}${fanart ? `<div class="plc-fan-text">${text}</div>` : ''}</div>${fanart ? '' : text}</button>`;
+  }
+
+  /** One title in the list view: small poster, title, year · length · rating, two lines of summary, play button. */
+  _lrow(it, listId, i) {
+    const meta = [it.year, it.content_rating, it.duration ? fmtTime(it.duration) : '', it.rating ? `★ ${Number(it.rating).toFixed(1)}` : '',
+      it.type === 'show' && it.episodes ? `${it.episodes} episodes` : ''].filter(Boolean).join(' · ');
+    const sel = this._v.detail && this._v.detail.list === listId && this._v.detail.i === i ? ' sel' : '';
+    const qp = it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<span class="plc-play" data-qplay="${esc(listId)}|${i}" role="button" title="Play"><ha-icon icon="mdi:play"></ha-icon></span>` : '';
+    return `<button class="plc-lrow${sel}" data-open="${esc(listId)}|${i}"><div class="plc-lrow-img"${it.poster ? ` style="background-image:url('${cssUrl(it.poster)}')"` : ''}>${
+      it.watched ? '<span class="plc-watched" title="Watched"><ha-icon icon="mdi:check"></ha-icon></span>' : ''}${it.progress ? `<div class="plc-prog"><div style="width:${Math.min(100, Number(it.progress))}%"></div></div>` : ''}</div>
+      <div class="plc-lrow-txt"><div class="plc-t">${esc(it.show || it.title)}</div>${meta ? `<div class="plc-s">${esc(meta)}</div>` : ''}${it.summary ? `<div class="plc-lrow-sum">${esc(it.summary)}</div>` : ''}</div>${qp}</button>`;
   }
 
   // ---- main
@@ -1483,9 +1596,26 @@ Object.assign(PlexCenterCard.prototype, {
   _renderLibrary(main) {
     const lib = this._libKey();
     if (!lib) { main.innerHTML = '<div class="plc-msg">Loading…</div>'; return; }
-    main.innerHTML = `      <div class="plc-gridwrap"><div class="plc-grid${cfg(this._c, 'image_style') === 'fanart' ? ' fanart' : ''}"></div><div class="plc-sentinel"></div></div>`;
+    const list = this._v.view === 'list';
+    main.innerHTML = `<div class="plc-gridwrap${this._jumpOn() ? ' jump' : ''}"><div class="plc-grid${list ? ' list' : cfg(this._c, 'image_style') === 'fanart' ? ' fanart' : ''}"></div><div class="plc-sentinel"></div><div class="plc-jump-slot"></div></div>`;
     this._lists.set('grid', []);
     this._page(main, 0);
+    this._paintJump(main);
+  },
+
+  /** The A–Z bar: only for an A → Z list without search or filters (the letter counts are for the whole library). */
+  _jumpOn() {
+    const v = this._v;
+    return !!cfg(this._c, 'jump_bar') && v.tab !== 'home' && v.sort === 'title' && !v.query && !v.unwatched && !v.genre && !v.decade && !v.rating && !v.short;
+  },
+  async _paintJump(main, active = null) {
+    const slot = main.querySelector('.plc-jump-slot');
+    if (!slot || !this._jumpOn()) return;
+    const tv = this._tv(), lib = this._libKey(), key = `letters:${tv.id}:${lib}`;
+    let res;
+    try { res = await cached(this._hass, key, REFRESH_MS * 10, () => ws(this._hass, 'letters', { tv: tv.id, library: lib })); } catch { return; }
+    if (!slot.isConnected || (res.letters || []).length < 2) return;
+    slot.innerHTML = `<nav class="plc-jump">${res.letters.map((l) => `<button class="plc-jump-l${active === l.start ? ' on' : ''}" data-jump="${l.start}" title="${esc(l.letter)} (${l.size})">${esc(l.letter)}</button>`).join('')}</nav>`;
   },
 
   async _page(main, start) {
@@ -1504,7 +1634,7 @@ Object.assign(PlexCenterCard.prototype, {
     const from = list.length;
     list.push(...res.items);
     const fan = cfg(this._c, 'image_style') === 'fanart';
-    grid.insertAdjacentHTML('beforeend', res.items.map((it, k) => this._tile(it, 'grid', from + k, { fanart: fan })).join(''));
+    grid.insertAdjacentHTML('beforeend', res.items.map((it, k) => (grid.classList.contains('list') ? this._lrow(it, 'grid', from + k) : this._tile(it, 'grid', from + k, { fanart: fan }))).join(''));
     if (!list.length) grid.innerHTML = `<div class="plc-msg">${v.query ? 'Nothing matches.' : 'Nothing here.'}</div>`;
     this._io?.disconnect();
     if (res.more && typeof IntersectionObserver !== 'undefined') {
@@ -1537,9 +1667,15 @@ Object.assign(PlexCenterCard.prototype, {
     const playable = it.key && ['movie', 'episode', 'show'].includes(it.type);
     const resume = it.offset ? `Resume ${fmtTime(it.offset)}` : (it.type === 'show' && it.next ? `Play S${it.next.season} · E${it.next.episode}` : 'Play');
     const ends = it.duration ? `<div class="plc-meta">Ends at ${esc(endsAt(it.duration - (it.offset || 0), cfg(this._c, 'clock')))} if started now</div>` : '';
+    const poster = it.type === 'episode' ? null : it.poster;
+    const chips = [...(it.ratings || []).map((r) => (r.source === 'Rotten Tomatoes'
+      ? `<span class="plc-rate" title="Rotten Tomatoes ${r.kind}">${r.kind === 'audience' ? '🍿' : r.fresh ? '🍅' : '🤢'} ${Math.round(r.value * 10)}%</span>`
+      : `<span class="plc-rate" title="${esc(r.source)} ${r.kind}"><b>${esc(r.source)}</b> ${Number(r.value).toFixed(1)}</span>`)),
+      ...(it.badges || []).map((b) => `<span class="plc-av">${esc(b)}</span>`)].join('');
     slot.innerHTML = `<div class="plc-detail"><div class="plc-detail-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}>
         <button class="plc-icon-btn plc-detail-close" data-close title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
-        <h2 class="plc-big">${esc(it.type === 'episode' ? it.title : (it.show || it.title))}</h2></div>
+        <div class="plc-detail-head">${poster ? `<div class="plc-detail-poster" style="background-image:url('${cssUrl(poster)}')"></div>` : ''}
+          <div class="plc-detail-ttl"><h2 class="plc-big">${esc(it.type === 'episode' ? it.title : (it.show || it.title))}</h2>${chips ? `<div class="plc-rates">${chips}</div>` : ''}</div></div></div>
       <div class="plc-detail-body">${ep}${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${umc}
         ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div>` : ''}${ends}
         ${summary ? `<div>${esc(summary)}</div>` : ''}
@@ -1597,7 +1733,10 @@ Object.assign(PlexCenterCard.prototype, {
     const box = this._root.querySelector('[data-eps]');
     if (!box || !show.seasons) return;
     const pick = show.seasons.find((s) => s.key === this._v.season) || show.seasons.find((s) => show.next && s.key === show.next.season_key) || show.seasons[0];
-    box.innerHTML = `<select class="plc-select" data-season>${show.seasons.map((s) => `<option value="${esc(s.key)}"${s === pick ? ' selected' : ''}>${esc(s.title)}${s.watched ? ' ✓' : ''}</option>`).join('')}</select><div data-eplist><div class="plc-msg">Loading episodes…</div></div>`;
+    this._v.season = pick.key;
+    box.innerHTML = `<div class="plc-seasons" role="tablist">${show.seasons.map((s) => `<button class="plc-chip${s === pick ? ' on' : ''}" data-seasonchip="${esc(s.key)}">${esc(s.title)}${
+      s.watched ? ' <ha-icon icon="mdi:check"></ha-icon>' : s.watched_episodes ? ` <small>${s.watched_episodes}/${s.episodes}</small>` : ''}</button>`).join('')}</div><div data-eplist><div class="plc-msg">Loading episodes…</div></div>`;
+    box.querySelector('.plc-chip.on')?.scrollIntoView?.({ inline: 'center', block: 'nearest' });
     const tv = this._tv(), key = `item:${tv.id}:${pick.key}`;
     let season;
     try { season = await cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'item', { tv: tv.id, key: pick.key })); }
@@ -1606,9 +1745,14 @@ Object.assign(PlexCenterCard.prototype, {
     if (!list?.isConnected) return;
     const eps = season.episodes || [];
     this._lists.set('eps', eps);
-    list.innerHTML = eps.map((e, i) => `<div class="plc-ep"><span>${e.watched ? '✓ ' : ''}${e.episode != null ? `${e.episode}. ` : ''}${esc(e.title)}${e.progress ? ` · ${e.progress}%` : ''}</span>
-      <button class="plc-icon-btn" data-qplay="eps|${i}" data-direct title="${e.offset ? `Resume ${fmtTime(e.offset)}` : 'Play'}"><ha-icon icon="mdi:play"></ha-icon></button>
-      <button class="plc-icon-btn" data-qrestart="eps|${i}" title="Start over"><ha-icon icon="mdi:restart"></ha-icon></button></div>`).join('') || '<div class="plc-msg">No episodes.</div>';
+    const nextKey = show.next?.key;
+    list.innerHTML = eps.map((e, i) => `<div class="plc-ep${e.key === nextKey ? ' next' : ''}${e.watched ? ' seen' : ''}">
+      <button class="plc-ep-img" data-qplay="eps|${i}" data-direct title="${e.offset ? `Resume ${fmtTime(e.offset)}` : 'Play'}"${e.still ? ` style="background-image:url('${cssUrl(e.still)}')"` : ''}>
+        <ha-icon icon="mdi:play"></ha-icon>${e.progress ? `<div class="plc-prog"><div style="width:${Math.min(100, Number(e.progress))}%"></div></div>` : ''}${e.watched ? '<span class="plc-watched" title="Watched"><ha-icon icon="mdi:check"></ha-icon></span>' : ''}</button>
+      <div class="plc-ep-txt"><div class="plc-t">${e.episode != null ? `${e.episode}. ` : ''}${esc(e.title)}</div>
+        <div class="plc-s">${esc([e.duration ? fmtTime(e.duration) : '', e.offset ? `${fmtTime(e.offset)} watched` : '', e.key === nextKey ? 'Up next' : ''].filter(Boolean).join(' · '))}</div>
+        ${e.summary ? `<div class="plc-lrow-sum">${esc(e.summary)}</div>` : ''}</div>
+      ${e.offset || e.watched ? `<button class="plc-icon-btn" data-qrestart="eps|${i}" title="Start over"><ha-icon icon="mdi:restart"></ha-icon></button>` : '<span class="plc-icon-gap"></span>'}</div>`).join('') || '<div class="plc-msg">No episodes.</div>';
   },
 
   // ---- play
@@ -1791,6 +1935,50 @@ Object.assign(PlexCenterCard.prototype, {
     return `<button class="plc-icon-btn plc-power${on ? ' on' : ''}" data-np="${on ? 'power_off' : 'power_on'}" title="Turn the TV ${on ? 'off' : 'on'}"><ha-icon icon="mdi:power"></ha-icon></button>`;
   },
 
+  /** Up next for the episode playing on the card's TV: { cur, next, left } once the details are known; fetches them once. */
+  _upNext(np = nowPlaying(this._hass, this._tv())) {
+    if (!cfg(this._c, 'up_next') || !np?.live) return null;
+    const tv = np.tv, sess = (peek('sessions') || []).find((x) => x.user && tv.user && x.user === tv.user && x.type === 'episode');
+    if (!sess?.key) return null;
+    const key = `item:${tv.id}:${sess.key}`, d = peek(key);
+    if (!d) {
+      if (!this._upLoading?.has(key)) {
+        (this._upLoading ||= new Set()).add(key);
+        cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'item', { tv: tv.id, key: sess.key })).then(() => this._renderNP(true)).catch(() => {}).finally(() => this._upLoading.delete(key));
+      }
+      return null;
+    }
+    if (!d.next?.key) return null;
+    const dur = Number(np.st.attributes.media_duration) || d.duration || 0, pos = livePosition(np.st) ?? 0;
+    return { cur: sess.key, next: d.next, left: dur ? Math.max(0, dur - pos) : null };
+  },
+  _upNextHtml(np, compact = false) {
+    const u = this._upNext(np);
+    if (!u || u.left == null || u.left > (Number(cfg(this._c, 'up_next_secs')) || 120)) return '';
+    const n = u.next, stop = this._stopAfter === u.cur;
+    return `<div class="plc-upnext${compact ? ' compact' : ''}">${!compact && n.still ? `<div class="plc-upnext-img" style="background-image:url('${cssUrl(n.still)}')"></div>` : ''}
+      <div class="plc-upnext-txt"><div class="plc-eyebrow">Up next <span data-upnext-t>${stop ? '· stopping after this' : `in ${fmtTime(u.left)}`}</span></div>
+        <div class="plc-t">S${n.season} · E${n.episode} · ${esc(n.title)}</div></div>
+      <div class="plc-upnext-btns"><button class="plc-btn main" data-upnext-play><ha-icon icon="mdi:skip-next"></ha-icon>Play next</button>
+        <button class="plc-btn${stop ? ' on' : ''}" data-upnext-stop><ha-icon icon="mdi:stop-circle-outline"></ha-icon>${stop ? 'Keep playing' : 'Stop after this'}</button></div></div>`;
+  },
+  /** Every second: the countdown, Stop after this, and the optional auto-play. */
+  _upTick(np) {
+    const u = this._upNext(np), limit = Number(cfg(this._c, 'up_next_secs')) || 120;
+    const shown = !!(u && u.left != null && u.left <= limit);
+    if (shown !== !!this._upShown) { this._upShown = shown; this._renderNP(true); return; }
+    if (!u || u.left == null) return;
+    this._root.querySelectorAll('[data-upnext-t]').forEach((x) => { x.textContent = this._stopAfter === u.cur ? '· stopping after this' : `in ${fmtTime(u.left)}`; });
+    if (u.left > 4 || this._upFired === u.cur) return;
+    if (this._stopAfter === u.cur) {
+      this._upFired = u.cur; this._stopAfter = null;
+      this._hass.callService('plex_center', 'control', { tv: np.tv.id, action: 'stop' }).catch(() => {});
+    } else if (cfg(this._c, 'up_next_autoplay') && u.left <= 2) {
+      this._upFired = u.cur;
+      setTimeout(() => this._hass.callService('plex_center', 'play', { tv: np.tv.id, key: String(u.next.key), mode: 'play' }).catch(() => {}), 3000);
+    }
+  },
+
   _bar(np) {
     if (!np?.live) return '';
     return `<div class="plc-bar${seekable(np.tv) ? ' seek' : ''}" data-bar><div class="plc-bar-track"><div class="plc-bar-fill"></div></div></div>
@@ -1807,7 +1995,7 @@ Object.assign(PlexCenterCard.prototype, {
     };
     return `<div class="plc-side-card"><div class="plc-side-power">${this._powerHtml(np)}</div><div class="plc-side-art"${np.art ? ` style="background-image:url('${cssUrl(np.art)}')"` : ''}>${np.art ? '' : '<ha-icon icon="mdi:television"></ha-icon>'}</div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
-        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}</div></div>
+        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>
       ${others.length > 1 && !cfg(this._c, 'lock') ? `<div class="plc-playon"><div class="plc-playon-h">Play on</div>${others.map((t) => `<button class="plc-tvrow${t.id === np.tv.id ? ' on' : ''}" data-tv="${esc(t.id)}">
         <ha-icon icon="mdi:television"></ha-icon><b>${esc(tvLabel(t))}</b><small>${esc(who(t))}</small></button>`).join('')}</div>` : ''}`;
   },
@@ -1821,7 +2009,7 @@ Object.assign(PlexCenterCard.prototype, {
       <div style="min-width:0" data-npopenfull role="button"><div class="plc-slim-t">${esc(np.title)}</div><div class="plc-s">${esc([tvLabel(np.tv), np.sub].filter(Boolean).join(' · '))}</div>${this._bar(np)}</div>
       <div class="plc-slim-btns">${this._powerHtml(np)}${np.live ? `<button class="plc-icon-btn" data-np="${playing ? 'pause' : 'play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>` : ''}
         ${np.live && mode === 'toggle' ? `<button class="plc-icon-btn" data-ctltoggle title="${show ? 'Hide' : 'Show'} the remote buttons"><ha-icon icon="mdi:${show ? 'chevron-down' : 'remote-tv'}"></ha-icon></button>` : ''}</div>
-      ${show ? `<div class="plc-slim-ctl">${this._controls(np, false)}</div>` : ''}</div>`;
+      ${show ? `<div class="plc-slim-ctl">${this._controls(np, false)}</div>` : ''}${this._upNextHtml(np, true)}</div>`;
   },
 
   _progress() {
@@ -1829,6 +2017,7 @@ Object.assign(PlexCenterCard.prototype, {
     if (!r) return;
     const np = nowPlaying(this._hass, this._tv());
     if (!np?.live) return;
+    this._upTick(np);
     const d = Number(np.st.attributes.media_duration) || 0;
     const p = this._seekTo ?? livePosition(np.st) ?? 0;
     r.querySelectorAll('[data-bar] .plc-bar-fill').forEach((f) => { f.style.width = d ? `${Math.min(100, (p / d) * 100)}%` : '0'; });
@@ -1913,6 +2102,36 @@ Object.assign(PlexCenterCard.prototype, {
       return;
     }
     if (t('[data-fpop]')) { this._filtersPopover(); return; }
+    if ((el = t('[data-seasonchip]'))) { this._v.season = el.dataset.seasonchip; if (this._detailItem) this._paintSeasons(this._detailItem); return; }
+    if (t('[data-upnext-play]')) { const u = this._upNext(); if (u) { this._upFired = u.cur; this._play({ ...u.next }, 'play'); } return; }
+    if (t('[data-upnext-stop]')) {
+      const u = this._upNext();
+      if (u) { this._stopAfter = this._stopAfter === u.cur ? null : u.cur; this._renderNP(true); this._toast(this._stopAfter ? 'Will stop after this episode' : 'Stop after this: off'); }
+      return;
+    }
+    if (t('[data-recentclear]')) { try { localStorage.removeItem(RECENT_KEY); } catch { /* */ } this._root.querySelector('.plc-recent')?.remove(); return; }
+    if ((el = t('[data-recent]'))) {
+      const q = el.dataset.recent, input = this._root.querySelector('.plc-top [data-search]');
+      this._root.querySelector('.plc-recent')?.remove();
+      if (input) { input.value = q; input.dispatchEvent(new Event('input', { bubbles: true })); }
+      addRecent(q); return;
+    }
+    if ((el = t('[data-view]'))) {
+      this._v.view = el.dataset.view === 'list' ? 'list' : 'grid'; this._v.detail = null;
+      this._renderTop(); this._renderMain(); this._renderDetail();
+      if (this._root.querySelector('.plc-fpanel')) this._filtersPopover();
+      return;
+    }
+    if ((el = t('[data-jump]'))) {
+      const main = this._root.querySelector('.plc-main'), grid = main.querySelector('.plc-grid'), start = Number(el.dataset.jump) || 0;
+      if (!grid) return;
+      this._v.detail = null; this._renderDetail();
+      this._lists.set('grid', []); grid.innerHTML = '';
+      main.querySelectorAll('.plc-jump-l').forEach((b) => b.classList.toggle('on', b === el));
+      this._page(main, start);
+      main.querySelector('.plc-gridwrap')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+      return;
+    }
     if (t('[data-searchopen]')) { this._v.searchOpen = true; this._renderTop(); this._root.querySelector('.plc-top [data-search]')?.focus(); return; }
     if (t('[data-searchclose]')) {
       const had = !!this._v.query;
@@ -1940,6 +2159,7 @@ Object.assign(PlexCenterCard.prototype, {
       const sec = this._root.querySelector('[data-sec="continue"]'); if (sec) this._paintContinue(sec, items); return;
     }
     if ((el = t('[data-open]'))) {
+      if (this._v.query) addRecent(this._v.query);
       const r = this._item(el.dataset.open);
       if (!r.item) return;
       if (cfg(this._c, 'tap_action') === 'play' && r.item.key) { this._quickPlay(r, false); return; }
@@ -2142,7 +2362,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['phone_preset', 'phone_header', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['up_next', 'phone_preset', 'phone_header', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; }
@@ -2274,6 +2494,13 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._config.tab_order ? '<button class="plce-add" data-treset>Back to the default order</button>' : ''}
       ${this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])])}
       ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}
+      ${this._select('library_view', 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}
+      ${this._check('jump_bar', 'A–Z jump bar beside A → Z libraries')}
+      ${this._check('remember_view', 'Remember the tab, filters, sort and view on each device')}
+      ${this._check('recent_searches', 'Show recent searches when the search box is empty')}
+      ${this._check('up_next', 'Up next: near the end of an episode, show the next one with Play next / Stop after this')}
+      ${this._c('up_next') ? `${this._slider('up_next_secs', 'Show Up next this long before the end', 15, 600, ' s')}
+        ${this._check('up_next_autoplay', 'Start the next episode when one ends (leave off if the Plex app already auto-plays)')}` : ''}
       ${this._select('after_play', 'After starting a title', [['nowplaying', 'Close the details and show Now playing'], ['stay', 'Stay on the details']])}
       ${this._sub('popups', 'Details &amp; popups', `${this._check('popup_target', 'Target dropdown (a TV or this device) in details and popups')}
         ${this._select('local_app', '"This device" opens', [['auto', 'Automatic: the Plex app on phones and tablets, Plex Web on computers'], ['app', 'The Plex app'], ['web', 'Plex Web']])}
