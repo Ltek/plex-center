@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.15.27
+
+**Changed**
+- **Move to a different TV** replaces the *Play on* list under Now playing (full screen and side panel). It opens
+  a menu of the other TVs (with their state; a TV already playing something is marked). Picking one stops the
+  title here and starts it there; on TVs that can seek (PiPup) it continues from the same place.
+- **Watching now cards for your TVs are buttons**: tapping one opens that TV's Now playing controls (full screen
+  when there's no side panel). A remote icon marks them; sessions on other devices stay plain.
+- **No duplicate slim bar on Home**: while Watching now shows the playing TV, the slim bar is hidden there. It
+  still shows on library tabs.
+
 ## v2026.11.15.26
 
 **Changed**

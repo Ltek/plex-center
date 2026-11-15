@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.26
+// Version: v2026.11.15.27
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.26';
+const BUILD_NUMBER = 'v2026.11.15.27';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -698,6 +698,10 @@ const CARD_CSS = `
 .plc-watched ha-icon { --mdc-icon-size: 16px; }
 .plc-watch { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; }
 .plc-sess { flex: 0 0 260px; display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; padding: 8px; border-radius: 12px; background: var(--plc-bg2); }
+.plc-sess.tap { position: relative; border: 1px solid transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; padding-right: 34px; }
+.plc-sess.tap:hover, .plc-sess.tap:focus-visible { border-color: var(--plc-a); outline: none; }
+.plc-sess-go { position: absolute; top: 8px; right: 8px; --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+.plc-movebtn { align-self: center; margin-top: 4px; }
 .plc-sess-art { aspect-ratio: 2 / 3; border-radius: 6px; background: rgba(127,127,127,.2) center / cover no-repeat; }
 .plc-sess .plc-bar-track { height: 4px; background: color-mix(in srgb, var(--primary-text-color) 18%, transparent); margin-top: 6px; }
 .plc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--plc-li-w, 340px)), 1fr)); gap: 12px; }
@@ -1127,7 +1131,7 @@ class PlexCenterCard extends HTMLElement {
       if (homeVisible(this._c, 'watching') && this._v.tab === 'home') {
         const before = JSON.stringify(peek('sessions') || []);
         await cached(this._hass, 'sessions', SESSIONS_MS - 1000, () => ws(this._hass, 'sessions'));
-        if (JSON.stringify(peek('sessions') || []) !== before) this._paintWatching();
+        if (JSON.stringify(peek('sessions') || []) !== before) { this._paintWatching(); this._renderNP(); }
       }
     } catch (e) {
       this._err = /unknown command|not_set_up|Unknown command/i.test(e?.message || e?.code || '')
@@ -1262,6 +1266,40 @@ class PlexCenterCard extends HTMLElement {
       const id = t.id === 'home' ? 'home' : t.key, on = t.id === 'home' ? v.tab === 'home' : (v.tab === t.key || v.tab === t.title);
       return { icon: tabIcon(t), label: t.title, sub: t.id === 'home' ? 'Continue watching, new and coming soon' : t.type === 'movie' ? 'Movies' : t.type === 'show' ? 'TV shows' : '', on, attr: `data-tab="${esc(id)}"` };
     }));
+  }
+
+  /** The Plex session playing on a TV (matched by the TV's Plex user). */
+  _sessionFor(tv) { return (peek('sessions') || []).find((x) => x.user && tv?.user && x.user === tv.user) || null; }
+
+  /** Move menu: the other TVs; picking one moves what's playing there. */
+  _moveMenu(anchor) {
+    const cur = this._tv(), icons = this._c.tv_icons || {};
+    this._menu(anchor, 'Move to', this._tvs().filter((t) => t.id !== cur?.id).map((t) => {
+      const busy = realOn(this._hass, t);
+      return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub: busy ? 'Playing something else: it will stop' : (t.state ? t.state[0].toUpperCase() + t.state.slice(1) : ''),
+        attr: `data-moveto="${esc(t.id)}"`, dot: `<span class="plc-dot ${busy ? 'play' : (t.state && !['off', 'unavailable', 'standby'].includes(t.state) ? 'on' : '')}"></span>` };
+    }));
+  }
+
+  /** Stop the title here and start it on another TV, at the same place when that TV can seek. */
+  async _moveTo(to) {
+    const from = this._tv(), np = nowPlaying(this._hass, from), sess = this._sessionFor(from);
+    if (!to || !sess?.key) return;
+    const pos = Math.floor(livePosition(np?.st) ?? 0);
+    const what = sess.type === 'episode' ? `${sess.show} S${sess.season}E${sess.episode}` : sess.title;
+    this._toast(`Moving ${what} to ${tvLabel(to)}…`);
+    try {
+      await this._hass.callService('plex_center', 'control', { tv: from.id, action: 'stop' });
+      this._setTv(to);
+      this._v.npFull = !this._panelVisible(); this._npFullAt = Date.now();
+      await this._hass.callService('plex_center', 'play', { tv: to.id, key: String(sess.key), mode: 'play' });
+      if (pos > 30 && seekable(to)) {
+        for (let i = 0; i < 20 && !nowPlaying(this._hass, to)?.live; i++) await new Promise((r) => setTimeout(r, 1000));
+        const now = livePosition(nowPlaying(this._hass, to)?.st) ?? 0;
+        if (Math.abs(now - pos) > 20) await this._hass.callService('plex_center', 'control', { tv: to.id, action: 'seek', value: pos });
+      }
+      this._renderNP(true);
+    } catch (e) { this._toast(`Could not move: ${e?.message || e}`); }
   }
 
   /** TV picker menu: every TV, its state and who is watching. */
@@ -1415,6 +1453,7 @@ class PlexCenterCard extends HTMLElement {
     if (!this._conf) { main.innerHTML = '<div class="plc-msg">Loading…</div>'; return; }
     if (!this._tvs().length) { main.innerHTML = '<div class="plc-msg">No TVs yet: add them in Plex Center\'s options (Settings → Devices & services → Plex Center → Configure).</div>'; return; }
     if (this._v.tab === 'home') this._renderHome(main); else this._renderLibrary(main);
+    if (this._built) this._renderNP();
   }
 
   /** Items of a section narrowed to its Movies / TV choice (chips override the setting). */
@@ -1569,12 +1608,16 @@ class PlexCenterCard extends HTMLElement {
     if (!sec) return;
     const s = peek('sessions') || [];
     if (!s.length) { sec.innerHTML = ''; return; }
-    sec.innerHTML = `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div><div class="plc-watch">${s.map((x) => `
-      <div class="plc-sess"><div class="plc-sess-art"${x.poster ? ` style="background-image:url('${cssUrl(x.poster)}')"` : ''}></div>
+    const tvFor = (x) => this._tvs().find((t) => t.user && x.user && t.user === x.user);
+    sec.innerHTML = `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div><div class="plc-watch">${s.map((x) => {
+      const tv = tvFor(x);
+      return `
+      <${tv ? `button class="plc-sess tap" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : 'div class="plc-sess"'}><div class="plc-sess-art"${x.poster ? ` style="background-image:url('${cssUrl(x.poster)}')"` : ''}></div>
         <div style="min-width:0"><div class="plc-t">${esc(x.show || x.title)}</div>
           <div class="plc-s">${esc(x.type === 'episode' ? `S${x.season} · E${x.episode} · ${x.title}` : (x.year || ''))}</div>
           <div class="plc-s">${esc([x.user, x.player || x.device].filter(Boolean).join(' · '))}${x.player_state === 'paused' ? ' · paused' : ''}</div>
-          <div class="plc-bar-track"><div class="plc-bar-fill" style="width:${Math.min(100, Number(x.progress) || 0)}%"></div></div></div></div>`).join('')}</div>`;
+          <div class="plc-bar-track"><div class="plc-bar-fill" style="width:${Math.min(100, Number(x.progress) || 0)}%"></div></div></div>${tv ? '<ha-icon class="plc-sess-go" icon="mdi:remote-tv"></ha-icon>' : ''}</${tv ? 'button' : 'div'}>`;
+    }).join('')}</div>`;
   }
 
   _paintContinue(sec, items) {
@@ -2008,11 +2051,12 @@ Object.assign(PlexCenterCard.prototype, {
     const np = nowPlaying(this._hass, tv);
     const mode = this._npMode();
     const panel = mode === 'panel' && this._panelVisible(np);
-    const slim = mode !== 'off' && !panel && np?.live;
+    const dup = this._v.tab === 'home' && homeVisible(this._c, 'watching') && !!this._sessionFor(tv);
+    const slim = mode !== 'off' && !panel && np?.live && !dup;
     if (np?.live) this._npLiveAt = Date.now();
     else if (this._v.npFull && Date.now() - (this._npFullAt || 0) > 90000) this._v.npFull = false;   // playback ended: don't pop up next time
     const vst = tv?.pipup && this._hass.states[tv.pipup];
-    const s = JSON.stringify([this._v.npFull, mode, panel, slim, np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._v.ctl, this._phone,
+    const s = JSON.stringify([this._v.tab, dup, this._v.npFull, mode, panel, slim, np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._v.ctl, this._phone,
       this._tvs().map((t) => [t.id, realOn(this._hass, t)]), tv?.route]);
     if (!force && this._npSig === s) return;
     this._npSig = s;
@@ -2120,8 +2164,7 @@ Object.assign(PlexCenterCard.prototype, {
     return `<div class="plc-side-card"><div class="plc-side-power">${this._powerHtml(np)}</div><div class="plc-side-art"${np.art ? ` style="background-image:url('${cssUrl(np.art)}')"` : ''}>${np.art ? '' : '<ha-icon icon="mdi:television"></ha-icon>'}</div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
         <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>
-      ${others.length > 1 && !cfg(this._c, 'lock') ? `<div class="plc-playon"><div class="plc-playon-h">Play on</div>${others.map((t) => `<button class="plc-tvrow${t.id === np.tv.id ? ' on' : ''}" data-tv="${esc(t.id)}">
-        <ha-icon icon="mdi:television"></ha-icon><b>${esc(tvLabel(t))}</b><small>${esc(who(t))}</small></button>`).join('')}</div>` : ''}`;
+      ${others.length > 1 && !cfg(this._c, 'lock') && np.live && this._sessionFor(np.tv) ? `<button class="plc-btn plc-movebtn" data-movemenu><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>` : ''}`;
   },
 
   _slimHtml(np) {
@@ -2200,6 +2243,15 @@ Object.assign(PlexCenterCard.prototype, {
       else if (t('.plc-menu-i')) setTimeout(() => this._closeMenu());
     }
     if ((el = t('[data-tabmenu]'))) { this._tabMenu(el); return; }
+    if ((el = t('[data-movemenu]'))) { this._moveMenu(el); return; }
+    if ((el = t('[data-moveto]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.moveto); this._closeMenu(); if (tv) this._moveTo(tv); return; }
+    if ((el = t('[data-sesstv]'))) {
+      const tv = this._tvs().find((x) => x.id === el.dataset.sesstv);
+      if (!tv) return;
+      if (tv.id !== this._tv()?.id) this._setTv(tv);
+      if (!this._panelVisible()) { this._v.npFull = true; this._npFullAt = Date.now(); }
+      this._renderNP(true); return;
+    }
     if ((el = t('[data-seckind]'))) {
       e.stopPropagation();
       const [id, k] = el.dataset.seckind.split('|');
