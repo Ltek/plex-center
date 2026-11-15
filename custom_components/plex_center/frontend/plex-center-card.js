@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.21
+// Version: v2026.11.15.22
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.21';
+const BUILD_NUMBER = 'v2026.11.15.22';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -348,7 +348,12 @@ function effectiveConfig(c, phone = isPhoneScreen(), portrait = isPortrait()) {
   // The preset applies wherever the card uses the phone layout: forced with layout: phone, or Automatic on a phone.
   const layout = cfg(c, 'layout');
   const usePhone = layout === 'phone' || (layout !== 'tablet' && phone);
-  return cfg(c, 'phone_preset') && usePhone ? { ...c, ...presetFor(c, portrait) } : c;
+  if (!cfg(c, 'phone_preset') || !usePhone) return c;
+  // The preset only fills in what the card doesn't set: anything set in the card's config wins.
+  const pre = presetFor(c, portrait);
+  if (Array.isArray(c.header) && c.phone_header === undefined) pre.phone_header = false;   // keep the card's own header
+  if (c.tv_picker !== undefined && c.phone_compact === undefined) pre.phone_compact = c.tv_picker !== 'dropdown';
+  return { ...pre, ...c };
 }
 
 /** Per-card custom properties (never written into the stylesheet). */
@@ -2630,7 +2635,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._slider('phone_across', 'Posters across on phones', 1, 8, '')}
         ${this._check('phone_preset', 'Phone preset: on phones, the most compact header and a larger display')}
         ${this._c('phone_preset') ? `<p class="plce-hint">Wherever the card uses the phone layout (Layout: Phone, or Automatic on a phone) it sets: compact compact one-row header (tabs as a dropdown in portrait), Filters popover,
-          TV buttons as icons, slim controls at the bottom, header hides while scrolling; and the scale below. Turn it off to set these yourself.</p>
+          TV buttons as icons, slim controls at the bottom, header hides while scrolling; and the scale below. It only fills in what you haven't set: any option you change here (and your own header layout) wins.</p>
           ${this._slider('preset_portrait_scale', 'Scale in portrait', 80, 200, '%')}${this._slider('preset_portrait_across', 'Posters across in portrait', 1, 8, '')}
           ${this._slider('preset_landscape_scale', 'Scale in landscape', 80, 200, '%')}${this._slider('preset_landscape_across', 'Posters across in landscape', 1, 8, '')}` : ''}`)}
       ${this._sub('ap-card', 'Card', `${this._colorControl('card_bg')}

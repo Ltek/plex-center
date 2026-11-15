@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.15.22
+
+**Fixed**
+- **Settings changed in the editor had no effect while the phone preset was on.** The preset replaced Now playing,
+  the slim bar position, the TV picker, the header layout and the other options it covers, so changing them did
+  nothing. The preset now only fills in options the card doesn't set: anything set in the config wins, and a card
+  with its own `header:` keeps it (unless *Separate header layout for phones* is set). *TV picker: dropdown* keeps
+  the dropdown.
+
 ## v2026.11.15.21
 
 **New**
