@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.15.24
+
+**Changed**
+- **Layout** is now the first panel in the editor (it was inside Appearance). It holds the layout choice, the
+  title, *Tablets and computers* (Scale, Libraries show) and the phone settings (*Phone: portrait*,
+  *Phone: landscape*, *Phone: both orientations*), which replace the separate Phone panel.
+
+**Fixed**
+- **Libraries show** (grid / list, on tablets and phones) didn't change the view: the view remembered on the
+  device kept winning. Changing the setting now applies at once; the grid / list button still changes it per
+  device.
+
 ## v2026.11.15.23
 
 **New**

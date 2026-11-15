@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.23
+// Version: v2026.11.15.24
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.23';
+const BUILD_NUMBER = 'v2026.11.15.24';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -917,6 +917,7 @@ class PlexCenterCard extends HTMLElement {
     this._c = effectiveConfig(this._raw, !!this._phone);
     if (!this._built) return;
     this._applyLook();
+    if (prev && prev.library_view !== this._c.library_view) { this._v.view = cfg(this._c, 'library_view'); this._v.detail = null; this._saveView(); }
     const strip = (c) => { const o = { ...c }; for (const k of STYLE_KEYS) delete o[k]; return JSON.stringify(o); };
     if (strip(prev) !== strip(this._c)) this._renderAll();
   }
@@ -2506,7 +2507,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._c('phone_header_mode') === 'own' ? `<div class="plce-row"><label class="lbl">Editing the layout for</label><select data-hdrfor>
         <option value="tablet"${ph ? '' : ' selected'}>Tablets</option><option value="phone"${ph ? ' selected' : ''}>Phones</option></select></div>` : ''}
       <div class="plce-list">${rows}</div>
-      <p class="plce-hint">These settings are for tablets and computers. Phones use the Phone panel.</p>
+      <p class="plce-hint">These settings are for tablets and computers. Phones use Layout → Phone.</p>
       ${this._check('filter_chips', 'Show the active filters as removable chips under the header')}
       ${this._select('filters_mode', 'Library filters', [['auto', 'Automatic: a Filters popover on phones, inline on tablets'], ['popover', 'Always in a Filters popover'], ['inline', 'Always inline in the header']])}
       ${this._slider('search_width', 'Search box width', 100, 800)}
@@ -2527,7 +2528,6 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._config.tab_order ? '<button class="plce-add" data-treset>Back to the default order</button>' : ''}
       ${this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])])}
       ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}
-      ${this._select('library_view', 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}
       ${this._check('jump_bar', 'A–Z jump bar beside A → Z libraries')}
       ${this._check('remember_view', 'Remember the tab, filters, sort and view on each device')}
       ${this._check('recent_searches', 'Show recent searches when the search box is empty')}
@@ -2630,7 +2630,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${sub('items', 'Items', `${sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
         ${sel('image', 'Image', [['', 'Card default'], ['poster', 'Poster'], ['fanart', 'Fanart']])}
         ${sl('show', 'Items to show', 1, 20, st.show, '')}
-        ${sl('phone_show', 'Items to show on phones (0 = the Phone panel)', 0, 10, 0, '')}
+        ${sl('phone_show', 'Items to show on phones (0 = Layout → Phone)', 0, 10, 0, '')}
         ${chk('scroll', 'Scroll to see more items', false)}
         ${sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Ticker (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
         ${st.auto === 'scroll' ? sl('speed', 'Ticker speed', 5, 200, st.speed, ' px/s') : ''}
@@ -2646,14 +2646,19 @@ class PlexCenterCardEditor extends HTMLElement {
   }
 
   /** Phone panel: everything the phone layout uses, by orientation. Other panels set tablets and computers. */
-  _phoneBody() {
+  _layoutBody() {
     const col = (o, name) => this._sub(`ph-${o}`, name, `${this._slider(`phone_${o}_scale`, 'Scale', 50, 200, '%')}
       ${this._slider(`phone_${o}_across`, 'Posters across (Home rows, libraries, search)', 1, 8, '')}
       ${this._select(`phone_${o}_tabs`, 'Tabs', [['tabs', 'Tabs in the header'], ['dropdown', 'A dropdown in the header'], ['bottom', 'A tab bar at the bottom']])}`);
-    return `<p class="plce-hint">The card uses these whenever it shows the phone layout (Layout: Phone, or Automatic when the card is narrower than ${PHONE_MAX_W}px).
-      Settings in the other panels are for tablets and computers. A Home section can set its own number of items on phones in its Items settings.</p>
-      ${col('portrait', 'Portrait')}${col('landscape', 'Landscape')}
-      ${this._sub('ph-all', 'Both orientations', `${this._select('phone_header_mode', 'Header', [['compact', 'Compact: one row, search and TV as buttons'], ['tablet', 'Same as tablets (the Header panel)'], ['own', 'Its own layout (edit it in the Header panel)']])}
+    return `${this._select('layout', 'Layout', [['auto', 'Automatic'], ['tablet', 'Tablet'], ['phone', 'Phone']])}
+      <p class="plce-hint">Automatic uses the phone layout when the card is narrower than ${PHONE_MAX_W}px.</p>
+      ${this._text('title', 'Title', 'Plex')}
+      ${this._sub('ly-tablet', 'Tablets and computers', `${this._slider('scale', 'Scale (whole card)', 50, 200, '%')}
+        ${this._select('library_view', 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}
+        <p class="plce-hint">The Header, Home and Now playing panels also set tablets and computers.</p>`)}
+      <p class="plce-hint">Phones: the card uses the settings below whenever it shows the phone layout, instead of the other panels. A Home section can set its own number of items on phones in its Items settings.</p>
+      ${col('portrait', 'Phone: portrait')}${col('landscape', 'Phone: landscape')}
+      ${this._sub('ph-all', 'Phone: both orientations', `${this._select('phone_header_mode', 'Header', [['compact', 'Compact: one row, search and TV as buttons'], ['tablet', 'Same as tablets (the Header panel)'], ['own', 'Its own layout (edit it in the Header panel)']])}
         ${this._select('phone_filters', 'Library filters', [['popover', 'In a Filters popover'], ['inline', 'Inline in the header']])}
         ${this._select('phone_view', 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list']])}
         ${this._select('phone_now_playing', 'Now playing', [['slim', 'Slim controls'], ['off', 'Off']])}
@@ -2665,7 +2670,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
   _npBody() {
     const m = this._c('now_playing');
-    return `<p class="plce-hint">Now playing shows only while a movie or episode plays. The side panel (tablets) shows the poster, big controls and every TV; slim controls show whenever the panel does not. Phones use the Phone panel.</p>
+    return `<p class="plce-hint">Now playing shows only while a movie or episode plays. The side panel (tablets) shows the poster, big controls and every TV; slim controls show whenever the panel does not. Phones use Layout → Phone.</p>
       ${this._select('now_playing', 'Now playing', [['auto', 'Automatic (side panel on tablets, slim controls on phones)'], ['panel', 'Side panel'], ['slim', 'Slim controls'], ['off', 'Off']])}
       ${m === 'panel' || m === 'auto' ? `${''}
         ${this._check('fit_screen', 'Fit the card to the screen height: the player stays put, the library scrolls')}
@@ -2676,11 +2681,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
   _styleBody() {
     const px = (k, label, min, max) => this._slider(k, label, min, max);
-    return `${this._sub('ap-layout', 'Layout', `<p class="plce-hint">Automatic uses the phone layout when the card is narrower than ${PHONE_MAX_W}px.</p>
-        ${this._select('layout', 'Layout', [['auto', 'Automatic'], ['tablet', 'Tablet'], ['phone', 'Phone']])}${this._text('title', 'Title', 'Plex')}
-        ${this._slider('scale', 'Scale (whole card)', 50, 200, '%')}
-        <p class="plce-hint">Scale applies to tablets and computers; phones use the Phone panel.</p>`)}
-      ${this._sub('ap-card', 'Card', `${this._colorControl('card_bg')}
+    return `${this._sub('ap-card', 'Card', `${this._colorControl('card_bg')}
         ${this._slider('card_border_width', 'Border width', 0, 8)}${this._colorControl('card_border_color')}
         ${this._slider('card_radius', 'Corner radius', 0, 32)}
         ${this._select('card_shadow', 'Shadow', [['theme', 'Theme default'], ['none', 'None'], ['soft', 'Soft'], ['strong', 'Strong']])}
@@ -2709,12 +2710,12 @@ class PlexCenterCardEditor extends HTMLElement {
   _render() {
     if (!this._hass) { this.innerHTML = ''; return; }
     this.innerHTML = `<style>${EDITOR_CSS}</style><div class="plce">
+      ${this._panel('layout', 'mdi:responsive', 'Layout', this._layoutBody())}
       ${this._panel('tvs', 'mdi:television-play', 'TVs', this._tvsBody())}
       ${this._panel('header', 'mdi:page-layout-header', 'Header', this._headerBody())}
       ${this._panel('library', 'mdi:plex', 'Library', this._libraryBody())}
       ${this._panel('home', 'mdi:home-variant', 'Home', this._homeBody())}
       ${this._panel('np', 'mdi:play-box-outline', 'Now playing', this._npBody())}
-      ${this._panel('phone', 'mdi:cellphone', 'Phone', this._phoneBody())}
       ${this._panel('style', 'mdi:palette', 'Appearance', this._styleBody())}
       ${this._panel('integrations', 'mdi:puzzle', 'Integrations found', this._integrationsBody())}
       <div class="plce-foot">Plex Center Card (Ltek) ${BUILD_NUMBER}</div></div>`;
