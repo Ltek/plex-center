@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.31
+// Version: v2026.11.15.32
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.31';
+const BUILD_NUMBER = 'v2026.11.15.32';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1981,14 +1981,27 @@ Object.assign(PlexCenterCard.prototype, {
   /** The popup's target: a TV, or 'local' (this device). */
   _target() { return this._pickTv === 'local' ? 'local' : (this._pickTv || this._tv()); },
 
-  _pickHtml() {
-    const tvs = this._tvs();
+  /** Where Play goes: a chip that opens the target menu. Only for titles in the library (Coming Soon has nothing to play). */
+  _pickHtml(it = this._detailItem) {
     if (cfg(this._c, 'lock')) return '';
+    if (!it?.key || it.umc || !['movie', 'episode', 'show'].includes(it.type)) return '';
     const ask = cfg(this._c, 'client_choice') === 'ask', show = cfg(this._c, 'popup_target');
     if (!ask && !show) return '';
-    const cur = this._target();
-    return `<label class="plc-meta plc-target">Target <select class="plc-select" data-pick>${tvs.map((t) => `<option value="${esc(t.id)}"${t === cur ? ' selected' : ''}>${esc(tvLabel(t))}</option>`).join('')}
-      <option value="local"${cur === 'local' ? ' selected' : ''}>This device</option></select></label>`;
+    return `<div class="plc-meta plc-target">Play on ${this._pickChip()}</div>`;
+  },
+  _pickChip() {
+    const cur = this._target(), icons = this._c.tv_icons || {};
+    const icon = cur === 'local' ? 'mdi:cellphone-play' : (icons[cur?.id] || 'mdi:television');
+    const name = cur === 'local' ? 'This device' : tvLabel(cur);
+    return `<button class="plc-chip plc-menuchip" data-pickmenu><ha-icon icon="${esc(icon)}"></ha-icon><span class="plc-menuchip-n">${esc(name)}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`;
+  },
+  _pickMenu(anchor) {
+    const cur = this._target(), icons = this._c.tv_icons || {};
+    this._menu(anchor, 'Play on', [...this._tvs().map((t) => {
+      const busy = realOn(this._hass, t);
+      return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub: busy ? 'Playing' : (t.state ? t.state[0].toUpperCase() + t.state.slice(1) : ''), on: t === cur,
+        attr: `data-pickto="${esc(t.id)}"`, dot: `<span class="plc-dot ${busy ? 'play' : (t.state && !['off', 'unavailable', 'standby'].includes(t.state) ? 'on' : '')}"></span>` };
+    }), { icon: 'mdi:cellphone-play', label: 'This device', sub: 'Opens the Plex app or Plex Web', on: cur === 'local', attr: 'data-pickto="local"' }]);
   },
 
   async _paintSeasons(show) {
@@ -2049,7 +2062,7 @@ Object.assign(PlexCenterCard.prototype, {
     if (cfg(this._c, 'client_choice') === 'ask' && this._tvs().length > 1 && !direct && !cfg(this._c, 'lock')) { this._openDetail(r); return; }
     if (it.offset && !direct) {
       this._pickTv = null;
-      this._sheet(`<div class="plc-detail-body"><h2 class="plc-big">${esc(it.show || it.title)}</h2>${this._pickHtml() || `<div class="plc-meta">${esc(tvLabel(this._tv()))}</div>`}
+      this._sheet(`<div class="plc-detail-body"><h2 class="plc-big">${esc(it.show || it.title)}</h2>${this._pickHtml(it) || `<div class="plc-meta">${esc(tvLabel(this._tv()))}</div>`}
         <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Resume ${fmtTime(it.offset)}</button>
         <button class="plc-btn" data-sheetplay="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>
         <button class="plc-btn" data-close-sheet>Cancel</button></div></div>`, it);
@@ -2341,6 +2354,17 @@ Object.assign(PlexCenterCard.prototype, {
     }
     if (t('[data-reload]')) { try { location.reload(); } catch { /* */ } return; }
     if ((el = t('[data-tabmenu]'))) { this._tabMenu(el); return; }
+    if ((el = t('[data-pickmenu]'))) { this._pickMenu(el); return; }
+    if ((el = t('[data-pickto]'))) {
+      const id = el.dataset.pickto;
+      this._pickTv = id === 'local' ? 'local' : this._tvs().find((x) => x.id === id);
+      this._closeMenu();
+      if (this._root.querySelector('.plc-sheet')) {
+        this._root.querySelectorAll('.plc-sheet [data-pickmenu]').forEach((n) => { n.outerHTML = this._pickChip(); });
+        this._armPopup();
+      } else this._renderDetail();
+      return;
+    }
     if ((el = t('[data-movemenu]'))) { this._moveMenu(el); return; }
     if ((el = t('[data-moveto]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.moveto); this._closeMenu(); if (tv) this._moveTo(tv); return; }
     if ((el = t('[data-sesstv]'))) {
@@ -2477,11 +2501,6 @@ Object.assign(PlexCenterCard.prototype, {
 
   _onChange(e) {
     const el = e.target;
-    if (el.matches?.('[data-pick]')) {
-      this._pickTv = el.value === 'local' ? 'local' : this._tvs().find((x) => x.id === el.value);
-      if (el.closest('.plc-sheet')) { this._armPopup(); return; }
-      this._renderDetail(); return;
-    }
     if (el.matches?.('[data-sort]')) { this._v.sort = el.value; this._renderTop(); this._renderMain(); return; }
     if (el.matches?.('[data-filter]')) { this._v[el.dataset.filter] = el.value; this._v.detail = null; this._renderTop(); this._renderMain(); this._renderDetail(); return; }
     if (el.matches?.('[data-season]')) { this._v.season = el.value; if (this._detailItem) this._paintSeasons(this._detailItem); }

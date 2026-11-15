@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.15.32
+
+**Changed**
+- **Play on** (was *Target*) on the details page and the Resume / Start over popup is a chip with the TV's icon and
+  name that opens the same menu as the other pickers: each TV with its state, *This device*, the current one ticked.
+- **Coming Soon** (and other titles that aren't in the library) no longer show a Play on picker: there is nothing
+  to play, only the trailer.
+
 ## v2026.11.15.31
 
 **Fixed**
