@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.15.26
+
+**Changed**
+- **No more dropdowns for tabs and the TV picker.** Per screen, *Tabs* is Tabs, **a chip** (page icon, name and a
+  chevron) or **an icon button** that opens a menu, or a bottom tab bar. *TV picker* is a button for each TV,
+  **a chip** (status dot, TV icon and name) or **an icon button** that opens a menu, or hidden.
+- **The menu** opens under its button: a title, one row per page or TV with its icon, a second line (Movies /
+  TV shows; who is watching or the TV's state), a tick and highlight on the current one, and a status dot for TVs.
+  It closes when you pick, tap outside, or press Escape. It replaces the *Play on* sheet.
+- Settings that used *A dropdown* change to *A chip*; *Phone: portrait* tabs default to a chip.
+
 ## v2026.11.15.25
 
 **Changed**
