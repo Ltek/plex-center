@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.14.18
+
+**New** (phones; settings under *Header*)
+- **Compact phone header** (on by default): one row with the tabs on the left and icon buttons on the right.
+  Search is an icon that opens a full-width search bar; the TV picker is one button that opens a *Play on* sheet
+  (each TV with its state and who's watching); filters use the Filters popover.
+- **44 px touch targets** for buttons, chips, tabs and fields on phones.
+- Optional:
+  - **Separate header layout for phones**, edited with *Editing the layout for: Tablets / Phones*.
+  - **Tabs** as a dropdown, or as a **tab bar at the bottom** (icons and names, within thumb reach).
+  - **Swipe** left / right on the content to change tab.
+  - **Hide the header while scrolling down**; it comes back when scrolling up.
+  - **Active filters as chips** under the header, each removable with ✕ (phones and tablets).
+
 ## v2026.11.14.17
 
 **Fixed**
