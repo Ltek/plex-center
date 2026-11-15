@@ -1,5 +1,20 @@
 # Changelog
 
+## v2026.11.15.20
+
+**Fixed**
+- **Phone posters didn't grow with Scale.** On phones, Home rows divided the width by *Items to show* (5), so posters
+  got smaller as the scale went up. Poster size on phones now comes from **Posters across on phones** (default 3);
+  a row with more items scrolls sideways instead of shrinking them.
+- **Touch targets** stay about 44 px on the screen at any scale (they were 44 px × the scale).
+- **Compact header**: the tabs dropdown was squeezed to an empty sliver, and *TV picker: dropdown* kept a wide
+  dropdown. The dropdown now has room, and the TV picker is the single button in the compact header.
+- **Phone preset** applies wherever the card uses the phone layout: *Layout: Phone* (any screen, also a computer)
+  or *Automatic* on a phone. Before, it only applied on phone-sized screens.
+
+**New**
+- *Layout → Posters across on phones*; the phone preset sets 3 in portrait and 5 in landscape (both adjustable).
+
 ## v2026.11.15.19
 
 **New**

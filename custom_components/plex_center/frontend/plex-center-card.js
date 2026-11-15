@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.19
+// Version: v2026.11.15.20
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.19';
+const BUILD_NUMBER = 'v2026.11.15.20';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -91,6 +91,9 @@ const DEFAULTS = {
   preset_portrait_scale: 130,
   preset_landscape_scale: 110,
   after_play: 'nowplaying',
+  phone_across: 3,
+  preset_portrait_across: 3,
+  preset_landscape_across: 5,
   search_width: 280,
   client_choice: 'card',
   tap_action: 'details',
@@ -317,18 +320,22 @@ function haCardStyle(c) {
 function presetFor(c, portrait) {
   return { layout: 'phone', phone_compact: true, phone_header: true, phone_tabs: portrait ? 'dropdown' : 'tabs', hide_on_scroll: true,
     filters_mode: 'popover', now_playing: 'slim', slim_position: 'bottom', slim_controls: 'toggle', tv_label: 'icon',
-    scale: Number(cfg(c, portrait ? 'preset_portrait_scale' : 'preset_landscape_scale')) || 100 };
+    scale: Number(cfg(c, portrait ? 'preset_portrait_scale' : 'preset_landscape_scale')) || 100,
+    phone_across: Number(cfg(c, portrait ? 'preset_portrait_across' : 'preset_landscape_across')) || 3 };
 }
 const isPhoneScreen = () => typeof screen !== 'undefined' && Math.min(screen.width || 9999, screen.height || 9999) < 600;
 const isPortrait = () => (typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)').matches : true);
 /** The config the card renders with: the phone preset, when on and on a phone, sets its options over the card's. */
 function effectiveConfig(c, phone = isPhoneScreen(), portrait = isPortrait()) {
-  return cfg(c, 'phone_preset') && phone ? { ...c, ...presetFor(c, portrait) } : c;
+  // The preset applies wherever the card uses the phone layout: forced with layout: phone, or Automatic on a phone.
+  const layout = cfg(c, 'layout');
+  const usePhone = layout === 'phone' || (layout !== 'tablet' && phone);
+  return cfg(c, 'phone_preset') && usePhone ? { ...c, ...presetFor(c, portrait) } : c;
 }
 
 /** Per-card custom properties (never written into the stylesheet). */
 function cardVars(c) {
-  const v = [`--plc-scale:${Math.max(0.5, Math.min(2, (Number(cfg(c, 'scale')) || 100) / 100))}`, `--plc-poster-w:${Number(cfg(c, 'poster_width')) || 130}px`, `--plc-radius:${Number(cfg(c, 'corner_radius'))}px`,
+  const v = [`--plc-across:${Math.max(1, Math.min(8, Number(cfg(c, 'phone_across')) || 3))}`, `--plc-scale:${Math.max(0.5, Math.min(2, (Number(cfg(c, 'scale')) || 100) / 100))}`, `--plc-poster-w:${Number(cfg(c, 'poster_width')) || 130}px`, `--plc-radius:${Number(cfg(c, 'corner_radius'))}px`,
     `--plc-title-px:${Number(cfg(c, 'title_size'))}px`, `--plc-line-px:${Number(cfg(c, 'line_size'))}px`,
     `--plc-head-px:${Number(cfg(c, 'header_size'))}px`, `--plc-sec-px:${Number(cfg(c, 'section_size'))}px`, `--plc-pad:${Number(cfg(c, 'card_padding'))}px`,
     `--plc-offset:${Number(cfg(c, 'screen_offset'))}px`, `--plc-search-w:${Number(cfg(c, 'search_width'))}px`];
@@ -475,7 +482,7 @@ const CARD_CSS = `
 .plc-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
 .plc.tablet .plc-body.with-detail { grid-template-columns: minmax(0, 1fr) minmax(280px, 34%); }
 .plc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--plc-poster-w, 130px), 1fr)); gap: 14px 12px; }
-.plc.phone .plc-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 8px; }
+.plc.phone .plc-grid { grid-template-columns: repeat(var(--plc-across, 3), minmax(0, 1fr)); gap: 10px 8px; }
 .plc-tile { position: relative; border: none; background: none; padding: 0; text-align: left; min-width: 0; }
 .plc-poster { position: relative; aspect-ratio: 2 / 3; width: 100%; border-radius: var(--plc-r); background: var(--plc-bg2) center / cover no-repeat;
   overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--secondary-text-color); font-size: .75em; text-align: center; }
@@ -497,7 +504,7 @@ const CARD_CSS = `
 .plc-sec-h .n { color: var(--secondary-text-color); letter-spacing: .04em; }
 .plc-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
 .plc-row > .plc-tile { flex: 0 0 var(--plc-poster-w, 130px); scroll-snap-align: start; }
-.plc.phone .plc-row > .plc-tile { flex-basis: 30%; }
+.plc.phone .plc-row > .plc-tile { flex-basis: calc((100% - (var(--plc-across, 3) - 1) * 12px) / var(--plc-across, 3) - 4px); }
 .plc-row.fanart > .plc-tile { flex: 0 0 calc(var(--plc-poster-w, 130px) * 2.2); }
 .plc.phone .plc-row.fanart > .plc-tile { flex-basis: 78%; }
 .plc-row.fanart .plc-poster, .plc-grid.fanart .plc-poster { aspect-ratio: 16 / 9; }
@@ -652,6 +659,9 @@ const CARD_CSS = `
 .plc-sec-body.scroll .plc-row { overflow-x: auto; }
 .plc-sec-body.limit .plc-row > .plc-tile, .plc-sec-body.scroll .plc-row > .plc-tile {
   flex: 0 0 calc((100% - (var(--plc-show, 5) - 1) * 12px) / var(--plc-show, 5)); }
+.plc.phone .plc-sec-body.limit .plc-row, .plc.phone .plc-sec-body.scroll .plc-row { overflow-x: auto; }
+.plc.phone .plc-sec-body.limit .plc-row > .plc-tile, .plc.phone .plc-sec-body.scroll .plc-row > .plc-tile {
+  flex-basis: max(calc((100% - (var(--plc-show, 5) - 1) * 12px) / var(--plc-show, 5)), calc((100% - (var(--plc-across, 3) - 1) * 12px) / var(--plc-across, 3) - 4px)); }
 .plc-sec-body.scroll .plc-list { grid-template-columns: minmax(0, 1fr); overflow-y: auto; scrollbar-width: thin;
   max-height: calc(var(--plc-show, 5) * (var(--plc-li-h, 150px) + 16px) - 12px); }
 .plc-sec-body.limit .plc-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--plc-li-w, 340px)), 1fr)); }
@@ -686,10 +696,13 @@ const CARD_CSS = `
 .plc-tvbtn-n { max-width: 7em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plc.phone.compact .plc-tvbtn-n { display: none; }
 .plc-tabsel { min-width: 0; max-width: 60vw; }
+.plc.phone.compact .plc-hl .plc-tabsel { flex: 1 1 auto; min-width: 7em; max-width: none; width: 100%; }
+.plc.phone.compact .plc-hl { min-width: 7em; }
 /* bigger touch targets on phones */
-.plc.phone .plc-chip, .plc.phone .plc-tab, .plc.phone .plc-select, .plc.phone .plc-search, .plc.phone .plc-btn { min-height: 44px; }
-.plc.phone .plc-icon-btn { width: 44px; height: 44px; }
-.plc.phone .plc-np-ctl .plc-icon-btn, .plc.phone .plc-slim .plc-icon-btn { width: 44px; height: 44px; }
+.plc.phone .plc-chip, .plc.phone .plc-tab, .plc.phone .plc-select, .plc.phone .plc-search, .plc.phone .plc-btn { min-height: max(34px, calc(44px / var(--plc-scale, 1))); }
+.plc.phone .plc-icon-btn, .plc.phone .plc-np-ctl .plc-icon-btn, .plc.phone .plc-slim .plc-icon-btn {
+  width: max(34px, calc(44px / var(--plc-scale, 1))); height: max(34px, calc(44px / var(--plc-scale, 1))); }
+.plc.phone .plc-top .plc-chip, .plc.phone .plc-top .plc-select { padding-top: 0; padding-bottom: 0; }
 /* active-filter chips */
 .plc-achips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .plc-achips .plc-chip { padding: 4px 10px; font-size: .8em; }
@@ -1022,7 +1035,7 @@ class PlexCenterCard extends HTMLElement {
       ? `<button class="plc-icon-btn" data-searchopen title="Search"><ha-icon icon="mdi:magnify"></ha-icon></button>`
       : `<input class="plc-search" type="search" placeholder="${inLib ? 'Search' : 'Search all libraries'}" value="${esc(v.query)}" data-search>${
         compact ? '<button class="plc-icon-btn" data-searchclose title="Close search"><ha-icon icon="mdi:close"></ha-icon></button>' : ''}`;
-    if (compact && picker && tvs.length > 1 && mode !== 'hidden' && mode !== 'dropdown') {
+    if (compact && picker && tvs.length > 1 && mode !== 'hidden') {
       const ic = (this._c.tv_icons || {})[cur?.id] || 'mdi:television';
       picker = `<button class="plc-chip plc-tvbtn" data-tvsheet title="${esc(tvLabel(cur))}">${dot(cur)}<ha-icon icon="${esc(ic)}"></ha-icon><span class="plc-tvbtn-n">${esc(tvLabel(cur))}</span></button>`;
     }
@@ -2387,10 +2400,12 @@ class PlexCenterCardEditor extends HTMLElement {
     return `${this._sub('ap-layout', 'Layout', `<p class="plce-hint">Automatic uses the phone layout when the card is narrower than ${PHONE_MAX_W}px.</p>
         ${this._select('layout', 'Layout', [['auto', 'Automatic'], ['tablet', 'Tablet'], ['phone', 'Phone']])}${this._text('title', 'Title', 'Plex')}
         ${this._slider('scale', 'Scale (whole card)', 50, 200, '%')}
+        ${this._slider('phone_across', 'Posters across on phones', 1, 8, '')}
         ${this._check('phone_preset', 'Phone preset: on phones, the most compact header and a larger display')}
-        ${this._c('phone_preset') ? `<p class="plce-hint">On phone-sized screens it sets: phone layout, compact one-row header (tabs as a dropdown in portrait), Filters popover,
+        ${this._c('phone_preset') ? `<p class="plce-hint">Wherever the card uses the phone layout (Layout: Phone, or Automatic on a phone) it sets: compact compact one-row header (tabs as a dropdown in portrait), Filters popover,
           TV buttons as icons, slim controls at the bottom, header hides while scrolling; and the scale below. Turn it off to set these yourself.</p>
-          ${this._slider('preset_portrait_scale', 'Scale in portrait', 80, 200, '%')}${this._slider('preset_landscape_scale', 'Scale in landscape', 80, 200, '%')}` : ''}`)}
+          ${this._slider('preset_portrait_scale', 'Scale in portrait', 80, 200, '%')}${this._slider('preset_portrait_across', 'Posters across in portrait', 1, 8, '')}
+          ${this._slider('preset_landscape_scale', 'Scale in landscape', 80, 200, '%')}${this._slider('preset_landscape_across', 'Posters across in landscape', 1, 8, '')}` : ''}`)}
       ${this._sub('ap-card', 'Card', `${this._colorControl('card_bg')}
         ${this._slider('card_border_width', 'Border width', 0, 8)}${this._colorControl('card_border_color')}
         ${this._slider('card_radius', 'Corner radius', 0, 32)}
