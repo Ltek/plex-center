@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.27
+// Version: v2026.11.15.28
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.27';
+const BUILD_NUMBER = 'v2026.11.15.28';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -45,7 +45,7 @@ const COLOR_DEFS = {
 };
 const SIZE_PX = { title_size: { large: 17, medium: 14, small: 12 }, line_size: { large: 14, medium: 12, small: 11 } };
 const SHADOWS = { none: 'none', soft: '0 2px 8px rgba(0,0,0,.25)', strong: '0 8px 28px rgba(0,0,0,.55)' };
-const HEADER_ITEMS = [['title', 'Title'], ['tabs', 'Tabs (Home and libraries)'], ['search', 'Search'], ['surprise', 'Surprise me'],
+const HEADER_ITEMS = [['title', 'Title'], ['tabs', 'Page menu (Home and libraries)'], ['search', 'Search'], ['surprise', 'Surprise me'],
   ['filters', 'All / Unwatched'], ['more', 'Genre / decade / rating / length'], ['sort', 'Sort'], ['view', 'Grid / list switch'], ['tvs', 'TV picker']];
 const DEFAULT_HEADER = [
   { id: 'title', section: 'library', row: 1, align: 'left' }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
@@ -60,6 +60,7 @@ const DEFAULT_HEADER_PHONE = [
   { id: 'sort', section: 'library', row: 1, align: 'right' }, { id: 'view', section: 'library', row: 1, align: 'right', hidden: true },
   { id: 'tvs', section: 'library', row: 1, align: 'right' }];
 const ALIGNS = ['left', 'center', 'right'];
+const PLACES = ['library', 'player', 'footer'];
 const HOME_BUILTIN = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['recent', 'Recently Added'], ['soon', 'Coming Soon']];
 const SEC_TYPE_TITLE = { recent: 'Recently Added', upcoming: 'Coming Soon', plexhub: 'Plex row' };
 const SEC_TYPE_ICON = { recent: 'mdi:plex', upcoming: 'mdi:calendar-clock', plexhub: 'mdi:star-shooting-outline', sensor: 'mdi:view-carousel' };
@@ -79,8 +80,8 @@ function upcomingSensors(hass, conf) {
 const SCREENS = [['tablet_landscape', 'Tablet / computer: landscape'], ['tablet_portrait', 'Tablet / computer: portrait'],
   ['phone_portrait', 'Phone: portrait'], ['phone_landscape', 'Phone: landscape']];
 const SCREEN_SETTINGS = {
-  tablet: { scale: 100, view: 'grid', search: 'field', tvs: 'chips', tabs: 'tabs', filters: 'inline', header: 'main', hide: false, swipe: false, now_playing: 'panel', slim_position: 'bottom' },
-  phone: { scale: 100, view: 'grid', search: 'icon', tvs: 'button', tabs: 'tabs', filters: 'popover', header: 'one_row', hide: true, swipe: false, now_playing: 'slim', slim_position: 'bottom' },
+  tablet: { scale: 100, view: 'grid', search: 'field', tvs: 'chips', tabs: 'tabs', filters: 'inline', header: 'main', hide: false, swipe: false, now_playing: 'panel', slim_position: 'bottom', footer_sticky: false },
+  phone: { scale: 100, view: 'grid', search: 'icon', tvs: 'button', tabs: 'tabs', filters: 'popover', header: 'one_row', hide: true, swipe: false, now_playing: 'slim', slim_position: 'bottom', footer_sticky: true },
 };
 const SCREEN_ACROSS = { tablet_landscape: 6, tablet_portrait: 4, phone_portrait: 3, phone_landscape: 5 };
 const SCREEN_DEFAULTS = Object.fromEntries(SCREENS.flatMap(([sc]) => Object.entries({ ...SCREEN_SETTINGS[sc.split('_')[0]], across: SCREEN_ACROSS[sc],
@@ -214,7 +215,14 @@ function migrateScreens(c) {
     if (c.swipe_tabs !== undefined) put(sc, 'swipe', !!c.swipe_tabs);
   }
   void all;
-  for (const [sc] of SCREENS) for (const x of ['tabs', 'tvs']) if (c[`${sc}_${x}`] === 'dropdown') c[`${sc}_${x}`] = 'chip';   // 2026.11.15.26: dropdowns → chip + menu
+  for (const [sc] of SCREENS) for (const x of ['tabs', 'tvs']) if (c[`${sc}_${x}`] === 'dropdown') c[`${sc}_${x}`] = 'chip';
+  for (const [sc] of SCREENS) {   // 2026.11.15.28: the bottom tab bar is the page menu in the footer
+    if (c[`${sc}_tabs`] !== 'bottom') continue;
+    const list = headerLayout(c, sc).map((h) => (h.id === 'tabs' ? { ...h, section: 'footer', row: 1, align: 'center', hidden: undefined } : h));
+    c[`header_${sc}`] = list.map((h) => Object.fromEntries(Object.entries(h).filter(([, v]) => v !== undefined)));
+    c[`${sc}_header`] = 'own';
+    c[`${sc}_tabs`] = 'tabs';
+  }   // 2026.11.15.26: dropdowns → chip + menu
   for (const k of ['scale', 'library_view', 'max', 'tv_picker', 'filters_mode', 'now_playing', 'slim_position', 'phone_header_mode', 'header_phone', 'phone_filters',
     'phone_view', 'phone_now_playing', 'phone_slim_position', 'phone_hide_on_scroll', 'swipe_tabs', 'poster_width', 'panel_when']) delete c[k];
 }
@@ -299,7 +307,7 @@ function headerLayout(c, screen = null) {
     if (!h || !known.has(h.id) || seen.has(h.id)) continue;
     seen.add(h.id);
     const d = defs.find((x) => x.id === h.id);
-    out.push({ id: h.id, section: h.section === 'player' ? 'player' : 'library', row: [1, 2, 3].includes(Number(h.row)) ? Number(h.row) : d.row,
+    out.push({ id: h.id, section: PLACES.includes(h.section) ? h.section : 'library', row: [1, 2, 3].includes(Number(h.row)) ? Number(h.row) : d.row,
       align: ALIGNS.includes(h.align) ? h.align : d.align, ...(h.hidden ? { hidden: true } : {}) });
   }
   for (const d of defs) if (!seen.has(d.id)) out.push({ ...d });
@@ -413,7 +421,7 @@ function effectiveConfig(c, phone, portrait = isPortrait()) {
   const sc = screenOf(phone, portrait), g = (k) => cfg(c, `${sc}_${k}`);
   return { ...c, _screen: sc, _phone_layout: !!phone, scale: Number(g('scale')) || 100, across: Math.max(1, Math.min(12, Number(g('across')) || 3)),
     library_view: g('view'), search_mode: g('search'), tv_picker: g('tvs'), tabs_mode: g('tabs'), filters_mode: g('filters'), header_mode: g('header'),
-    hide_on_scroll: !!g('hide'), swipe_tabs: !!g('swipe'), now_playing: phone && g('now_playing') === 'panel' ? 'slim' : g('now_playing'), slim_position: g('slim_position') };
+    hide_on_scroll: !!g('hide'), swipe_tabs: !!g('swipe'), footer_sticky: !!g('footer_sticky'), now_playing: phone && g('now_playing') === 'panel' ? 'slim' : g('now_playing'), slim_position: g('slim_position') };
 }
 
 /** Per-card custom properties (never written into the stylesheet). */
@@ -868,14 +876,14 @@ const CARD_CSS = `
 .plc-achips .plc-chip { padding: 4px 10px; font-size: .8em; }
 .plc-achips ha-icon { --mdc-icon-size: 14px; }
 /* bottom tab bar */
-.plc-bnav { position: sticky; bottom: 0; z-index: 7; display: flex; justify-content: space-around; gap: 2px; margin: 10px calc(-1 * var(--plc-pad, 14px)) calc(-1 * var(--plc-pad, 14px));
-  padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px)); background: var(--card-background-color, var(--ha-card-background, #1c1c1c));
-  border-top: 1px solid var(--divider-color, #333); overflow-x: auto; scrollbar-width: none; }
-.plc-bnav-i { flex: 1 0 64px; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 52px; padding: 4px; border: none;
-  background: none; color: var(--secondary-text-color); font-size: .7em; }
-.plc-bnav-i span { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plc-bnav-i.on { color: var(--plc-a); }
-.plc-bnav-i ha-icon { --mdc-icon-size: 24px; }
+.plc-footer { margin: 12px calc(-1 * var(--plc-pad, 14px)) calc(-1 * var(--plc-pad, 14px)); padding: 6px var(--plc-pad, 14px) calc(6px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--divider-color, #333); background: var(--card-background-color, var(--ha-card-background, #1c1c1c)); }
+.plc-footer.sticky { position: sticky; bottom: 0; z-index: 7; }
+.plc-footer .plc-hrow { flex-direction: row !important; flex-wrap: nowrap; align-items: center; }
+.plc-footer .plc-hl, .plc-footer .plc-hc, .plc-footer .plc-hr { width: auto !important; }
+.plc-footer .plc-hc { flex: 1 1 auto; justify-content: center; min-width: 0; }
+.plc-footer .plc-tabs { margin: 0; flex: 1 1 auto; justify-content: space-around; }
+.plc-footer .plc-tabs .plc-tab { flex: 1 0 auto; }
 .plc.bnav .plc-slim.bottom { bottom: 64px; }
 .plc.bnav .plc-np.mini { margin-bottom: 0; }
 /* header that hides while scrolling down */
@@ -1254,6 +1262,8 @@ class PlexCenterCard extends HTMLElement {
     let left = (a.left - rr.left) / scale;
     left = Math.max(8, Math.min(left, rr.width / scale - w - 8));
     Object.assign(m.style, { top: `${(a.bottom - rr.top) / scale + 6}px`, left: `${left}px`, width: `${w}px` });
+    const vh = (typeof window !== 'undefined' && window.innerHeight) || 0;
+    if (vh && a.bottom > vh * 0.6) m.style.top = `${Math.max(4, (a.top - rr.top) / scale - m.offsetHeight - 6)}px`;   // footer: open upward
     this._menuAnchor = anchor;
     m.querySelector('.plc-menu-i.on, .plc-menu-i')?.focus?.({ preventScroll: true });
   }
@@ -1367,16 +1377,6 @@ class PlexCenterCard extends HTMLElement {
     return chips.length ? `<div class="plc-achips">${chips.map(([k, n]) => `<button class="plc-chip on" data-unchip="${k}">${esc(n)}<ha-icon icon="mdi:close"></ha-icon></button>`).join('')}</div>` : '';
   }
 
-  /** Bottom tab bar on phones: Home and each library as an icon with its name. */
-  _bottomNav() {
-    const v = this._v, libs = this._libraries();
-    const icon = (t) => (t.id === 'home' ? 'mdi:home' : t.type === 'movie' ? 'mdi:movie-open' : t.type === 'show' ? 'mdi:television-classic' : 'mdi:folder-play');
-    return `<nav class="plc-bnav">${tabOrder(this._c, libs).map((t) => {
-      const id = t.id === 'home' ? 'home' : t.key, on = t.id === 'home' ? v.tab === 'home' : (v.tab === t.key || v.tab === t.title);
-      return `<button class="plc-bnav-i${on ? ' on' : ''}" data-tab="${esc(id)}"><ha-icon icon="${icon(t)}"></ha-icon><span>${esc(t.title)}</span></button>`;
-    }).join('')}</nav>`;
-  }
-
   /** Up to three rows of left / middle / right groups; a row with nothing to show is left out. */
   _headerHtml(section, pieces, playerShown) {
     const rows = [1, 2, 3].map((row) => {
@@ -1398,9 +1398,9 @@ class PlexCenterCard extends HTMLElement {
     const pieces = this._headerPieces();
     const playerShown = this._panelVisible();
     const hm = cfg(this._c, 'header_mode'), searchIcon = cfg(this._c, 'search_mode') === 'icon';
-    const bottomTabs = cfg(this._c, 'tabs_mode') === 'bottom';
+    const foot = this._headerHtml('footer', pieces, playerShown);
     this._root.classList.toggle('onerow', hm === 'one_row' || (this._phone && hm === 'own'));
-    this._root.classList.toggle('bnav', bottomTabs);
+    this._root.classList.toggle('bnav', !!foot && !!cfg(this._c, 'footer_sticky'));
     this._root.classList.toggle('stickyhdr', !!cfg(this._c, 'hide_on_scroll'));
     const top = this._root.querySelector('.plc-top');
     top.innerHTML = searchIcon && (this._v.searchOpen || this._v.query)
@@ -1408,7 +1408,7 @@ class PlexCenterCard extends HTMLElement {
       : this._headerHtml('library', pieces, playerShown);
     top.insertAdjacentHTML('beforeend', this._chipsHtml());
     const bn = this._root.querySelector('.plc-bnav-slot');
-    if (bn) bn.innerHTML = bottomTabs ? this._bottomNav() : '';
+    if (bn) bn.innerHTML = foot ? `<footer class="plc-footer${cfg(this._c, 'footer_sticky') ? ' sticky' : ''}">${foot}</footer>` : '';
     const ph = this._root.querySelector('.plc-phead');
     if (ph) ph.innerHTML = this._headerHtml('player', pieces, playerShown);
   }
@@ -2468,6 +2468,19 @@ const EDITOR_CSS = `
         .plce-group.first { margin-top: 0; padding-top: 0; border-top: none; }
         .plce-gh { margin: 18px 2px 6px; color: var(--secondary-text-color); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
         .plce-gh.first { margin-top: 2px; }
+        .plce-lockbar { display: flex; margin: 8px 0; }
+        .plce-lock { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 999px; cursor: pointer; font: inherit; font-weight: 600;
+          border: 1px solid var(--divider-color, #555); background: transparent; color: var(--primary-text-color); }
+        .plce-lock ha-icon { --mdc-icon-size: 18px; }
+        .plce-lock.open { border-color: var(--accent-color, var(--ltek-c-accent)); background: color-mix(in srgb, var(--accent-color, var(--ltek-c-accent)) 18%, transparent); }
+        .plce-hlist { display: flex; flex-direction: column; gap: 2px; }
+        .plce-hchips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 2px; border-bottom: 1px solid var(--divider-color, #333); }
+        .plce-hchips .plce-name { flex: 1 1 140px; min-width: 0; }
+        .plce-hchips.off .plce-name { opacity: .55; }
+        .plce-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 12px;
+          background: color-mix(in srgb, var(--primary-text-color) 9%, transparent); color: var(--primary-text-color); }
+        .plce-chip.off { color: var(--secondary-text-color); }
+        .plce-chip ha-icon { --mdc-icon-size: 14px; }
         .plce-row { display: flex; align-items: center; gap: var(--ltek-sp-4); padding: var(--ltek-sp-1) 0; flex-wrap: wrap; justify-content: flex-start; }
         .plce-row label.lbl { color: var(--ltek-c-label); font-size: var(--ltek-fs-body); font-weight: var(--ltek-fw-normal); flex: none; }
         .plce-row input[type="text"], .plce-row select { flex: 1 1 auto; min-width: 0; padding: var(--ltek-ctrl-pad);
@@ -2636,19 +2649,25 @@ class PlexCenterCardEditor extends HTMLElement {
     const ph = owns.some(([sc]) => sc === this._hdrFor) ? this._hdrFor : null;
     const items = headerLayout(this._config, ph), names = new Map(HEADER_ITEMS);
     const sel = (i, k, opts, cur) => `<select data-hi="${i}" data-hk="${k}">${opts.map(([v, n]) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
-    const rows = items.map((h, i) => `<div class="plce-item${h.hidden ? ' off' : ''}"><div class="plce-item-h"><ha-icon icon="mdi:drag-horizontal-variant"></ha-icon>
+    const placeName = { library: 'Header', player: 'Player header', footer: 'Footer' }, alignName = { left: 'Left', center: 'Middle', right: 'Right' };
+    const locked = this._hdrLocked !== false;
+    const chipRows = items.map((h) => `<div class="plce-hchips${h.hidden ? ' off' : ''}"><span class="plce-name">${esc(names.get(h.id))}</span>${h.hidden
+      ? '<span class="plce-chip off"><ha-icon icon="mdi:eye-off"></ha-icon>Hidden</span>'
+      : `<span class="plce-chip">${placeName[h.section] || 'Header'}</span><span class="plce-chip">Row ${h.row}</span><span class="plce-chip">${alignName[h.align]}</span>`}</div>`).join('');
+    const rows = locked ? '' : items.map((h, i) => `<div class="plce-item${h.hidden ? ' off' : ''}"><div class="plce-item-h"><ha-icon icon="mdi:drag-horizontal-variant"></ha-icon>
         <span class="plce-name">${esc(names.get(h.id))}</span>
         <button class="plce-act" data-hiup="${i}" title="Move earlier"${i ? '' : ' disabled'}><ha-icon icon="mdi:arrow-up"></ha-icon></button>
         <button class="plce-act" data-hidown="${i}" title="Move later"${i < items.length - 1 ? '' : ' disabled'}><ha-icon icon="mdi:arrow-down"></ha-icon></button>
         <button class="plce-act" data-hivis="${i}" title="${h.hidden ? 'Show' : 'Hide'}"><ha-icon icon="mdi:${h.hidden ? 'eye-off' : 'eye'}"></ha-icon></button></div>
-      ${h.hidden ? '' : `<div class="plce-row">${sel(i, 'section', [['library', 'Library / Home header'], ['player', 'Player header']], h.section)}
+      ${h.hidden ? '' : `<div class="plce-row">${sel(i, 'section', [['library', 'Header'], ['player', 'Player header'], ['footer', 'Footer']], h.section)}
         ${sel(i, 'row', [[1, 'Row 1'], [2, 'Row 2'], [3, 'Row 3']], h.row)}${sel(i, 'align', [['left', 'Left'], ['center', 'Middle'], ['right', 'Right']], h.align)}</div>`}</div>`).join('');
-    return `<p class="plce-hint">Two headers: the <b>Library / Home</b> header above the library, and the <b>Player</b> header above the player side panel
-        (tablets). Each item goes in a row (up to three) and on the left, in the middle or on the right; items in the same place are shown in this
-        list's order. Rows with nothing to show are left out. When the side panel isn't showing, Player items appear in the Library header.</p>
+    return `<p class="plce-hint">Each item goes in the <b>Header</b> (above Home and the libraries), the <b>Player header</b> (above the side panel on
+        tablets; in the Header when there's no side panel) or the <b>Footer</b> (below the card; it can stick to the bottom of the screen, set per
+        screen in Layout). Each place has up to three rows with left / middle / right; items in the same spot follow this list's order.</p>
       ${owns.length ? `<div class="plce-row"><label class="lbl">Editing the layout for</label><select data-hdrfor>
         <option value=""${ph ? '' : ' selected'}>The main layout</option>${owns.map(([sc, name]) => `<option value="${sc}"${ph === sc ? ' selected' : ''}>${esc(name)}</option>`).join('')}</select></div>` : ''}
-      <div class="plce-list">${rows}</div>
+      <div class="plce-lockbar"><button class="plce-lock${locked ? '' : ' open'}" data-hlock><ha-icon icon="mdi:${locked ? 'lock' : 'lock-open-variant'}"></ha-icon>${locked ? 'Unlock to edit' : 'Editing: lock'}</button></div>
+      ${locked ? `<div class="plce-hlist">${chipRows}</div>` : `<div class="plce-list">${rows}</div>`}
       <p class="plce-hint">Which layout each screen uses, and how tabs, search, the TV picker and filters look, is set per screen in Layout.</p>
       ${this._check('filter_chips', 'Show the active filters as removable chips under the header')}
       ${this._slider('search_width', 'Search box width', 100, 800)}
@@ -2661,7 +2680,7 @@ class PlexCenterCardEditor extends HTMLElement {
     const pick = this._config.libraries || [];
     return `<p class="plce-hint">Each TV shows what its Plex user is shared. Untick libraries this card should hide.</p>
       ${libs.length ? `<div class="plce-checks">${libs.map((l) => `<label class="plce-check"><input type="checkbox" data-lib="${esc(l.title)}"${!pick.length || pick.includes(l.title) ? ' checked' : ''}>${esc(l.title)}</label>`).join('')}</div>` : '<p class="plce-hint">Libraries appear once Plex Center has loaded.</p>'}
-      <div class="plce-group">Tab order</div>
+      <div class="plce-group">Page order</div>
       <div class="plce-list">${tabOrder(this._config, libs.filter((l) => !pick.length || pick.includes(l.title))).map((t, i, all) => `<div class="plce-item"><div class="plce-item-h">
         <ha-icon icon="${t.id === 'home' ? 'mdi:home-variant' : 'mdi:folder-play-outline'}"></ha-icon><span class="plce-name">${esc(t.title)}</span>
         <button class="plce-act" data-tup="${i}" title="Move left"${i ? '' : ' disabled'}><ha-icon icon="mdi:arrow-up"></ha-icon></button>
@@ -2796,11 +2815,12 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._select(k('view'), 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}
         <div class="plce-group">Header</div>
         ${this._select(k('header'), 'Header layout', [['main', 'The main layout (Header panel)'], ['one_row', 'One row: tabs on the left, buttons on the right'], ['own', 'Its own layout (edit it in the Header panel)']])}
-        ${this._select(k('tabs'), 'Tabs', [['tabs', 'Tabs'], ['chip', 'A chip with the page name that opens a menu'], ['button', 'An icon button that opens a menu'], ['bottom', 'A tab bar at the bottom']])}
+        ${this._select(k('tabs'), 'Page menu', [['tabs', 'Buttons'], ['chip', 'A chip with the page name that opens a menu'], ['button', 'An icon button that opens a menu']])}
         ${this._select(k('search'), 'Search', [['field', 'A search box'], ['icon', 'An icon that opens a search bar']])}
         ${this._select(k('tvs'), 'TV picker', [['chips', 'A button for each TV'], ['chip', 'A chip with the TV name that opens a menu'], ['button', 'An icon button that opens a menu'], ['hidden', 'Hidden (always the default TV)']])}
         ${this._select(k('filters'), 'Library filters', [['inline', 'In the header'], ['popover', 'In a Filters popover']])}
         ${this._check(k('hide'), 'Hide the header while scrolling down (comes back when scrolling up)')}
+        ${this._check(k('footer_sticky'), 'The footer sticks to the bottom of the screen')}
         ${this._check(k('swipe'), 'Swipe left / right on the content to change tab')}
         <div class="plce-group">Now playing</div>
         ${this._select(k('now_playing'), 'Now playing', [...(phone ? [] : [['panel', 'Side panel']]), ['slim', 'Slim controls'], ['off', 'Off']])}
@@ -2856,7 +2876,7 @@ class PlexCenterCardEditor extends HTMLElement {
     this.innerHTML = `<style>${EDITOR_CSS}</style><div class="plce">
       <div class="plce-gh first">Card</div>
       ${this._panel('layout', 'mdi:responsive', 'Layout', this._layoutBody())}
-      ${this._panel('header', 'mdi:page-layout-header', 'Header', this._headerBody())}
+      ${this._panel('header', 'mdi:page-layout-header-footer', 'Header & footer', this._headerBody())}
       ${this._panel('home', 'mdi:home-variant', 'Home', this._homeBody())}
       ${this._panel('np', 'mdi:play-box-outline', 'Now playing', this._npBody())}
       ${this._panel('style', 'mdi:palette', 'Appearance', this._styleBody())}
@@ -2902,6 +2922,7 @@ class PlexCenterCardEditor extends HTMLElement {
     const hl = () => headerLayout(this._config, hdrFor());
     const putH = (list) => { if (hdrFor()) this._config[`header_${hdrFor()}`] = list; else this._config.header = list; this._emit(); this._render(); };
     all('[data-hdrfor]', (el) => el.addEventListener('change', () => { this._hdrFor = el.value || null; this._render(); }));
+    all('[data-hlock]', (b) => b.addEventListener('click', () => { this._hdrLocked = this._hdrLocked === false; this._render(); }));
     all('[data-hiup]', (b) => b.addEventListener('click', () => { const l = hl(), i = Number(b.dataset.hiup); [l[i - 1], l[i]] = [l[i], l[i - 1]]; putH(l); }));
     all('[data-hidown]', (b) => b.addEventListener('click', () => { const l = hl(), i = Number(b.dataset.hidown); [l[i + 1], l[i]] = [l[i], l[i + 1]]; putH(l); }));
     all('[data-hivis]', (b) => b.addEventListener('click', () => { const l = hl(), h = l[Number(b.dataset.hivis)]; if (h.hidden) delete h.hidden; else h.hidden = true; putH(l); }));

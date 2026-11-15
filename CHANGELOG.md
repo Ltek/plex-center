@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.15.28
+
+**Changed**
+- **Page menu** (was *Tabs*), per screen in Layout: **Buttons** (was *Tabs*), a chip that opens a menu, or an icon
+  button that opens a menu.
+- **Footer**: the Header panel is now **Header & footer**. Any item (page menu, search, Surprise me, TV picker,
+  filters, sort, view) can go in the Header, the Player header or the **Footer**, each with up to three rows and
+  left / middle / right. Per screen: *The footer sticks to the bottom of the screen* (on for phones). Menus opened
+  from the footer open upward.
+- *A tab bar at the bottom* is now the page menu in the footer: screens that used it get their own layout with the
+  page menu in the footer, set to Buttons.
+- **Header & footer list is locked by default**: each item shows as chips (where, row, left / middle / right, or
+  Hidden). *Unlock to edit* shows the controls; *Editing: lock* hides them again.
+
 ## v2026.11.15.27
 
 **Changed**
