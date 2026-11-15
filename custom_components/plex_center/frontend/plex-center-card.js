@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.28
+// Version: v2026.11.15.29
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.28';
+const BUILD_NUMBER = 'v2026.11.15.29';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -42,7 +42,32 @@ const COLOR_DEFS = {
   title_color: ['Row titles', 'Theme text', '#ffffff', '--plc-title-c'],
   line_color: ['Row lines', 'Theme secondary text', '#bbbbbb', '--plc-line-c'],
   flag_color: ['"New" flag', 'Accent', '#e5a00d', '--plc-flag-c'],
+  page_text_color: ['Text', 'The preset', '#bbbbbb', '--pmu-c'],
+  page_active_text_color: ['Current page text', 'The preset', '#ffffff', '--pmu-ac'],
+  page_icon_color: ['Icon', 'The preset', '#bbbbbb', '--pmu-ic'],
+  page_active_icon_color: ['Current page icon', 'The preset', '#e5a00d', '--pmu-aic'],
+  page_bg: ['Background', 'The preset', '#2a2a2a', '--pmu-bg'],
+  page_active_bg: ['Current page background', 'The preset', '#3a3a3a', '--pmu-abg'],
+  page_border_color: ['Border', 'The preset', '#555555', '--pmu-bc'],
 };
+/** Page menu presets (their colors live in the stylesheet as --pm-* per preset class). */
+const PAGE_KEYS = ['page_show_icon', 'page_show_label', 'page_icon_pos', 'page_text_px', 'page_weight', 'page_icon_px', 'page_radius', 'page_height', 'page_gap', 'page_border_width', 'page_active'];
+const PAGE_PRESETS = {
+  standard: { name: 'Standard (icon above the name)', page_show_icon: true, page_show_label: true, page_icon_pos: 'above', page_text_px: 11, page_weight: '600', page_icon_px: 22, page_radius: 10, page_height: 52, page_gap: 2, page_border_width: 0, page_active: 'text' },
+  underline: { name: 'Underline', page_show_icon: false, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '700', page_icon_px: 18, page_radius: 8, page_height: 36, page_gap: 4, page_border_width: 0, page_active: 'underline' },
+  pill: { name: 'Pill', page_show_icon: true, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '600', page_icon_px: 18, page_radius: 999, page_height: 36, page_gap: 6, page_border_width: 0, page_active: 'fill' },
+  outline: { name: 'Outline', page_show_icon: true, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '600', page_icon_px: 18, page_radius: 999, page_height: 36, page_gap: 6, page_border_width: 1, page_active: 'fill' },
+  glass: { name: 'Glass', page_show_icon: true, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '600', page_icon_px: 18, page_radius: 12, page_height: 38, page_gap: 6, page_border_width: 1, page_active: 'glow' },
+  neon: { name: 'Neon', page_show_icon: true, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '600', page_icon_px: 18, page_radius: 8, page_height: 36, page_gap: 6, page_border_width: 0, page_active: 'glow' },
+};
+/** The page menu's settings: the preset, with any override on top. */
+function pageLook(c) {
+  const style = PAGE_PRESETS[c.page_style] ? c.page_style : 'standard';
+  const out = { style, ...PAGE_PRESETS[style] };
+  for (const k of PAGE_KEYS) if (c[k] !== undefined) out[k] = c[k];
+  if (!out.page_show_icon && !out.page_show_label) out.page_show_label = true;
+  return out;
+}
 const SIZE_PX = { title_size: { large: 17, medium: 14, small: 12 }, line_size: { large: 14, medium: 12, small: 11 } };
 const SHADOWS = { none: 'none', soft: '0 2px 8px rgba(0,0,0,.25)', strong: '0 8px 28px rgba(0,0,0,.55)' };
 const HEADER_ITEMS = [['title', 'Title'], ['tabs', 'Page menu (Home and libraries)'], ['search', 'Search'], ['surprise', 'Surprise me'],
@@ -89,6 +114,7 @@ const SCREEN_DEFAULTS = Object.fromEntries(SCREENS.flatMap(([sc]) => Object.entr
 
 const DEFAULTS = {
   ...SCREEN_DEFAULTS,
+  page_style: 'standard',
   title: 'Plex',
   layout: 'auto',
   tv_picker: 'chips',
@@ -281,6 +307,13 @@ function normalizeConfig(raw) {
     const h = headerLayout({ ...c, [`${sc}_header`]: 'own' }, sc);
     if (JSON.stringify(h) === JSON.stringify(sc.startsWith('phone') ? DEFAULT_HEADER_PHONE : DEFAULT_HEADER)) delete c[k]; else c[k] = h;
   }
+  { const pre = PAGE_PRESETS[c.page_style] || PAGE_PRESETS.standard;
+    if (c.page_style && !PAGE_PRESETS[c.page_style]) delete c.page_style;
+    for (const k of PAGE_KEYS) if (c[k] === pre[k] || c[k] === '' || c[k] == null) delete c[k];
+    if (c.page_icons && typeof c.page_icons === 'object') {
+      const o = Object.fromEntries(Object.entries(c.page_icons).filter(([k, v]) => k && typeof v === 'string' && v.trim()).map(([k, v]) => [k, v.trim()]));
+      if (Object.keys(o).length) c.page_icons = o; else delete c.page_icons;
+    } else delete c.page_icons; }
   if (c.tv_icons && typeof c.tv_icons === 'object') {
     const o = Object.fromEntries(Object.entries(c.tv_icons).filter(([k, v]) => k && typeof v === 'string' && v.trim()).map(([k, v]) => [k, v.trim()]));
     if (Object.keys(o).length) c.tv_icons = o; else delete c.tv_icons;
@@ -413,7 +446,7 @@ function addRecent(q) {
   try { localStorage.setItem(RECENT_KEY, JSON.stringify([q, ...recentSearches().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 8))); } catch { /* */ }
 }
 
-const tabIcon = (t) => (t.id === 'home' ? 'mdi:home' : t.type === 'movie' ? 'mdi:movie-open' : t.type === 'show' ? 'mdi:television-classic' : 'mdi:folder-play');
+const tabIcon = (t, c = {}) => (c.page_icons?.[t.id]) || (t.id === 'home' ? 'mdi:home' : t.type === 'movie' ? 'mdi:movie-open' : t.type === 'show' ? 'mdi:television-classic' : 'mdi:folder-play');
 const isPortrait = () => (typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)').matches : true);
 /** The config the card renders with: the current screen's settings, under the names the renderer reads. */
 function screenOf(phone, portrait) { return `${phone ? 'phone' : 'tablet'}_${portrait ? 'portrait' : 'landscape'}`; }
@@ -569,6 +602,32 @@ const CARD_CSS = `
   color: var(--secondary-text-color); }
 .plc-tab.on { color: var(--primary-text-color); background: var(--plc-bg2); box-shadow: inset 0 -2px 0 var(--plc-a); }
 .plc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+/* page menu styles: one layout, colors per preset (--pm-*), user colors on top (--pmu-*) */
+.plc-tabs.pm { gap: var(--pm-gap, 4px); align-items: stretch; }
+.plc-tabs.pm .plc-tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--pm-h, 36px); padding: 0 12px;
+  border-radius: var(--pm-r, 8px); font-size: var(--pm-fs, 14px); font-weight: var(--pm-fw, 600); line-height: 1.1; box-sizing: border-box;
+  color: var(--pmu-c, var(--pm-c)); background-color: var(--pmu-bg, var(--pm-bg)); border: var(--pm-bw, 0) solid var(--pmu-bc, var(--pm-bc, transparent));
+  box-shadow: var(--pm-sh, none); -webkit-backdrop-filter: var(--pm-blur, none); backdrop-filter: var(--pm-blur, none); transition: background-color .15s, color .15s, box-shadow .15s; }
+.plc-tabs.pm.pm-above .plc-tab { flex-direction: column; gap: 3px; padding: 4px 10px; }
+.plc-tabs.pm .plc-tab ha-icon { --mdc-icon-size: var(--pm-is, 18px); color: var(--pmu-ic, var(--pm-ic, currentColor)); flex: none; }
+.plc-tab-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12em; }
+.plc-tabs.pm .plc-tab.on { color: var(--pmu-ac, var(--pm-ac)); background-color: var(--pmu-abg, var(--pm-abg)); border-color: var(--pmu-bc, var(--pm-abc, var(--pm-bc, transparent))); box-shadow: var(--pm-sh, none); }
+.plc-tabs.pm .plc-tab.on ha-icon { color: var(--pmu-aic, var(--pm-aic, currentColor)); }
+.plc-tabs.pm.pm-act-underline .plc-tab.on { box-shadow: inset 0 -2px 0 var(--plc-a); }
+.plc-tabs.pm.pm-act-glow .plc-tab.on { box-shadow: 0 0 14px 2px color-mix(in srgb, var(--plc-a) 55%, transparent); }
+.plc-tabs.pm.pm-act-text .plc-tab.on { background-color: var(--pmu-abg, transparent); }
+.pm-standard { --pm-c: var(--secondary-text-color); --pm-ac: var(--plc-a); --pm-ic: var(--secondary-text-color); --pm-aic: var(--plc-a); --pm-bg: transparent; --pm-abg: transparent; }
+.pm-underline { --pm-c: var(--secondary-text-color); --pm-ac: var(--primary-text-color); --pm-bg: transparent; --pm-abg: var(--plc-bg2); }
+.pm-pill { --pm-c: var(--primary-text-color); --pm-ac: var(--text-primary-color, #fff); --pm-ic: var(--secondary-text-color); --pm-aic: var(--text-primary-color, #fff); --pm-bg: var(--plc-bg2); --pm-abg: var(--plc-a); }
+.pm-outline { --pm-c: var(--primary-text-color); --pm-ac: var(--primary-text-color); --pm-ic: var(--secondary-text-color); --pm-aic: var(--plc-a); --pm-bg: transparent;
+  --pm-abg: color-mix(in srgb, var(--plc-a) 16%, transparent); --pm-bc: var(--divider-color, #555); --pm-abc: var(--plc-a); }
+.pm-glass { --pm-c: var(--primary-text-color); --pm-ac: var(--primary-text-color); --pm-ic: var(--secondary-text-color); --pm-aic: var(--plc-a); --pm-bg: rgba(255,255,255,.07);
+  --pm-abg: rgba(255,255,255,.16); --pm-bc: rgba(255,255,255,.16); --pm-abc: rgba(255,255,255,.3); --pm-blur: blur(10px) saturate(1.3); --pm-sh: 0 4px 14px rgba(0,0,0,.25); }
+.pm-neon { --pm-c: var(--secondary-text-color); --pm-ac: var(--primary-text-color); --pm-ic: var(--plc-a); --pm-aic: var(--plc-a); --pm-bg: transparent;
+  --pm-abg: color-mix(in srgb, var(--plc-a) 10%, transparent); --pm-sh: 0 4px 12px rgba(0,0,0,.5); }
+.plc-tabs.pm.pm-neon .plc-tab { background-image: linear-gradient(90deg, transparent, var(--plc-a), transparent), linear-gradient(90deg, transparent, var(--plc-a), transparent);
+  background-size: 100% 1px; background-position: top, bottom; background-repeat: no-repeat; }
+@media (prefers-reduced-motion: reduce) { .plc-tabs.pm .plc-tab { transition: none; } }
 .plc-msg { color: var(--secondary-text-color); font-size: .9em; padding: 12px 2px; }
 .plc-msg.err { color: var(--error-color, #f44336); }
 .plc-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
@@ -1221,11 +1280,9 @@ class PlexCenterCard extends HTMLElement {
     const ordered = tabOrder(this._c, libs);
     const curTab = v.tab === 'home' ? { id: 'home', title: 'Home' } : ordered.find((t) => t.id !== 'home' && on(t)) || { id: 'home', title: 'Home' };
     const tabsHtml = tabsMode === 'bottom' ? ''
-      : tabsMode === 'button' ? `<button class="plc-icon-btn plc-menubtn" data-tabmenu title="${esc(curTab.title)}"><ha-icon icon="${tabIcon(curTab)}"></ha-icon></button>`
-      : tabsMode === 'chip' || tabsMode === 'dropdown' ? `<button class="plc-chip plc-menuchip" data-tabmenu><ha-icon icon="${tabIcon(curTab)}"></ha-icon><span class="plc-menuchip-n">${esc(curTab.title)}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
-        : `<div class="plc-tabs" role="tablist">${ordered.map((t) => (t.id === 'home'
-          ? `<button class="plc-tab${v.tab === 'home' ? ' on' : ''}" data-tab="home">Home</button>`
-          : `<button class="plc-tab${on(t) ? ' on' : ''}" data-tab="${esc(t.key)}">${esc(t.title)}</button>`)).join('')}</div>`;
+      : tabsMode === 'button' ? `<button class="plc-icon-btn plc-menubtn" data-tabmenu title="${esc(curTab.title)}"><ha-icon icon="${tabIcon(curTab, this._c)}"></ha-icon></button>`
+      : tabsMode === 'chip' || tabsMode === 'dropdown' ? `<button class="plc-chip plc-menuchip" data-tabmenu><ha-icon icon="${tabIcon(curTab, this._c)}"></ha-icon><span class="plc-menuchip-n">${esc(curTab.title)}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
+        : this._pageButtons(ordered, on);
     const searchHtml = searchIcon && !v.searchOpen && !v.query
       ? `<button class="plc-icon-btn" data-searchopen title="Search"><ha-icon icon="mdi:magnify"></ha-icon></button>`
       : `<input class="plc-search" type="search" placeholder="${inLib ? 'Search' : 'Search all libraries'}" value="${esc(v.query)}" data-search>${
@@ -1269,12 +1326,24 @@ class PlexCenterCard extends HTMLElement {
   }
   _closeMenu() { this._root?.querySelector('.plc-menu')?.remove(); this._menuAnchor = null; }
 
+  /** The page menu as buttons, in the Page menu style (Appearance → Page menu). */
+  _pageButtons(ordered, on) {
+    const v = this._v, pl = pageLook(this._c);
+    const vars = `--pm-fs:${Number(pl.page_text_px)}px;--pm-is:${Number(pl.page_icon_px)}px;--pm-r:${Number(pl.page_radius)}px;--pm-h:${Number(pl.page_height)}px;--pm-gap:${Number(pl.page_gap)}px;--pm-bw:${Number(pl.page_border_width)}px;--pm-fw:${esc(String(pl.page_weight))}`;
+    const cls = `plc-tabs pm pm-${pl.style} pm-act-${pl.page_active}${pl.page_icon_pos === 'above' ? ' pm-above' : ''}`;
+    return `<div class="${cls}" role="tablist" style="${vars}">${ordered.map((t) => {
+      const id = t.id === 'home' ? 'home' : t.key, cur = t.id === 'home' ? v.tab === 'home' : on(t);
+      return `<button class="plc-tab${cur ? ' on' : ''}" data-tab="${esc(id)}" title="${esc(t.title)}">${pl.page_show_icon ? `<ha-icon icon="${esc(tabIcon(t, this._c))}"></ha-icon>` : ''}${
+        pl.page_show_label ? `<span class="plc-tab-n">${esc(t.title)}</span>` : ''}</button>`;
+    }).join('')}</div>`;
+  }
+
   /** Tabs menu: Home and each library. */
   _tabMenu(anchor) {
     const v = this._v, libs = this._libraries();
     this._menu(anchor, 'Go to', tabOrder(this._c, libs).map((t) => {
       const id = t.id === 'home' ? 'home' : t.key, on = t.id === 'home' ? v.tab === 'home' : (v.tab === t.key || v.tab === t.title);
-      return { icon: tabIcon(t), label: t.title, sub: t.id === 'home' ? 'Continue watching, new and coming soon' : t.type === 'movie' ? 'Movies' : t.type === 'show' ? 'TV shows' : '', on, attr: `data-tab="${esc(id)}"` };
+      return { icon: tabIcon(t, this._c), label: t.title, sub: t.id === 'home' ? 'Continue watching, new and coming soon' : t.type === 'movie' ? 'Movies' : t.type === 'show' ? 'TV shows' : '', on, attr: `data-tab="${esc(id)}"` };
     }));
   }
 
@@ -2555,7 +2624,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set([...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['page_style', ...PAGE_KEYS, ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; }
@@ -2618,7 +2687,7 @@ class PlexCenterCardEditor extends HTMLElement {
     if (mode === 'theme') field = `<select class="plce-ctheme" data-ckey="${key}">${THEME_COLORS.map(([v, n]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
     else if (mode === 'custom') field = `<input type="color" class="plce-chex" data-ckey="${key}" value="${/^#[0-9a-fA-F]{6}$/.test(cur) ? cur : seed}">`;
     else if (mode === 'css') field = `<input type="text" class="plce-ccss" data-ckey="${key}" value="${esc(cur)}" placeholder="e.g. tomato, rgba(…), var(--my-color)">`;
-    const modes = [['default', defLabel], ...(key === 'card_bg' ? [['transparent', 'Transparent']] : []), ['theme', 'Theme color'], ['custom', 'Custom color'], ['css', 'Custom CSS']];
+    const modes = [['default', defLabel], ...(key === 'card_bg' || key === 'page_bg' || key === 'page_active_bg' ? [['transparent', 'Transparent']] : []), ['theme', 'Theme color'], ['custom', 'Custom color'], ['css', 'Custom CSS']];
     return `<div class="plce-row"><label class="lbl">${label}</label><div class="plce-color">
       <select class="plce-cmode" data-ckey="${key}" data-seed="${seed}">${modes.map(([m, n]) => `<option value="${m}"${m === mode ? ' selected' : ''}>${n}</option>`).join('')}</select>${field}</div></div>`;
   }
@@ -2843,6 +2912,39 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._select('slim_controls', 'Remote buttons in the slim controls', [['toggle', 'Button to show / hide them'], ['shown', 'Always shown'], ['hidden', 'Hidden']])}`;
   }
 
+  /** Appearance → Page menu: a preset, then overrides in groups. Values shown are the preset's until changed. */
+  _pageBody() {
+    const pl = pageLook(this._config), set = (k) => this._config[k] !== undefined;
+    const reset = (k) => (set(k) ? `<button class="plce-reset" data-reset="${k}" title="Back to the preset"><ha-icon icon="mdi:restore"></ha-icon></button>` : '');
+    const chk = (k, label) => `<label class="plce-check"><input type="checkbox" data-key="${k}"${pl[k] ? ' checked' : ''}>${label}</label>`;
+    const sel = (k, label, opts) => `<div class="plce-row"><label class="lbl">${label}</label><select data-key="${k}">${opts.map(([v, n]) => `<option value="${v}"${String(pl[k]) === v ? ' selected' : ''}>${n}</option>`).join('')}</select>${reset(k)}</div>`;
+    const sl = (k, label, min, max) => `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label><input type="range" data-skey="${k}" data-unit="px" min="${min}" max="${max}" step="1" value="${Number(pl[k])}">
+      <span class="plce-val" data-val="${k}">${Number(pl[k])}px</span>${reset(k)}</div>`;
+    const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
+    const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
+    const pages = tabOrder(this._config, libs);
+    const any = PAGE_KEYS.some(set) || Object.keys(COLOR_DEFS).some((k) => k.startsWith('page_') && this._config[k]);
+    return `<p class="plce-hint">How the page menu looks when a screen shows it as <b>Buttons</b> (header or footer). Start from a preset; anything you change here
+        overrides it. Colors left at <i>The preset</i> follow your theme and the Accent.</p>
+      ${this._select('page_style', 'Preset', Object.entries(PAGE_PRESETS).map(([k, p]) => [k, p.name]))}
+      ${any ? '<button class="plce-add" data-pmreset>Back to the preset (keeps the page icons)</button>' : ''}
+      <div class="plce-group">Content</div>
+      ${chk('page_show_icon', 'Show icons')}${chk('page_show_label', 'Show names')}
+      ${sel('page_icon_pos', 'Icon', [['above', 'Above the name'], ['beside', 'Beside the name']])}
+      ${pages.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.title)} icon</label><ha-icon-picker data-pageicon="${esc(t.id)}" value="${esc((this._config.page_icons || {})[t.id] || '')}" placeholder="${esc(tabIcon(t))}"></ha-icon-picker></div>`).join('')}
+      <div class="plce-group">Text</div>
+      ${sl('page_text_px', 'Size', 8, 28)}${sel('page_weight', 'Weight', [['400', 'Regular'], ['500', 'Medium'], ['600', 'Semi-bold'], ['700', 'Bold'], ['800', 'Extra bold']])}
+      ${this._colorControl('page_text_color')}${this._colorControl('page_active_text_color')}
+      <div class="plce-group">Icon</div>
+      ${sl('page_icon_px', 'Size', 12, 40)}${this._colorControl('page_icon_color')}${this._colorControl('page_active_icon_color')}
+      <div class="plce-group">Shape</div>
+      ${this._colorControl('page_bg')}${this._colorControl('page_active_bg')}
+      ${sl('page_border_width', 'Border width', 0, 6)}${this._colorControl('page_border_color')}
+      ${sl('page_radius', 'Corner radius', 0, 40)}${sl('page_height', 'Height', 24, 80)}${sl('page_gap', 'Space between', 0, 24)}
+      <div class="plce-group">Current page</div>
+      ${sel('page_active', 'Marked by', [['text', 'Text and icon color'], ['underline', 'An underline'], ['fill', 'A filled background'], ['glow', 'A glow']])}`;
+  }
+
   _styleBody() {
     const px = (k, label, min, max) => this._slider(k, label, min, max);
     return `${this._sub('ap-card', 'Card', `${this._colorControl('card_bg')}
@@ -2855,7 +2957,8 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._check('box_shadows', 'Poster shadows')}${this._check('flag', '"New" flag on unwatched items')}`)}
       ${this._sub('ap-text', 'Text', `${px('header_size', 'Card title', 10, 40)}${px('section_size', 'Section headings', 8, 24)}
         ${px('title_size', 'Poster titles', 8, 28)}${px('line_size', 'Poster lines', 8, 24)}${this._check('text_shadows', 'Text shadows')}`)}
-      ${this._sub('ap-colors', 'Colors', Object.keys(COLOR_DEFS).filter((k) => !k.startsWith('card_')).map((k) => this._colorControl(k)).join(''))}
+      ${this._sub('ap-colors', 'Colors', Object.keys(COLOR_DEFS).filter((k) => !k.startsWith('card_') && !k.startsWith('page_')).map((k) => this._colorControl(k)).join(''))}
+      ${this._sub('ap-page', 'Page menu', this._pageBody())}
       ${this._sub('ap-rowtext', 'Row text (upcoming-media rows)', `<p class="plce-hint">Keywords: <code>$title $episode $number $release $date $day $time $aired $runtime $rating $genres $studio $empty</code>.
         A part between <code>-</code> whose keyword is empty is left out. Blank = the sensor's default.</p>
         ${['title_text', 'line1_text', 'line2_text', 'line3_text', 'line4_text'].map((k, i) => this._text(k, i ? `Line ${i}` : 'Title')).join('')}
@@ -2922,6 +3025,15 @@ class PlexCenterCardEditor extends HTMLElement {
     const hl = () => headerLayout(this._config, hdrFor());
     const putH = (list) => { if (hdrFor()) this._config[`header_${hdrFor()}`] = list; else this._config.header = list; this._emit(); this._render(); };
     all('[data-hdrfor]', (el) => el.addEventListener('change', () => { this._hdrFor = el.value || null; this._render(); }));
+    all('[data-pmreset]', (b) => b.addEventListener('click', () => {
+      for (const k of [...PAGE_KEYS, ...Object.keys(COLOR_DEFS).filter((x) => x.startsWith('page_'))]) delete this._config[k];
+      this._emit(); this._render();
+    }));
+    all('ha-icon-picker[data-pageicon]', (el) => el.addEventListener('value-changed', (e) => {
+      const icons = { ...(this._config.page_icons || {}) }, v = (e.detail?.value || '').trim();
+      if (v) icons[el.dataset.pageicon] = v; else delete icons[el.dataset.pageicon];
+      this._config.page_icons = icons; this._emit();
+    }));
     all('[data-hlock]', (b) => b.addEventListener('click', () => { this._hdrLocked = this._hdrLocked === false; this._render(); }));
     all('[data-hiup]', (b) => b.addEventListener('click', () => { const l = hl(), i = Number(b.dataset.hiup); [l[i - 1], l[i]] = [l[i], l[i - 1]]; putH(l); }));
     all('[data-hidown]', (b) => b.addEventListener('click', () => { const l = hl(), i = Number(b.dataset.hidown); [l[i + 1], l[i]] = [l[i], l[i + 1]]; putH(l); }));
@@ -3029,7 +3141,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { pageLook, PAGE_PRESETS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);

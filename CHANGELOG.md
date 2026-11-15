@@ -1,5 +1,21 @@
 # Changelog
 
+## v2026.11.15.29
+
+**New**
+- **Appearance → Page menu**: the look of the page menu buttons (header or footer).
+  - **Presets**: *Standard* (icon above the name, the current page in the accent: the old bottom bar, now the
+    default), *Underline* (the old header tabs), *Pill*, *Outline*, *Glass*, *Neon*. Their colors follow the theme
+    and the Accent.
+  - **Overrides** on top of the preset: show icons / names, icon above or beside, **an icon for each page**
+    (also used by the page chip and its menu), text size / weight / colors, icon size / colors, background,
+    border, corner radius, height, spacing, and how the current page is marked (color, underline, fill, glow).
+    Sliders show the preset's value until changed; *Back to the preset* clears the overrides and keeps the icons.
+- Other buttons and chips keep their fixed design (theme colors and the Accent).
+
+**Changed**
+- The page menu buttons default to *Standard*. Pick *Underline* for the previous header-tab look.
+
 ## v2026.11.15.28
 
 **Changed**
