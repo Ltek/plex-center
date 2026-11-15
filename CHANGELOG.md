@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.15.19
+
+**New**
+- **Scale (whole card)**: *Layout → Scale*, 50–200 %, makes posters, text and buttons larger or smaller together.
+- **Phone preset** (*Layout → Phone preset*): on phone-sized screens it sets the most compact header (one row, tabs as
+  a dropdown in portrait, Filters popover, TV buttons as icons, slim controls at the bottom, header hides while
+  scrolling) and a larger display: **130 % in portrait, 110 % in landscape** (both adjustable). It follows the
+  phone's rotation. Tablets and computers are not affected.
+- **After starting a title** (default): the popup or details page closes and Now playing opens for that TV, full
+  screen on phones when the side panel isn't shown (close it with the chevron; tap the slim bar's title to open it
+  again). *Behaviour → After starting a title → Stay on the details* turns this off.
+
 ## v2026.11.14.18
 
 **New** (phones; settings under *Header*)

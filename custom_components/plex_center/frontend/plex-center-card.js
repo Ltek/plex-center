@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.14.18
+// Version: v2026.11.15.19
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.14.18';
+const BUILD_NUMBER = 'v2026.11.15.19';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -86,6 +86,11 @@ const DEFAULTS = {
   swipe_tabs: false,
   hide_on_scroll: false,
   filter_chips: false,
+  scale: 100,
+  phone_preset: false,
+  preset_portrait_scale: 130,
+  preset_landscape_scale: 110,
+  after_play: 'nowplaying',
   search_width: 280,
   client_choice: 'card',
   tap_action: 'details',
@@ -308,9 +313,22 @@ function haCardStyle(c) {
   return o.join(';');
 }
 
+/** Phone preset: the most compact header, and a larger display, by orientation (only on phone-sized screens). */
+function presetFor(c, portrait) {
+  return { layout: 'phone', phone_compact: true, phone_header: true, phone_tabs: portrait ? 'dropdown' : 'tabs', hide_on_scroll: true,
+    filters_mode: 'popover', now_playing: 'slim', slim_position: 'bottom', slim_controls: 'toggle', tv_label: 'icon',
+    scale: Number(cfg(c, portrait ? 'preset_portrait_scale' : 'preset_landscape_scale')) || 100 };
+}
+const isPhoneScreen = () => typeof screen !== 'undefined' && Math.min(screen.width || 9999, screen.height || 9999) < 600;
+const isPortrait = () => (typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)').matches : true);
+/** The config the card renders with: the phone preset, when on and on a phone, sets its options over the card's. */
+function effectiveConfig(c, phone = isPhoneScreen(), portrait = isPortrait()) {
+  return cfg(c, 'phone_preset') && phone ? { ...c, ...presetFor(c, portrait) } : c;
+}
+
 /** Per-card custom properties (never written into the stylesheet). */
 function cardVars(c) {
-  const v = [`--plc-poster-w:${Number(cfg(c, 'poster_width')) || 130}px`, `--plc-radius:${Number(cfg(c, 'corner_radius'))}px`,
+  const v = [`--plc-scale:${Math.max(0.5, Math.min(2, (Number(cfg(c, 'scale')) || 100) / 100))}`, `--plc-poster-w:${Number(cfg(c, 'poster_width')) || 130}px`, `--plc-radius:${Number(cfg(c, 'corner_radius'))}px`,
     `--plc-title-px:${Number(cfg(c, 'title_size'))}px`, `--plc-line-px:${Number(cfg(c, 'line_size'))}px`,
     `--plc-head-px:${Number(cfg(c, 'header_size'))}px`, `--plc-sec-px:${Number(cfg(c, 'section_size'))}px`, `--plc-pad:${Number(cfg(c, 'card_padding'))}px`,
     `--plc-offset:${Number(cfg(c, 'screen_offset'))}px`, `--plc-search-w:${Number(cfg(c, 'search_width'))}px`];
@@ -429,7 +447,8 @@ const CARD_CSS = `
 .plc { --plc-a: var(--plc-accent, var(--accent-color, var(--primary-color)));
   --plc-bg2: var(--secondary-background-color, rgba(127,127,127,.12));
   --plc-r: var(--plc-radius, 10px);
-  display: block; position: relative; overflow: hidden; color: var(--primary-text-color); padding: var(--plc-pad, 14px); box-sizing: border-box; }
+  display: block; position: relative; overflow: hidden; color: var(--primary-text-color); padding: var(--plc-pad, 14px); box-sizing: border-box;
+  zoom: var(--plc-scale, 1); }
 .plc *, .plc *::before, .plc *::after { box-sizing: border-box; }
 .plc button { font: inherit; color: inherit; cursor: pointer; }
 .plc ha-icon { --mdc-icon-size: 20px; }
@@ -715,6 +734,12 @@ const CARD_CSS = `
 .plc-chip ha-icon { --mdc-icon-size: 18px; }
 .plc-count { font-size: 2.6em; font-weight: 800; color: var(--plc-a); text-align: center; }
 .plc-cast { color: var(--secondary-text-color); font-size: .85em; }
+.plc-npfull { position: fixed; inset: 0; z-index: 10; overflow-y: auto; padding: 12px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: var(--card-background-color, var(--ha-card-background, #111)); display: flex; flex-direction: column; gap: 12px; }
+.plc-npfull-h { display: flex; align-items: center; }
+.plc-npfull .plc-side-card { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+.plc-npfull .plc-side-art { flex: 1 1 auto; min-height: 160px; aspect-ratio: auto; background-size: contain; background-color: #000; }
+.plc-npfull .plc-side-info .plc-big { font-size: 1.4em; }
 .plc-vol { display: inline-flex; align-items: center; gap: 6px; }
 .plc-vol-n { font-size: .8em; min-width: 2.2em; text-align: center; font-variant-numeric: tabular-nums; opacity: .8; }
 .plc-power.on { color: var(--success-color, #4caf50); }
@@ -773,7 +798,8 @@ class PlexCenterCard extends HTMLElement {
 
   setConfig(config) {
     const prev = this._c;
-    this._c = normalizeConfig(config);
+    this._raw = normalizeConfig(config);
+    this._c = effectiveConfig(this._raw);
     if (!this._built) return;
     this._applyLook();
     const strip = (c) => { const o = { ...c }; for (const k of STYLE_KEYS) delete o[k]; return JSON.stringify(o); };
@@ -790,6 +816,11 @@ class PlexCenterCard extends HTMLElement {
 
   connectedCallback() {
     if (!this._built && this._hass) this._build();
+    if (!this._orient && typeof matchMedia === 'function') {
+      this._orient = matchMedia('(orientation: portrait)');
+      this._onOrient = () => { if (!this._raw || !cfg(this._raw, 'phone_preset')) return; this._c = effectiveConfig(this._raw); this._applyLook(); this._phone = undefined; this._layout(); this._renderAll(); };
+      this._orient.addEventListener?.('change', this._onOrient);
+    }
     if (this._onAnyScroll) { document.removeEventListener('scroll', this._onAnyScroll, true); document.addEventListener('scroll', this._onAnyScroll, true); }
     clearInterval(this._tick); this._tick = setInterval(() => this._progress(), 1000);
     clearInterval(this._poll); this._poll = setInterval(() => this._refresh(), SESSIONS_MS);
@@ -799,6 +830,7 @@ class PlexCenterCard extends HTMLElement {
     clearInterval(this._tick); clearInterval(this._poll); this._tick = this._poll = null;
     for (const t of Object.values(this._anim || {})) clearInterval(t); this._anim = {}; clearTimeout(this._popTimer);
     if (this._onAnyScroll) document.removeEventListener('scroll', this._onAnyScroll, true);
+    this._orient?.removeEventListener?.('change', this._onOrient); this._orient = null;
     this._ro?.disconnect(); this._ro = null; this._io?.disconnect();
   }
 
@@ -853,7 +885,7 @@ class PlexCenterCard extends HTMLElement {
       <div class="plc-content"><div class="plc-slim-slot" data-slot="top"></div><div class="plc-top"></div>
         <div class="plc-body"><div class="plc-main"></div><div class="plc-detail-slot"></div></div>
         <div class="plc-slim-slot" data-slot="bottom"></div><div class="plc-bnav-slot"></div></div></div>
-      <div class="plc-sheet-slot"></div></div></ha-card>`;
+      <div class="plc-sheet-slot"></div><div class="plc-npfull-slot"></div></div></ha-card>`;
     this._root = this.querySelector('.plc');
     this._applyLook();
     this._observeSize();
@@ -1574,8 +1606,21 @@ Object.assign(PlexCenterCard.prototype, {
     if (tv === 'local') { this._openLocal(it.type === 'episode' ? it.key : it.key); return; }
     const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : (it.show || it.title);
     this._toast(`${mode === 'restart' ? 'Starting over' : 'Playing'} ${what} on ${tvLabel(tv)}…`);
+    if (cfg(this._c, 'after_play') === 'nowplaying') this._showPlaying(tv);
     try { await this._hass.callService('plex_center', 'play', { tv: tv.id, key: String(it.key), mode }); }
     catch (e) { this._toast(`Could not start: ${e?.message || e}`); }
+  },
+
+  /** After starting a title: close the popup / details and show Now playing for that TV (full screen on phones). */
+  _showPlaying(tv) {
+    clearTimeout(this._popTimer);
+    if (this._root.querySelector('.plc-sheet')) this._closeSheet(true);
+    this._v.detail = null;
+    this._root.querySelectorAll('.plc-tile.sel').forEach((n) => n.classList.remove('sel'));
+    if (tv && tv !== 'local' && tv.id !== this._tv()?.id) { this._v.tv = tv.id; try { localStorage.setItem(`plc-tv:${this._key}`, tv.id); } catch { /* */ } this._renderTop(); }
+    this._pickTv = null;
+    if (!this._panelVisible()) this._v.npFull = true;
+    this._renderDetail(); this._renderNP(true);
   },
 
   /** A ▶ tap: in-progress titles ask Resume / Start over; "ask each time" asks for the TV; a show plays its next episode. */
@@ -1686,7 +1731,7 @@ Object.assign(PlexCenterCard.prototype, {
     const panel = mode === 'panel' && this._panelVisible(np);
     const slim = mode !== 'off' && !panel && np;
     const vst = tv?.pipup && this._hass.states[tv.pipup];
-    const s = JSON.stringify([mode, panel, slim, np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._v.ctl, this._phone,
+    const s = JSON.stringify([this._v.npFull, mode, panel, slim, np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._v.ctl, this._phone,
       this._tvs().map((t) => [t.id, realOn(this._hass, t)]), tv?.route]);
     if (!force && this._npSig === s) return;
     this._npSig = s;
@@ -1700,6 +1745,9 @@ Object.assign(PlexCenterCard.prototype, {
     if (panel || wasPanel) this._renderTop();
     const pos = cfg(this._c, 'slim_position') === 'top' ? 'top' : 'bottom';
     this._root.querySelectorAll('.plc-slim-slot').forEach((slot) => { slot.innerHTML = slim && slot.dataset.slot === pos ? this._slimHtml(np) : ''; });
+    const full = this._root.querySelector('.plc-npfull-slot');
+    if (full) full.innerHTML = this._v.npFull && np ? `<div class="plc-npfull"><div class="plc-npfull-h"><span class="plc-eyebrow">Now playing</span><span class="plc-sp"></span>
+      <button class="plc-icon-btn" data-npclose title="Close"><ha-icon icon="mdi:chevron-down"></ha-icon></button></div>${this._panelHtml(np)}</div>` : '';
     this._progress();
   },
 
@@ -1757,7 +1805,7 @@ Object.assign(PlexCenterCard.prototype, {
     const show = np.live && (mode === 'shown' || (mode === 'toggle' && this._v.ctl));
     const playing = np.st.state === 'playing';
     return `<div class="plc-slim ${pos}"><div class="plc-slim-art"${np.art ? ` style="background-image:url('${cssUrl(np.art)}')"` : ''}></div>
-      <div style="min-width:0"><div class="plc-slim-t">${esc(np.title)}</div><div class="plc-s">${esc([tvLabel(np.tv), np.sub].filter(Boolean).join(' · '))}</div>${this._bar(np)}</div>
+      <div style="min-width:0" data-npopenfull role="button"><div class="plc-slim-t">${esc(np.title)}</div><div class="plc-s">${esc([tvLabel(np.tv), np.sub].filter(Boolean).join(' · '))}</div>${this._bar(np)}</div>
       <div class="plc-slim-btns">${this._powerHtml(np)}${np.live ? `<button class="plc-icon-btn" data-np="${playing ? 'pause' : 'play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>` : ''}
         ${np.live && mode === 'toggle' ? `<button class="plc-icon-btn" data-ctltoggle title="${show ? 'Hide' : 'Show'} the remote buttons"><ha-icon icon="mdi:${show ? 'chevron-down' : 'remote-tv'}"></ha-icon></button>` : ''}</div>
       ${show ? `<div class="plc-slim-ctl">${this._controls(np, false)}</div>` : ''}</div>`;
@@ -1900,6 +1948,8 @@ Object.assign(PlexCenterCard.prototype, {
     }
     if (t('[data-trailer]')) { if (this._detailItem?.trailer) this._trailer(this._detailItem.trailer); return; }
     if ((el = t('[data-np]'))) { const [a, v] = el.dataset.np.split(':'); this._control(a, v); return; }
+    if (t('[data-npclose]')) { this._v.npFull = false; this._renderNP(true); return; }
+    if (t('[data-npopenfull]')) { this._v.npFull = true; this._renderNP(true); return; }
     if (t('[data-ctltoggle]')) { this._v.ctl = !this._v.ctl; this._renderNP(true); }
   },
 
@@ -2079,7 +2129,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['phone_header', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['phone_preset', 'phone_header', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; }
@@ -2211,6 +2261,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._config.tab_order ? '<button class="plce-add" data-treset>Back to the default order</button>' : ''}
       ${this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])])}
       ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}
+      ${this._select('after_play', 'After starting a title', [['nowplaying', 'Close the details and show Now playing'], ['stay', 'Stay on the details']])}
       ${this._sub('popups', 'Details &amp; popups', `${this._check('popup_target', 'Target dropdown (a TV or this device) in details and popups')}
         ${this._select('local_app', '"This device" opens', [['auto', 'Automatic: the Plex app on phones and tablets, Plex Web on computers'], ['app', 'The Plex app'], ['web', 'Plex Web']])}
         <p class="plce-hint">The Plex app and Plex Web open the title's page; press Play there.</p>
@@ -2334,7 +2385,12 @@ class PlexCenterCardEditor extends HTMLElement {
   _styleBody() {
     const px = (k, label, min, max) => this._slider(k, label, min, max);
     return `${this._sub('ap-layout', 'Layout', `<p class="plce-hint">Automatic uses the phone layout when the card is narrower than ${PHONE_MAX_W}px.</p>
-        ${this._select('layout', 'Layout', [['auto', 'Automatic'], ['tablet', 'Tablet'], ['phone', 'Phone']])}${this._text('title', 'Title', 'Plex')}`)}
+        ${this._select('layout', 'Layout', [['auto', 'Automatic'], ['tablet', 'Tablet'], ['phone', 'Phone']])}${this._text('title', 'Title', 'Plex')}
+        ${this._slider('scale', 'Scale (whole card)', 50, 200, '%')}
+        ${this._check('phone_preset', 'Phone preset: on phones, the most compact header and a larger display')}
+        ${this._c('phone_preset') ? `<p class="plce-hint">On phone-sized screens it sets: phone layout, compact one-row header (tabs as a dropdown in portrait), Filters popover,
+          TV buttons as icons, slim controls at the bottom, header hides while scrolling; and the scale below. Turn it off to set these yourself.</p>
+          ${this._slider('preset_portrait_scale', 'Scale in portrait', 80, 200, '%')}${this._slider('preset_landscape_scale', 'Scale in landscape', 80, 200, '%')}` : ''}`)}
       ${this._sub('ap-card', 'Card', `${this._colorControl('card_bg')}
         ${this._slider('card_border_width', 'Border width', 0, 8)}${this._colorControl('card_border_color')}
         ${this._slider('card_radius', 'Corner radius', 0, 32)}
@@ -2515,7 +2571,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { effectiveConfig, presetFor, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);
