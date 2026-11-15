@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.32
+// Version: v2026.11.15.33
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.32';
+const BUILD_NUMBER = 'v2026.11.15.33';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -42,31 +42,73 @@ const COLOR_DEFS = {
   title_color: ['Row titles', 'Theme text', '#ffffff', '--plc-title-c'],
   line_color: ['Row lines', 'Theme secondary text', '#bbbbbb', '--plc-line-c'],
   flag_color: ['"New" flag', 'Accent', '#e5a00d', '--plc-flag-c'],
-  page_text_color: ['Text', 'The preset', '#bbbbbb', '--pmu-c'],
-  page_active_text_color: ['Current page text', 'The preset', '#ffffff', '--pmu-ac'],
-  page_icon_color: ['Icon', 'The preset', '#bbbbbb', '--pmu-ic'],
-  page_active_icon_color: ['Current page icon', 'The preset', '#e5a00d', '--pmu-aic'],
-  page_bg: ['Background', 'The preset', '#2a2a2a', '--pmu-bg'],
-  page_active_bg: ['Current page background', 'The preset', '#3a3a3a', '--pmu-abg'],
-  page_border_color: ['Border', 'The preset', '#555555', '--pmu-bc'],
+  page_text_color: ['Not active', 'The preset', '#bbbbbb', '--pmu-c'],
+  page_active_text_color: ['Active', 'The preset', '#ffffff', '--pmu-ac'],
+  page_icon_color: ['Not active', 'The preset', '#bbbbbb', '--pmu-ic'],
+  page_active_icon_color: ['Active', 'The preset', '#e5a00d', '--pmu-aic'],
+  page_bg: ['Not active', 'The preset', '#2a2a2a', '--pmu-bg'],
+  page_active_bg: ['Active', 'The preset', '#3a3a3a', '--pmu-abg'],
+  page_border_color: ['Not active', 'The preset', '#555555', '--pmu-bc'],
+  page_active_border_color: ['Active', 'The preset', '#e5a00d', '--pmu-abc'],
+  page_grad_color: ['Not active', 'Accent', '#e5a00d', '--pmu-gc'],
+  page_active_grad_color: ['Active', 'Same as not active', '#e5a00d', '--pmu-agc'],
+  page_glow_color: ['Color', 'Accent', '#e5a00d', '--pmu-glc'],
+  page_shadow_color: ['Color', 'Black', '#000000', '--pmu-shc'],
 };
-/** Page menu presets (their colors live in the stylesheet as --pm-* per preset class). */
-const PAGE_KEYS = ['page_show_icon', 'page_show_label', 'page_icon_pos', 'page_text_px', 'page_weight', 'page_icon_px', 'page_radius', 'page_height', 'page_gap', 'page_border_width', 'page_active'];
+/** Page button style: groups like the Style Builder. A checked group (page_groups) uses its own values; unchecked = the preset. */
+const PAGE_GROUPS = [
+  ['content', 'Content', ['page_show_icon', 'page_show_label', 'page_icon_pos']],
+  ['background', 'Background', ['page_bg', 'page_active_bg']],
+  ['border', 'Line border', ['page_border_width', 'page_border_color', 'page_active_border_color', 'page_underline']],
+  ['gradient', 'Gradient border', ['page_grad', 'page_grad_sides', 'page_grad_width', 'page_grad_color', 'page_active_grad_color']],
+  ['glow', 'Glow', ['page_glow', 'page_glow_color', 'page_glow_blur', 'page_glow_spread', 'page_glow_opacity']],
+  ['shadow', 'Drop shadow', ['page_shadow', 'page_shadow_x', 'page_shadow_y', 'page_shadow_blur', 'page_shadow_spread', 'page_shadow_color', 'page_shadow_opacity']],
+  ['text', 'Text', ['page_text_px', 'page_weight', 'page_text_color', 'page_active_text_color']],
+  ['icon', 'Icon', ['page_icon_px', 'page_icon_color', 'page_active_icon_color']],
+  ['shape', 'Button shape', ['page_radius', 'page_height', 'page_gap']],
+];
+const PAGE_ALL = PAGE_GROUPS.flatMap(([, , k]) => k);
+const PAGE_KEYS = PAGE_ALL.filter((k) => !COLOR_DEFS[k]);
+const PAGE_BASE = { page_show_icon: true, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '600', page_icon_px: 18, page_radius: 8, page_height: 36,
+  page_gap: 6, page_border_width: 0, page_underline: false, page_grad: false, page_grad_sides: 'top_bottom', page_grad_width: 1, page_glow: 'off', page_glow_blur: 14,
+  page_glow_spread: 2, page_glow_opacity: 55, page_shadow: false, page_shadow_x: 0, page_shadow_y: 4, page_shadow_blur: 12, page_shadow_spread: 0, page_shadow_opacity: 35 };
 const PAGE_PRESETS = {
-  standard: { name: 'Standard (icon above the name)', page_show_icon: true, page_show_label: true, page_icon_pos: 'above', page_text_px: 11, page_weight: '600', page_icon_px: 22, page_radius: 10, page_height: 52, page_gap: 2, page_border_width: 0, page_active: 'text' },
-  underline: { name: 'Underline', page_show_icon: false, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '700', page_icon_px: 18, page_radius: 8, page_height: 36, page_gap: 4, page_border_width: 0, page_active: 'underline' },
-  pill: { name: 'Pill', page_show_icon: true, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '600', page_icon_px: 18, page_radius: 999, page_height: 36, page_gap: 6, page_border_width: 0, page_active: 'fill' },
-  outline: { name: 'Outline', page_show_icon: true, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '600', page_icon_px: 18, page_radius: 999, page_height: 36, page_gap: 6, page_border_width: 1, page_active: 'fill' },
-  glass: { name: 'Glass', page_show_icon: true, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '600', page_icon_px: 18, page_radius: 12, page_height: 38, page_gap: 6, page_border_width: 1, page_active: 'glow' },
-  neon: { name: 'Neon', page_show_icon: true, page_show_label: true, page_icon_pos: 'beside', page_text_px: 14, page_weight: '600', page_icon_px: 18, page_radius: 8, page_height: 36, page_gap: 6, page_border_width: 0, page_active: 'glow' },
+  standard: { name: 'Standard (icon above the name)', ...PAGE_BASE, page_icon_pos: 'above', page_text_px: 11, page_icon_px: 22, page_radius: 10, page_height: 52, page_gap: 2 },
+  underline: { name: 'Underline', ...PAGE_BASE, page_show_icon: false, page_weight: '700', page_gap: 4, page_underline: true },
+  pill: { name: 'Pill', ...PAGE_BASE, page_radius: 999 },
+  outline: { name: 'Outline', ...PAGE_BASE, page_radius: 999, page_border_width: 1 },
+  glass: { name: 'Glass', ...PAGE_BASE, page_radius: 12, page_height: 38, page_border_width: 1, page_glow: 'active', page_shadow: true, page_shadow_blur: 14, page_shadow_opacity: 25 },
+  neon: { name: 'Neon', ...PAGE_BASE, page_grad: true, page_glow: 'active', page_shadow: true, page_shadow_opacity: 50 },
 };
-/** The page menu's settings: the preset, with any override on top. */
+/** The page buttons' settings: the preset, with the checked groups' own values on top. */
 function pageLook(c) {
   const style = PAGE_PRESETS[c.page_style] ? c.page_style : 'standard';
   const out = { style, ...PAGE_PRESETS[style] };
-  for (const k of PAGE_KEYS) if (c[k] !== undefined) out[k] = c[k];
+  const on = new Set(Array.isArray(c.page_groups) ? c.page_groups : []);
+  for (const [g, , keys] of PAGE_GROUPS) if (on.has(g)) for (const k of keys) if (c[k] !== undefined) out[k] = c[k];
   if (!out.page_show_icon && !out.page_show_label) out.page_show_label = true;
   return out;
+}
+/** Page buttons markup (the card and the editor's sample): items = [{ id, title, icon, on, attr }]. */
+function pageButtonsHtml(c, items) {
+  const pl = pageLook(c), n = (k) => Number(pl[k]) || 0, pct = (k) => Math.max(0, Math.min(100, n(k)));
+  const shadow = pl.page_shadow ? `${n('page_shadow_x')}px ${n('page_shadow_y')}px ${n('page_shadow_blur')}px ${n('page_shadow_spread')}px color-mix(in srgb, var(--pmu-shc, #000) ${pct('page_shadow_opacity')}%, transparent)` : '';
+  const glow = `0 0 ${n('page_glow_blur')}px ${n('page_glow_spread')}px color-mix(in srgb, var(--pmu-glc, var(--plc-a)) ${pct('page_glow_opacity')}%, transparent)`;
+  const list = (xs) => xs.filter(Boolean).join(', ') || 'none';
+  const bs = list([shadow, pl.page_glow === 'always' && glow]);
+  const bsa = list([shadow, pl.page_glow !== 'off' && glow, pl.page_underline && 'inset 0 -2px 0 var(--pmu-abc, var(--plc-a))']);
+  let grad = '';
+  if (pl.page_grad) {
+    const w = Math.max(1, n('page_grad_width')), sides = { top_bottom: ['top', 'bottom'], top: ['top'], bottom: ['bottom'], all: ['top', 'bottom', 'left', 'right'] }[pl.page_grad_sides] || ['top', 'bottom'];
+    const img = (col) => sides.map((sd) => `linear-gradient(${sd === 'left' || sd === 'right' ? 180 : 90}deg, transparent, ${col}, transparent)`).join(', ');
+    grad = `--pm-gi:${img('var(--pmu-gc, var(--plc-a))')};--pm-gia:${img('var(--pmu-agc, var(--pmu-gc, var(--plc-a)))')};--pm-gp:${sides.join(', ')};`
+      + `--pm-gs:${sides.map((sd) => (sd === 'left' || sd === 'right' ? `${w}px 100%` : `100% ${w}px`)).join(', ')};`;
+  }
+  const vars = `--pm-fs:${n('page_text_px')}px;--pm-is:${n('page_icon_px')}px;--pm-r:${n('page_radius')}px;--pm-h:${n('page_height')}px;--pm-gap:${n('page_gap')}px;`
+    + `--pm-bw:${n('page_border_width')}px;--pm-fw:${esc(String(pl.page_weight))};--pm-bs:${bs};--pm-bsa:${bsa};${grad}`;
+  const cls = `plc-tabs pm pm-${pl.style}${pl.page_icon_pos === 'above' ? ' pm-above' : ''}`;
+  return `<div class="${cls}" role="tablist" style="${vars}">${items.map((t) => `<button class="plc-tab${t.on ? ' on' : ''}" ${t.attr || ''} title="${esc(t.title)}">${
+    pl.page_show_icon ? `<ha-icon icon="${esc(t.icon)}"></ha-icon>` : ''}${pl.page_show_label ? `<span class="plc-tab-n">${esc(t.title)}</span>` : ''}</button>`).join('')}</div>`;
 }
 const SIZE_PX = { title_size: { large: 17, medium: 14, small: 12 }, line_size: { large: 14, medium: 12, small: 11 } };
 const SHADOWS = { none: 'none', soft: '0 2px 8px rgba(0,0,0,.25)', strong: '0 8px 28px rgba(0,0,0,.55)' };
@@ -309,7 +351,16 @@ function normalizeConfig(raw) {
   }
   { const pre = PAGE_PRESETS[c.page_style] || PAGE_PRESETS.standard;
     if (c.page_style && !PAGE_PRESETS[c.page_style]) delete c.page_style;
-    for (const k of PAGE_KEYS) if (c[k] === pre[k] || c[k] === '' || c[k] == null) delete c[k];
+    if ('page_active' in c) {   // 2026.11.15.33: "current page marked by" → underline / glow groups
+      if (c.page_active === 'underline') c.page_underline = true;
+      if (c.page_active === 'glow') c.page_glow = 'active';
+      delete c.page_active;
+    }
+    if (!Array.isArray(c.page_groups)) c.page_groups = PAGE_GROUPS.filter(([, , keys]) => keys.some((k) => c[k] !== undefined && c[k] !== '')).map(([g]) => g);
+    const on = new Set(c.page_groups.filter((g) => PAGE_GROUPS.some(([x]) => x === g)));
+    c.page_groups = PAGE_GROUPS.map(([g]) => g).filter((g) => on.has(g));
+    for (const [g, , keys] of PAGE_GROUPS) for (const k of keys) if (!on.has(g) || c[k] === '' || c[k] == null || (!COLOR_DEFS[k] && c[k] === pre[k])) delete c[k];
+    if (!c.page_groups.length) delete c.page_groups;
     if (c.page_icons && typeof c.page_icons === 'object') {
       const o = Object.fromEntries(Object.entries(c.page_icons).filter(([k, v]) => k && typeof v === 'string' && v.trim()).map(([k, v]) => [k, v.trim()]));
       if (Object.keys(o).length) c.page_icons = o; else delete c.page_icons;
@@ -609,31 +660,28 @@ const CARD_CSS = `
 .plc-note.err { background: color-mix(in srgb, var(--error-color, #db4437) 14%, transparent); border-left-color: var(--error-color, #db4437); }
 .plc-note span { flex: 1 1 auto; min-width: 0; }
 .plc-note ha-icon { flex: none; --mdc-icon-size: 20px; }
-/* page menu styles: one layout, colors per preset (--pm-*), user colors on top (--pmu-*) */
+/* page menu styles: one layout; colors per preset (--pm-*), user colors on top (--pmu-*); shadow, glow and gradient lines computed per card */
 .plc-tabs.pm { gap: var(--pm-gap, 4px); align-items: stretch; }
 .plc-tabs.pm .plc-tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--pm-h, 36px); padding: 0 12px;
   border-radius: var(--pm-r, 8px); font-size: var(--pm-fs, 14px); font-weight: var(--pm-fw, 600); line-height: 1.1; box-sizing: border-box;
   color: var(--pmu-c, var(--pm-c)); background-color: var(--pmu-bg, var(--pm-bg)); border: var(--pm-bw, 0) solid var(--pmu-bc, var(--pm-bc, transparent));
-  box-shadow: var(--pm-sh, none); -webkit-backdrop-filter: var(--pm-blur, none); backdrop-filter: var(--pm-blur, none); transition: background-color .15s, color .15s, box-shadow .15s; }
+  background-image: var(--pm-gi, none); background-position: var(--pm-gp, 0 0); background-size: var(--pm-gs, auto); background-repeat: no-repeat;
+  box-shadow: var(--pm-bs, none); -webkit-backdrop-filter: var(--pm-blur, none); backdrop-filter: var(--pm-blur, none); transition: background-color .15s, color .15s, box-shadow .15s; }
 .plc-tabs.pm.pm-above .plc-tab { flex-direction: column; gap: 3px; padding: 4px 10px; }
 .plc-tabs.pm .plc-tab ha-icon { --mdc-icon-size: var(--pm-is, 18px); color: var(--pmu-ic, var(--pm-ic, currentColor)); flex: none; }
 .plc-tab-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12em; }
-.plc-tabs.pm .plc-tab.on { color: var(--pmu-ac, var(--pm-ac)); background-color: var(--pmu-abg, var(--pm-abg)); border-color: var(--pmu-bc, var(--pm-abc, var(--pm-bc, transparent))); box-shadow: var(--pm-sh, none); }
+.plc-tabs.pm .plc-tab.on { color: var(--pmu-ac, var(--pm-ac)); background-color: var(--pmu-abg, var(--pm-abg)); border-color: var(--pmu-abc, var(--pm-abc, var(--pmu-bc, var(--pm-bc, transparent))));
+  background-image: var(--pm-gia, var(--pm-gi, none)); box-shadow: var(--pm-bsa, none); }
 .plc-tabs.pm .plc-tab.on ha-icon { color: var(--pmu-aic, var(--pm-aic, currentColor)); }
-.plc-tabs.pm.pm-act-underline .plc-tab.on { box-shadow: inset 0 -2px 0 var(--plc-a); }
-.plc-tabs.pm.pm-act-glow .plc-tab.on { box-shadow: 0 0 14px 2px color-mix(in srgb, var(--plc-a) 55%, transparent); }
-.plc-tabs.pm.pm-act-text .plc-tab.on { background-color: var(--pmu-abg, transparent); }
 .pm-standard { --pm-c: var(--secondary-text-color); --pm-ac: var(--plc-a); --pm-ic: var(--secondary-text-color); --pm-aic: var(--plc-a); --pm-bg: transparent; --pm-abg: transparent; }
 .pm-underline { --pm-c: var(--secondary-text-color); --pm-ac: var(--primary-text-color); --pm-bg: transparent; --pm-abg: var(--plc-bg2); }
 .pm-pill { --pm-c: var(--primary-text-color); --pm-ac: var(--text-primary-color, #fff); --pm-ic: var(--secondary-text-color); --pm-aic: var(--text-primary-color, #fff); --pm-bg: var(--plc-bg2); --pm-abg: var(--plc-a); }
 .pm-outline { --pm-c: var(--primary-text-color); --pm-ac: var(--primary-text-color); --pm-ic: var(--secondary-text-color); --pm-aic: var(--plc-a); --pm-bg: transparent;
   --pm-abg: color-mix(in srgb, var(--plc-a) 16%, transparent); --pm-bc: var(--divider-color, #555); --pm-abc: var(--plc-a); }
 .pm-glass { --pm-c: var(--primary-text-color); --pm-ac: var(--primary-text-color); --pm-ic: var(--secondary-text-color); --pm-aic: var(--plc-a); --pm-bg: rgba(255,255,255,.07);
-  --pm-abg: rgba(255,255,255,.16); --pm-bc: rgba(255,255,255,.16); --pm-abc: rgba(255,255,255,.3); --pm-blur: blur(10px) saturate(1.3); --pm-sh: 0 4px 14px rgba(0,0,0,.25); }
+  --pm-abg: rgba(255,255,255,.16); --pm-bc: rgba(255,255,255,.16); --pm-abc: rgba(255,255,255,.3); --pm-blur: blur(10px) saturate(1.3); }
 .pm-neon { --pm-c: var(--secondary-text-color); --pm-ac: var(--primary-text-color); --pm-ic: var(--plc-a); --pm-aic: var(--plc-a); --pm-bg: transparent;
-  --pm-abg: color-mix(in srgb, var(--plc-a) 10%, transparent); --pm-sh: 0 4px 12px rgba(0,0,0,.5); }
-.plc-tabs.pm.pm-neon .plc-tab { background-image: linear-gradient(90deg, transparent, var(--plc-a), transparent), linear-gradient(90deg, transparent, var(--plc-a), transparent);
-  background-size: 100% 1px; background-position: top, bottom; background-repeat: no-repeat; }
+  --pm-abg: color-mix(in srgb, var(--plc-a) 10%, transparent); }
 @media (prefers-reduced-motion: reduce) { .plc-tabs.pm .plc-tab { transition: none; } }
 .plc-msg { color: var(--secondary-text-color); font-size: .9em; padding: 12px 2px; }
 .plc-msg.err { color: var(--error-color, #f44336); }
@@ -1350,14 +1398,11 @@ class PlexCenterCard extends HTMLElement {
 
   /** The page menu as buttons, in the Page menu style (Appearance → Page menu). */
   _pageButtons(ordered, on) {
-    const v = this._v, pl = pageLook(this._c);
-    const vars = `--pm-fs:${Number(pl.page_text_px)}px;--pm-is:${Number(pl.page_icon_px)}px;--pm-r:${Number(pl.page_radius)}px;--pm-h:${Number(pl.page_height)}px;--pm-gap:${Number(pl.page_gap)}px;--pm-bw:${Number(pl.page_border_width)}px;--pm-fw:${esc(String(pl.page_weight))}`;
-    const cls = `plc-tabs pm pm-${pl.style} pm-act-${pl.page_active}${pl.page_icon_pos === 'above' ? ' pm-above' : ''}`;
-    return `<div class="${cls}" role="tablist" style="${vars}">${ordered.map((t) => {
-      const id = t.id === 'home' ? 'home' : t.key, cur = t.id === 'home' ? v.tab === 'home' : on(t);
-      return `<button class="plc-tab${cur ? ' on' : ''}" data-tab="${esc(id)}" title="${esc(t.title)}">${pl.page_show_icon ? `<ha-icon icon="${esc(tabIcon(t, this._c))}"></ha-icon>` : ''}${
-        pl.page_show_label ? `<span class="plc-tab-n">${esc(t.title)}</span>` : ''}</button>`;
-    }).join('')}</div>`;
+    const v = this._v;
+    return pageButtonsHtml(this._c, ordered.map((t) => {
+      const id = t.id === 'home' ? 'home' : t.key;
+      return { id, title: t.title, icon: tabIcon(t, this._c), on: t.id === 'home' ? v.tab === 'home' : on(t), attr: `data-tab="${esc(id)}"` };
+    }));
   }
 
   /** Tabs menu: Home and each library. */
@@ -2600,6 +2645,23 @@ const EDITOR_CSS = `
         .plce-chip.on { background: color-mix(in srgb, var(--accent-color, var(--ltek-c-accent)) 22%, transparent); color: var(--accent-color, var(--ltek-c-accent));
           text-transform: none; letter-spacing: 0; font-weight: 600; margin-left: 8px; }
         .plce-warn { border-left: 3px solid var(--warning-color, #ffa600); padding-left: 8px; }
+        .plce-sample { margin: 6px 0 10px; padding: 12px; border-radius: 10px; border: 1px dashed var(--divider-color, #444); background: var(--card-background-color, #1c1c1c); }
+        .plce-sample .plc { padding: 0; overflow: visible; background: none; }
+        .plce-sample-row .plc-tabs { margin: 0; justify-content: flex-start; }
+        .plce-sample-key { display: flex; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--secondary-text-color); }
+        .plce-sample-key span:first-child { color: var(--accent-color, var(--ltek-c-accent)); }
+        .plce-pgs { margin-top: 6px; }
+        .plce-pg { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--divider-color, #333); }
+        .plce-pg > input { margin: 2px 0 0; width: 18px; height: 18px; flex: none; accent-color: var(--accent-color, var(--ltek-c-accent)); }
+        .plce-pg-t { text-transform: uppercase; letter-spacing: .08em; font-weight: 700; font-size: 13px; color: var(--accent-color, var(--ltek-c-accent)); }
+        .plce-pg:not(.on) .plce-pg-t { opacity: .55; }
+        .plce-pgd { flex: 1 1 auto; min-width: 0; }
+        .plce-pgd > summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; }
+        .plce-pgd > summary::-webkit-details-marker { display: none; }
+        .plce-pgd > summary .chev { --mdc-icon-size: 22px; color: var(--accent-color, var(--ltek-c-accent)); transition: transform .15s; }
+        .plce-pgd[open] > summary .chev { transform: rotate(90deg); }
+        .plce-pg-body { padding-top: 8px; }
+        .plce-pg-sub { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--secondary-text-color); }
         .plce-chip ha-icon { --mdc-icon-size: 14px; }
         .plce-row { display: flex; align-items: center; gap: var(--ltek-sp-4); padding: var(--ltek-sp-1) 0; flex-wrap: wrap; justify-content: flex-start; }
         .plce-row label.lbl { color: var(--ltek-c-label); font-size: var(--ltek-fs-body); font-weight: var(--ltek-fw-normal); flex: none; }
@@ -2675,7 +2737,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['page_style', ...PAGE_KEYS, ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; this._onScreen = () => { if (this._rendered) this._render(); }; }
@@ -2699,6 +2761,8 @@ class PlexCenterCardEditor extends HTMLElement {
 
   _emit() {
     this._config = normalizeConfig(this._config);
+    const smp = this.querySelector('[data-pmsample]');
+    if (smp) smp.innerHTML = this._pageSample();
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: { type: `custom:${CARD_TAG}`, ...this._config } }, bubbles: true, composed: true }));
   }
   _set(key, value) {
@@ -2965,41 +3029,61 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._select('slim_controls', 'Remote buttons in the slim controls', [['toggle', 'Button to show / hide them'], ['shown', 'Always shown'], ['hidden', 'Hidden']])}`;
   }
 
-  /** Appearance → Page menu: a preset, then overrides in groups. Values shown are the preset's until changed. */
+  /** The sample page buttons at the top of Appearance → Page menu, drawn with the card's own styles. */
+  _pageSample() {
+    const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
+    const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
+    const pages = tabOrder(this._config, libs).slice(0, 3);
+    while (pages.length < 3) pages.push([{ id: 'Movies', title: 'Movies', type: 'movie' }, { id: 'TV Shows', title: 'TV Shows', type: 'show' }][pages.length - 1] || { id: 'x', title: 'Page' });
+    const items = pages.map((t, i) => ({ id: t.id, title: t.title, icon: tabIcon(t, this._config), on: i === 0 }));
+    return `<div class="plc" style="${cardVars({ ...this._config, scale: 100 })}"><div class="plce-sample-row">${pageButtonsHtml(this._config, items)}</div>
+      <div class="plce-sample-key"><span>Active</span><span>Not active</span></div></div>`;
+  }
+
+  /** Appearance → Page menu: like the Style Builder. A preset, then groups: tick a group to set its values, untick to use the preset's. */
   _pageBody() {
-    const pl = pageLook(this._config), set = (k) => this._config[k] !== undefined;
-    const reset = (k) => (set(k) ? `<button class="plce-reset" data-reset="${k}" title="Back to the preset"><ha-icon icon="mdi:restore"></ha-icon></button>` : '');
+    const pl = pageLook(this._config), groups = new Set(this._config.page_groups || []);
     const chk = (k, label) => `<label class="plce-check"><input type="checkbox" data-key="${k}"${pl[k] ? ' checked' : ''}>${label}</label>`;
-    const sel = (k, label, opts) => `<div class="plce-row"><label class="lbl">${label}</label><select data-key="${k}">${opts.map(([v, n]) => `<option value="${v}"${String(pl[k]) === v ? ' selected' : ''}>${n}</option>`).join('')}</select>${reset(k)}</div>`;
-    const sl = (k, label, min, max) => `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label><input type="range" data-skey="${k}" data-unit="px" min="${min}" max="${max}" step="1" value="${Number(pl[k])}">
-      <span class="plce-val" data-val="${k}">${Number(pl[k])}px</span>${reset(k)}</div>`;
+    const sel = (k, label, opts) => `<div class="plce-row"><label class="lbl">${label}</label><select data-key="${k}">${opts.map(([v, n]) => `<option value="${v}"${String(pl[k]) === v ? ' selected' : ''}>${n}</option>`).join('')}</select></div>`;
+    const sl = (k, label, min, max, unit = 'px') => `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label><input type="range" data-skey="${k}" data-unit="${unit}" min="${min}" max="${max}" step="1" value="${Number(pl[k])}">
+      <span class="plce-val" data-val="${k}">${Number(pl[k])}${unit}</span></div>`;
+    const sub = (t) => `<div class="plce-pg-sub">${t}</div>`;
+    const bodies = {
+      content: () => `${chk('page_show_icon', 'Show icons')}${chk('page_show_label', 'Show names')}${sel('page_icon_pos', 'Icon', [['above', 'Above the name'], ['beside', 'Beside the name']])}`,
+      background: () => `${this._colorControl('page_active_bg')}${this._colorControl('page_bg')}`,
+      border: () => `${sl('page_border_width', 'Width', 0, 6)}${pl.page_border_width ? `${this._colorControl('page_active_border_color')}${this._colorControl('page_border_color')}` : ''}
+        ${chk('page_underline', 'Underline the active page (in its Active border color, else the Accent)')}`,
+      gradient: () => `${chk('page_grad', 'Gradient lines (fade in and out along the edge)')}${pl.page_grad ? `${sel('page_grad_sides', 'Edges', [['top_bottom', 'Top and bottom'], ['bottom', 'Bottom'], ['top', 'Top'], ['all', 'All four']])}
+        ${sl('page_grad_width', 'Width', 1, 6)}${this._colorControl('page_active_grad_color')}${this._colorControl('page_grad_color')}` : ''}`,
+      glow: () => `${sel('page_glow', 'Glow', [['off', 'Off'], ['active', 'Active page only'], ['always', 'Every page']])}${pl.page_glow !== 'off' ? `${this._colorControl('page_glow_color')}
+        ${sl('page_glow_blur', 'Blur', 0, 40)}${sl('page_glow_spread', 'Spread', 0, 16)}${sl('page_glow_opacity', 'Opacity', 0, 100, '%')}` : ''}`,
+      shadow: () => `${chk('page_shadow', 'Drop shadow')}${pl.page_shadow ? `${this._colorControl('page_shadow_color')}${sl('page_shadow_x', 'X', -20, 20)}${sl('page_shadow_y', 'Y', -20, 20)}
+        ${sl('page_shadow_blur', 'Blur', 0, 40)}${sl('page_shadow_spread', 'Spread', -10, 20)}${sl('page_shadow_opacity', 'Opacity', 0, 100, '%')}` : ''}`,
+      text: () => `${sl('page_text_px', 'Size', 8, 28)}${sel('page_weight', 'Weight', [['400', 'Regular'], ['500', 'Medium'], ['600', 'Semi-bold'], ['700', 'Bold'], ['800', 'Extra bold']])}
+        ${sub('Color')}${this._colorControl('page_active_text_color')}${this._colorControl('page_text_color')}`,
+      icon: () => `${sl('page_icon_px', 'Size', 12, 40)}${sub('Color')}${this._colorControl('page_active_icon_color')}${this._colorControl('page_icon_color')}`,
+      shape: () => `${sl('page_radius', 'Corner radius', 0, 40)}${sl('page_height', 'Height', 24, 80)}${sl('page_gap', 'Space between', 0, 24)}`,
+    };
     const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
     const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
     const pages = tabOrder(this._config, libs);
-    const any = PAGE_KEYS.some(set) || Object.keys(COLOR_DEFS).some((k) => k.startsWith('page_') && this._config[k]);
     const shown = SHOWN.screen, shownName = (SCREENS.find(([sc]) => sc === shown) || [])[1];
     const warn = shown && cfg(this._config, `${shown}_tabs`) !== 'tabs'
-      ? `<p class="plce-hint plce-warn">The preview shows <b>${esc(shownName)}</b>, where the page menu is a ${cfg(this._config, `${shown}_tabs`) === 'button' ? 'icon button' : 'chip'}: these styles show when a screen's
-        <i>Page menu</i> is <b>Buttons</b> (Layout → ${esc(shownName)}).</p>` : '';
-    return `${warn}<p class="plce-hint">How the page menu looks when a screen shows it as <b>Buttons</b> (header or footer). Start from a preset; anything you change here
-        overrides it. Colors left at <i>The preset</i> follow your theme and the Accent.</p>
-      ${this._select('page_style', 'Preset', Object.entries(PAGE_PRESETS).map(([k, p]) => [k, p.name]))}
-      ${any ? '<button class="plce-add" data-pmreset>Back to the preset (keeps the page icons)</button>' : ''}
-      <div class="plce-group">Content</div>
-      ${chk('page_show_icon', 'Show icons')}${chk('page_show_label', 'Show names')}
-      ${sel('page_icon_pos', 'Icon', [['above', 'Above the name'], ['beside', 'Beside the name']])}
-      ${pages.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.title)} icon</label><ha-icon-picker data-pageicon="${esc(t.id)}" value="${esc((this._config.page_icons || {})[t.id] || '')}" placeholder="${esc(tabIcon(t))}"></ha-icon-picker></div>`).join('')}
-      <div class="plce-group">Text</div>
-      ${sl('page_text_px', 'Size', 8, 28)}${sel('page_weight', 'Weight', [['400', 'Regular'], ['500', 'Medium'], ['600', 'Semi-bold'], ['700', 'Bold'], ['800', 'Extra bold']])}
-      ${this._colorControl('page_text_color')}${this._colorControl('page_active_text_color')}
-      <div class="plce-group">Icon</div>
-      ${sl('page_icon_px', 'Size', 12, 40)}${this._colorControl('page_icon_color')}${this._colorControl('page_active_icon_color')}
-      <div class="plce-group">Shape</div>
-      ${this._colorControl('page_bg')}${this._colorControl('page_active_bg')}
-      ${sl('page_border_width', 'Border width', 0, 6)}${this._colorControl('page_border_color')}
-      ${sl('page_radius', 'Corner radius', 0, 40)}${sl('page_height', 'Height', 24, 80)}${sl('page_gap', 'Space between', 0, 24)}
-      <div class="plce-group">Current page</div>
-      ${sel('page_active', 'Marked by', [['text', 'Text and icon color'], ['underline', 'An underline'], ['fill', 'A filled background'], ['glow', 'A glow']])}`;
+      ? `<p class="plce-hint plce-warn">The preview shows <b>${esc(shownName)}</b>, where the page menu is a ${cfg(this._config, `${shown}_tabs`) === 'button' ? 'icon button' : 'chip'}: these styles show
+        where a screen's <i>Page menu</i> is <b>Buttons</b> (Layout → ${esc(shownName)}). The sample below always shows them.</p>` : '';
+    return `${warn}<div class="plce-sample" data-pmsample>${this._pageSample()}</div>
+      <p class="plce-hint">The page buttons (Page menu: Buttons, in the header or footer). Pick a preset; tick a group to set its own values, untick it to use the
+        preset's. Colors left at <i>The preset</i> follow your theme and the Accent.</p>
+      ${this._select('page_style', 'Preset', Object.entries(PAGE_PRESETS).map(([k, pr]) => [k, pr.name]))}
+      ${groups.size ? '<button class="plce-add" data-pmreset>Back to the preset (keeps the page icons)</button>' : ''}
+      ${this._sub('pg-icons', 'Page icons', pages.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.title)}</label><ha-icon-picker data-pageicon="${esc(t.id)}" value="${esc((this._config.page_icons || {})[t.id] || '')}" placeholder="${esc(tabIcon(t))}"></ha-icon-picker></div>`).join('')
+        || '<p class="plce-hint">The pages appear here once Plex Center is connected.</p>')}
+      <div class="plce-pgs">${PAGE_GROUPS.map(([g, title]) => {
+        const on = groups.has(g), id = `pg-${g}`;
+        return `<div class="plce-pg${on ? ' on' : ''}"><input type="checkbox" data-pgroup="${g}"${on ? ' checked' : ''} title="${on ? 'Use the preset for this group' : 'Set this group'}">
+          ${on ? `<details class="plce-pgd" data-panel="${id}"${this._open.has(id) ? ' open' : ''}><summary><span class="plce-pg-t">${title}</span><ha-icon class="chev" icon="mdi:chevron-right"></ha-icon></summary>
+            <div class="plce-pg-body">${bodies[g]()}</div></details>` : `<span class="plce-pg-t">${title}</span>`}</div>`;
+      }).join('')}</div>`;
   }
 
   _styleBody() {
@@ -3083,9 +3167,18 @@ class PlexCenterCardEditor extends HTMLElement {
     const putH = (list) => { if (hdrFor()) this._config[`header_${hdrFor()}`] = list; else this._config.header = list; this._emit(); this._render(); };
     all('[data-hdrfor]', (el) => el.addEventListener('change', () => { this._hdrFor = el.value || null; this._render(); }));
     all('[data-pmreset]', (b) => b.addEventListener('click', () => {
-      for (const k of [...PAGE_KEYS, ...Object.keys(COLOR_DEFS).filter((x) => x.startsWith('page_'))]) delete this._config[k];
+      for (const k of PAGE_ALL) delete this._config[k];
+      delete this._config.page_groups;
       this._emit(); this._render();
     }));
+    all('[data-pgroup]', (el) => el.addEventListener('change', () => {
+      const g = el.dataset.pgroup, on = new Set(this._config.page_groups || []);
+      if (el.checked) { on.add(g); this._open.add(`pg-${g}`); }
+      else { on.delete(g); for (const k of (PAGE_GROUPS.find(([x]) => x === g) || [, , []])[2]) delete this._config[k]; }
+      this._config.page_groups = [...on];
+      this._emit(); this._render();
+    }));
+    all('details.plce-pgd', (d) => d.addEventListener('toggle', () => { if (d.open) this._open.add(d.dataset.panel); else this._open.delete(d.dataset.panel); }));
     all('ha-icon-picker[data-pageicon]', (el) => el.addEventListener('value-changed', (e) => {
       const icons = { ...(this._config.page_icons || {}) }, v = (e.detail?.value || '').trim();
       if (v) icons[el.dataset.pageicon] = v; else delete icons[el.dataset.pageicon];
@@ -3198,7 +3291,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { pageLook, PAGE_PRESETS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);

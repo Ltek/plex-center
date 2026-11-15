@@ -1,5 +1,25 @@
 # Changelog
 
+## v2026.11.15.33
+
+**New**
+- **Appearance → Page menu works like the Style Builder** (for the page buttons only):
+  - a **live sample** at the top (an *Active* and two *Not active* buttons, drawn with the card's own styles), which
+    follows every change, also when the preview shows another page menu type;
+  - the preset, then **one checkbox per group**: Content, Background, Line border, **Gradient border**, **Glow**,
+    **Drop shadow**, Text, Icon, Button shape. Tick a group to set its own values (it opens); untick it to use the
+    preset's again (its values are cleared);
+  - **Active / Not active** colors in each group (was "current page" / other pages);
+  - new: gradient lines (top and bottom, bottom, top or all four edges; width; colors), glow (off, active page
+    only, every page; color, blur, spread, opacity), drop shadow (X, Y, blur, spread, color, opacity), and an
+    underline for the active page in the Line border group;
+  - *Page icons* in their own section; *Back to the preset* keeps them.
+- The presets use the new groups: *Glass* has an active glow and a soft shadow, *Neon* gradient lines, an active
+  glow and a shadow.
+
+**Changed**
+- "Current page marked by" is replaced by the groups above; *underline* and *glow* settings migrate.
+
 ## v2026.11.15.32
 
 **Changed**
