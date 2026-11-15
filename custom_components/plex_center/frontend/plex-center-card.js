@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.22
+// Version: v2026.11.15.23
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.22';
+const BUILD_NUMBER = 'v2026.11.15.23';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -88,9 +88,6 @@ const DEFAULTS = {
   hide_on_scroll: false,
   filter_chips: false,
   scale: 100,
-  phone_preset: false,
-  preset_portrait_scale: 130,
-  preset_landscape_scale: 110,
   after_play: 'nowplaying',
   phone_across: 3,
   library_view: 'grid',
@@ -100,8 +97,18 @@ const DEFAULTS = {
   up_next: true,
   up_next_secs: 120,
   up_next_autoplay: false,
-  preset_portrait_across: 3,
-  preset_landscape_across: 5,
+  phone_portrait_scale: 100,
+  phone_landscape_scale: 100,
+  phone_portrait_across: 3,
+  phone_landscape_across: 5,
+  phone_portrait_tabs: 'dropdown',
+  phone_landscape_tabs: 'tabs',
+  phone_header_mode: 'compact',
+  phone_now_playing: 'slim',
+  phone_slim_position: 'bottom',
+  phone_hide_on_scroll: true,
+  phone_filters: 'popover',
+  phone_view: 'grid',
   search_width: 280,
   client_choice: 'card',
   tap_action: 'details',
@@ -154,6 +161,31 @@ function colorMode(cur) {
 
 
 /** Merge defaults; keep only known shapes. Idempotent: normalize(normalize(c)) equals normalize(c). */
+/** 2026.11.15.23: the phone preset and the scattered phone options become the Phone panel (phone_* keys). */
+function migratePhone(c) {
+  const put = (k, v) => { if (c[k] === undefined && v !== undefined) c[k] = v; };
+  if ('phone_preset' in c) {
+    if (c.phone_preset) {   // with the preset on, the card's own settings won (2026.11.15.22): keep that
+      if (c.slim_position !== undefined) put('phone_slim_position', c.slim_position);
+      if (c.now_playing === 'off') put('phone_now_playing', 'off');
+      if (c.filters_mode === 'inline') put('phone_filters', 'inline');
+      if ((Array.isArray(c.header) || c.tv_picker === 'dropdown') && c.phone_header === undefined && c.phone_compact === undefined) put('phone_header_mode', 'tablet');
+    }
+    delete c.phone_preset;
+  }
+  for (const o of ['portrait', 'landscape']) {
+    if (c[`preset_${o}_scale`] !== undefined) put(`phone_${o}_scale`, Number(c[`preset_${o}_scale`]));
+    if (c[`preset_${o}_across`] !== undefined) put(`phone_${o}_across`, Number(c[`preset_${o}_across`]));
+    if (c.phone_across !== undefined) put(`phone_${o}_across`, Number(c.phone_across));
+    if (c.phone_tabs !== undefined) put(`phone_${o}_tabs`, c.phone_tabs);
+    delete c[`preset_${o}_scale`]; delete c[`preset_${o}_across`];
+  }
+  if (c.phone_header === true) put('phone_header_mode', 'own');
+  else if (c.phone_compact === false) put('phone_header_mode', 'tablet');
+  if (c.hide_on_scroll !== undefined) put('phone_hide_on_scroll', !!c.hide_on_scroll);
+  for (const k of ['phone_across', 'phone_tabs', 'phone_header', 'phone_compact', 'hide_on_scroll']) delete c[k];
+}
+
 function normalizeConfig(raw) {
   const c = { ...(raw || {}) };
   delete c.type;
@@ -161,6 +193,7 @@ function normalizeConfig(raw) {
   const hidden = new Set(Array.isArray(c.home_hidden) ? c.home_hidden : []);
   for (const [id] of HOME_BUILTIN) { if (c[`show_${id}`] === false) hidden.add(id); delete c[`show_${id}`]; }
   c.home_hidden = [...hidden];
+  migratePhone(c);
   for (const [k, v] of Object.entries(DEFAULTS)) if (c[k] === v) delete c[k];
   for (const k of Object.keys(c)) if (c[k] === '' || c[k] == null) delete c[k];
   if (Array.isArray(c.home_rows)) {
@@ -200,10 +233,10 @@ function normalizeConfig(raw) {
     const h = headerLayout(c);
     if (JSON.stringify(h) === JSON.stringify(DEFAULT_HEADER)) delete c.header; else c.header = h;
   } else delete c.header;
-  if (Array.isArray(c.header_phone) && c.phone_header) {
-    const h = headerLayout(c, true);
+  if (Array.isArray(c.header_phone)) {
+    const h = headerLayout({ ...c, phone_header_mode: 'own' }, true);
     if (JSON.stringify(h) === JSON.stringify(DEFAULT_HEADER_PHONE)) delete c.header_phone; else c.header_phone = h;
-  } else if (!Array.isArray(c.header_phone)) delete c.header_phone;
+  } else delete c.header_phone;
   if (c.tv_icons && typeof c.tv_icons === 'object') {
     const o = Object.fromEntries(Object.entries(c.tv_icons).filter(([k, v]) => k && typeof v === 'string' && v.trim()).map(([k, v]) => [k, v.trim()]));
     if (Object.keys(o).length) c.tv_icons = o; else delete c.tv_icons;
@@ -218,9 +251,9 @@ const cfg = (c, k) => (c[k] !== undefined ? c[k] : DEFAULTS[k]);
 
 /** The header items in order, each { id, section, row, align, hidden? }; unknown ids dropped, missing ones added. */
 function headerLayout(c, phone = false) {
-  // Phones: their own layout when set; else, in compact mode with no custom header, the one-row phone default.
-  const usePhone = phone && (c.phone_header || (cfg(c, 'phone_compact') && !Array.isArray(c.header)));
-  const list = usePhone ? c.header_phone : c.header, defs = usePhone ? DEFAULT_HEADER_PHONE : DEFAULT_HEADER;
+  // Phones (Phone panel → Header): compact = the one-row phone default; own = header_phone; tablet = the card's header.
+  const mode = phone ? cfg(c, 'phone_header_mode') : 'tablet';
+  const list = mode === 'own' ? c.header_phone : mode === 'compact' ? null : c.header, defs = mode === 'tablet' ? DEFAULT_HEADER : DEFAULT_HEADER_PHONE;
   const known = new Set(HEADER_ITEMS.map(([id]) => id));
   const seen = new Set();
   const out = [];
@@ -236,7 +269,7 @@ function headerLayout(c, phone = false) {
 }
 
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
-const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
+const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
@@ -248,7 +281,7 @@ function cleanSecStyle(o) {
     if (v === undefined || v === null || v === '') continue;
     if (kind === 'list') { const l = (Array.isArray(v) ? v : []).map(String).filter((x) => /^sensor\.[a-z0-9_]+$/.test(x)); if (l.length) out[k] = [...new Set(l)]; continue; }
     if (Array.isArray(kind)) { if (kind.includes(v)) out[k] = v; } else if (kind === 'bool') out[k] = !!v;
-    else if (kind === 'num') { if (Number.isFinite(Number(v))) out[k] = Number(v); } else if (String(v).trim()) out[k] = String(v).trim();
+    else if (kind === 'num') { if (Number.isFinite(Number(v)) && !(k === 'phone_show' && !Number(v))) out[k] = Number(v); } else if (String(v).trim()) out[k] = String(v).trim();
   }
   return out;
 }
@@ -260,7 +293,8 @@ function secStyle(c, id) {
   return { layout: s.layout || 'row', image: s.image || cfg(c, 'image_style'), collapsible, collapsed: !!s.collapsed,
     icon: s.icon || SEC_TYPE_ICON[type] || '', show_icon: s.show_icon ?? (collapsible || !!s.icon), show_title: s.show_title ?? true,
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
-    show: Math.max(1, Number(s.show ?? s.max ?? (['recent', 'upcoming', 'plexhub'].includes(type) ? 5 : cfg(c, 'max'))) || 5),
+    show: c._phone_layout ? Math.max(1, Number(s.phone_show || cfg(c, 'phone_across')) || 3)
+      : Math.max(1, Number(s.show ?? s.max ?? (['recent', 'upcoming', 'plexhub'].includes(type) ? 5 : cfg(c, 'max'))) || 5),
     scroll: !!s.scroll, auto: s.auto || 'off', speed: Number(s.speed ?? (s.auto === 'fade' ? 6 : 30)), fade_ms: Math.max(0, Number(s.fade_ms ?? 600)),
     flag: s.flag ?? cfg(c, 'flag'), list_w: Number(s.list_w ?? 340), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
@@ -334,26 +368,15 @@ function addRecent(q) {
   try { localStorage.setItem(RECENT_KEY, JSON.stringify([q, ...recentSearches().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 8))); } catch { /* */ }
 }
 
-/** Phone preset: the most compact header, and a larger display, by orientation (only on phone-sized screens). */
-function presetFor(c, portrait) {
-  return { layout: 'phone', phone_compact: true, phone_header: true, phone_tabs: portrait ? 'dropdown' : 'tabs', hide_on_scroll: true,
-    filters_mode: 'popover', now_playing: 'slim', slim_position: 'bottom', slim_controls: 'toggle', tv_label: 'icon',
-    scale: Number(cfg(c, portrait ? 'preset_portrait_scale' : 'preset_landscape_scale')) || 100,
-    phone_across: Number(cfg(c, portrait ? 'preset_portrait_across' : 'preset_landscape_across')) || 3 };
-}
-const isPhoneScreen = () => typeof screen !== 'undefined' && Math.min(screen.width || 9999, screen.height || 9999) < 600;
 const isPortrait = () => (typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)').matches : true);
-/** The config the card renders with: the phone preset, when on and on a phone, sets its options over the card's. */
-function effectiveConfig(c, phone = isPhoneScreen(), portrait = isPortrait()) {
-  // The preset applies wherever the card uses the phone layout: forced with layout: phone, or Automatic on a phone.
-  const layout = cfg(c, 'layout');
-  const usePhone = layout === 'phone' || (layout !== 'tablet' && phone);
-  if (!cfg(c, 'phone_preset') || !usePhone) return c;
-  // The preset only fills in what the card doesn't set: anything set in the card's config wins.
-  const pre = presetFor(c, portrait);
-  if (Array.isArray(c.header) && c.phone_header === undefined) pre.phone_header = false;   // keep the card's own header
-  if (c.tv_picker !== undefined && c.phone_compact === undefined) pre.phone_compact = c.tv_picker !== 'dropdown';
-  return { ...pre, ...c };
+/** The config the card renders with. In the phone layout the Phone panel's settings (by orientation) decide. */
+function effectiveConfig(c, phone, portrait = isPortrait()) {
+  if (!phone) return c;
+  const o = portrait ? 'portrait' : 'landscape', mode = cfg(c, 'phone_header_mode');
+  return { ...c, _phone_layout: true, scale: Number(cfg(c, `phone_${o}_scale`)) || 100, phone_across: Number(cfg(c, `phone_${o}_across`)) || 3,
+    phone_tabs: cfg(c, `phone_${o}_tabs`), phone_compact: mode !== 'tablet', hide_on_scroll: !!cfg(c, 'phone_hide_on_scroll'),
+    filters_mode: cfg(c, 'phone_filters') === 'inline' ? 'inline' : 'popover', now_playing: cfg(c, 'phone_now_playing') === 'off' ? 'off' : 'slim',
+    slim_position: cfg(c, 'phone_slim_position'), library_view: cfg(c, 'phone_view') };
 }
 
 /** Per-card custom properties (never written into the stylesheet). */
@@ -687,7 +710,7 @@ const CARD_CSS = `
   flex: 0 0 calc((100% - (var(--plc-show, 5) - 1) * 12px) / var(--plc-show, 5)); }
 .plc.phone .plc-sec-body.limit .plc-row, .plc.phone .plc-sec-body.scroll .plc-row { overflow-x: auto; }
 .plc.phone .plc-sec-body.limit .plc-row > .plc-tile, .plc.phone .plc-sec-body.scroll .plc-row > .plc-tile {
-  flex-basis: max(calc((100% - (var(--plc-show, 5) - 1) * 12px) / var(--plc-show, 5)), calc((100% - (var(--plc-across, 3) - 1) * 12px) / var(--plc-across, 3) - 4px)); }
+  flex-basis: calc((100% - (var(--plc-show, 3) - 1) * 12px) / var(--plc-show, 3) - 4px); }
 .plc-sec-body.scroll .plc-list { grid-template-columns: minmax(0, 1fr); overflow-y: auto; scrollbar-width: thin;
   max-height: calc(var(--plc-show, 5) * (var(--plc-li-h, 150px) + 16px) - 12px); }
 .plc-sec-body.limit .plc-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--plc-li-w, 340px)), 1fr)); }
@@ -891,7 +914,7 @@ class PlexCenterCard extends HTMLElement {
   setConfig(config) {
     const prev = this._c;
     this._raw = normalizeConfig(config);
-    this._c = effectiveConfig(this._raw);
+    this._c = effectiveConfig(this._raw, !!this._phone);
     if (!this._built) return;
     this._applyLook();
     const strip = (c) => { const o = { ...c }; for (const k of STYLE_KEYS) delete o[k]; return JSON.stringify(o); };
@@ -910,7 +933,7 @@ class PlexCenterCard extends HTMLElement {
     if (!this._built && this._hass) this._build();
     if (!this._orient && typeof matchMedia === 'function') {
       this._orient = matchMedia('(orientation: portrait)');
-      this._onOrient = () => { if (!this._raw || !cfg(this._raw, 'phone_preset')) return; this._c = effectiveConfig(this._raw); this._applyLook(); this._phone = undefined; this._layout(); this._renderAll(); };
+      this._onOrient = () => { if (this._phone) { this._lsig = null; this._layout(); } };
       this._orient.addEventListener?.('change', this._onOrient);
     }
     if (this._onAnyScroll) { document.removeEventListener('scroll', this._onAnyScroll, true); document.addEventListener('scroll', this._onAnyScroll, true); }
@@ -1075,10 +1098,18 @@ class PlexCenterCard extends HTMLElement {
   }
 
   _layout() {
-    const want = cfg(this._c, 'layout');
+    const raw = this._raw || this._c;
+    const want = cfg(raw, 'layout');
     const w = this.offsetWidth || this._root?.offsetWidth || 1000;
     const phone = want === 'phone' || (want === 'auto' && w > 0 && w < PHONE_MAX_W);
-    if (!this._root || this._phone === phone) return;
+    if (!this._root) return;
+    const sig = `${phone}|${phone && isPortrait()}`;
+    this._c = effectiveConfig(raw, phone);
+    this._root.setAttribute('style', cardVars(this._c));
+    if (this._phone === phone && this._lsig === sig) return;
+    const first = this._lsig === undefined;
+    this._lsig = sig;
+    if (first || this._phone !== phone) { const v = this._v; v.view = cfg(this._c, 'library_view'); if (cfg(this._c, 'remember_view')) { try { const sv = JSON.parse(localStorage.getItem(`plc-view:${this._key}`) || '{}'); if (sv.view) v.view = sv.view; } catch { /* */ } } }
     this._phone = phone;
     this._root.classList.toggle('phone', phone);
     this._root.classList.toggle('tablet', !phone);
@@ -1117,7 +1148,7 @@ class PlexCenterCard extends HTMLElement {
     const sorts = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
     const compact = this._phone && cfg(this._c, 'phone_compact');
     const tabsMode = this._phone ? cfg(this._c, 'phone_tabs') : 'tabs';
-    const pop = inLib && (compact || cfg(this._c, 'filters_mode') === 'popover' || (cfg(this._c, 'filters_mode') === 'auto' && this._phone));
+    const pop = inLib && (cfg(this._c, 'filters_mode') === 'popover' || (cfg(this._c, 'filters_mode') === 'auto' && this._phone));
     const ordered = tabOrder(this._c, libs);
     const tabsHtml = tabsMode === 'bottom' ? ''
       : tabsMode === 'dropdown' ? `<select class="plc-select plc-tabsel" data-tabsel>${ordered.map((t) => `<option value="${esc(t.id === 'home' ? 'home' : t.key)}"${(t.id === 'home' ? v.tab === 'home' : on(t)) ? ' selected' : ''}>${esc(t.title)}</option>`).join('')}</select>`
@@ -1259,7 +1290,7 @@ class PlexCenterCard extends HTMLElement {
   }
 
   _panelVisible(np = nowPlaying(this._hass, this._tv())) {
-    return this._npMode() === 'panel' && !this._phone && !!np && (np.live || cfg(this._c, 'panel_when') === 'always');
+    return this._npMode() === 'panel' && !this._phone && !!np?.live;
   }
 
   _renderTabs() { /* the tabs live in the header row: _renderTop() draws them */ }
@@ -1781,7 +1812,7 @@ Object.assign(PlexCenterCard.prototype, {
     this._root.querySelectorAll('.plc-tile.sel').forEach((n) => n.classList.remove('sel'));
     if (tv && tv !== 'local' && tv.id !== this._tv()?.id) { this._v.tv = tv.id; try { localStorage.setItem(`plc-tv:${this._key}`, tv.id); } catch { /* */ } this._renderTop(); }
     this._pickTv = null;
-    if (!this._panelVisible()) this._v.npFull = true;
+    if (!this._panelVisible()) { this._v.npFull = true; this._npFullAt = Date.now(); }
     this._renderDetail(); this._renderNP(true);
   },
 
@@ -1891,7 +1922,9 @@ Object.assign(PlexCenterCard.prototype, {
     const np = nowPlaying(this._hass, tv);
     const mode = this._npMode();
     const panel = mode === 'panel' && this._panelVisible(np);
-    const slim = mode !== 'off' && !panel && np;
+    const slim = mode !== 'off' && !panel && np?.live;
+    if (np?.live) this._npLiveAt = Date.now();
+    else if (this._v.npFull && Date.now() - (this._npFullAt || 0) > 90000) this._v.npFull = false;   // playback ended: don't pop up next time
     const vst = tv?.pipup && this._hass.states[tv.pipup];
     const s = JSON.stringify([this._v.npFull, mode, panel, slim, np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._v.ctl, this._phone,
       this._tvs().map((t) => [t.id, realOn(this._hass, t)]), tv?.route]);
@@ -1908,7 +1941,7 @@ Object.assign(PlexCenterCard.prototype, {
     const pos = cfg(this._c, 'slim_position') === 'top' ? 'top' : 'bottom';
     this._root.querySelectorAll('.plc-slim-slot').forEach((slot) => { slot.innerHTML = slim && slot.dataset.slot === pos ? this._slimHtml(np) : ''; });
     const full = this._root.querySelector('.plc-npfull-slot');
-    if (full) full.innerHTML = this._v.npFull && np ? `<div class="plc-npfull"><div class="plc-npfull-h"><span class="plc-eyebrow">Now playing</span><span class="plc-sp"></span>
+    if (full) full.innerHTML = this._v.npFull && np?.live ? `<div class="plc-npfull"><div class="plc-npfull-h"><span class="plc-eyebrow">Now playing</span><span class="plc-sp"></span>
       <button class="plc-icon-btn" data-npclose title="Close"><ha-icon icon="mdi:chevron-down"></ha-icon></button></div>${this._panelHtml(np)}</div>` : '';
     this._progress();
   },
@@ -2367,7 +2400,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['up_next', 'phone_preset', 'phone_header', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['up_next', 'phone_header_mode', 'phone_now_playing', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; }
@@ -2457,7 +2490,7 @@ class PlexCenterCardEditor extends HTMLElement {
   }
 
   _headerBody() {
-    const ph = !!(this._hdrPhone && this._config.phone_header);
+    const ph = !!(this._hdrPhone && this._c('phone_header_mode') === 'own');
     const items = headerLayout(this._config, ph), names = new Map(HEADER_ITEMS);
     const sel = (i, k, opts, cur) => `<select data-hi="${i}" data-hk="${k}">${opts.map(([v, n]) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
     const rows = items.map((h, i) => `<div class="plce-item${h.hidden ? ' off' : ''}"><div class="plce-item-h"><ha-icon icon="mdi:drag-horizontal-variant"></ha-icon>
@@ -2470,15 +2503,10 @@ class PlexCenterCardEditor extends HTMLElement {
     return `<p class="plce-hint">Two headers: the <b>Library / Home</b> header above the library, and the <b>Player</b> header above the player side panel
         (tablets). Each item goes in a row (up to three) and on the left, in the middle or on the right; items in the same place are shown in this
         list's order. Rows with nothing to show are left out. When the side panel isn't showing, Player items appear in the Library header.</p>
-      ${this._check('phone_header', 'Separate header layout for phones')}
-      ${this._config.phone_header ? `<div class="plce-row"><label class="lbl">Editing the layout for</label><select data-hdrfor>
+      ${this._c('phone_header_mode') === 'own' ? `<div class="plce-row"><label class="lbl">Editing the layout for</label><select data-hdrfor>
         <option value="tablet"${ph ? '' : ' selected'}>Tablets</option><option value="phone"${ph ? ' selected' : ''}>Phones</option></select></div>` : ''}
       <div class="plce-list">${rows}</div>
-      ${this._sub('phonehdr', 'Phones', `${this._check('phone_compact', 'Compact: search as an icon that opens a search bar; the TV picker and filters as single buttons')}
-        ${this._select('phone_tabs', 'Tabs', [['tabs', 'Tabs in the header'], ['dropdown', 'A dropdown in the header'], ['bottom', 'A tab bar at the bottom']])}
-        ${this._check('swipe_tabs', 'Swipe left / right to change tab')}
-        ${this._check('hide_on_scroll', 'Hide the header while scrolling down (comes back when scrolling up)')}
-        <p class="plce-hint">Phones always get 44 px touch targets.</p>`)}
+      <p class="plce-hint">These settings are for tablets and computers. Phones use the Phone panel.</p>
       ${this._check('filter_chips', 'Show the active filters as removable chips under the header')}
       ${this._select('filters_mode', 'Library filters', [['auto', 'Automatic: a Filters popover on phones, inline on tablets'], ['popover', 'Always in a Filters popover'], ['inline', 'Always inline in the header']])}
       ${this._slider('search_width', 'Search box width', 100, 800)}
@@ -2602,6 +2630,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${sub('items', 'Items', `${sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
         ${sel('image', 'Image', [['', 'Card default'], ['poster', 'Poster'], ['fanart', 'Fanart']])}
         ${sl('show', 'Items to show', 1, 20, st.show, '')}
+        ${sl('phone_show', 'Items to show on phones (0 = the Phone panel)', 0, 10, 0, '')}
         ${chk('scroll', 'Scroll to see more items', false)}
         ${sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Ticker (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
         ${st.auto === 'scroll' ? sl('speed', 'Ticker speed', 5, 200, st.speed, ' px/s') : ''}
@@ -2616,11 +2645,29 @@ class PlexCenterCardEditor extends HTMLElement {
       ${sub('lines', 'Info Lines', `<p class="plce-hint">Size and color per line; unset = Text &amp; Colors.</p>${lineRows}`)}`;
   }
 
+  /** Phone panel: everything the phone layout uses, by orientation. Other panels set tablets and computers. */
+  _phoneBody() {
+    const col = (o, name) => this._sub(`ph-${o}`, name, `${this._slider(`phone_${o}_scale`, 'Scale', 50, 200, '%')}
+      ${this._slider(`phone_${o}_across`, 'Posters across (Home rows, libraries, search)', 1, 8, '')}
+      ${this._select(`phone_${o}_tabs`, 'Tabs', [['tabs', 'Tabs in the header'], ['dropdown', 'A dropdown in the header'], ['bottom', 'A tab bar at the bottom']])}`);
+    return `<p class="plce-hint">The card uses these whenever it shows the phone layout (Layout: Phone, or Automatic when the card is narrower than ${PHONE_MAX_W}px).
+      Settings in the other panels are for tablets and computers. A Home section can set its own number of items on phones in its Items settings.</p>
+      ${col('portrait', 'Portrait')}${col('landscape', 'Landscape')}
+      ${this._sub('ph-all', 'Both orientations', `${this._select('phone_header_mode', 'Header', [['compact', 'Compact: one row, search and TV as buttons'], ['tablet', 'Same as tablets (the Header panel)'], ['own', 'Its own layout (edit it in the Header panel)']])}
+        ${this._select('phone_filters', 'Library filters', [['popover', 'In a Filters popover'], ['inline', 'Inline in the header']])}
+        ${this._select('phone_view', 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list']])}
+        ${this._select('phone_now_playing', 'Now playing', [['slim', 'Slim controls'], ['off', 'Off']])}
+        ${this._c('phone_now_playing') !== 'off' ? this._select('phone_slim_position', 'Slim controls position', [['bottom', 'Bottom'], ['top', 'Top']]) : ''}
+        ${this._check('phone_hide_on_scroll', 'Hide the header while scrolling down (comes back when scrolling up)')}
+        ${this._check('swipe_tabs', 'Swipe left / right to change tab')}
+        <p class="plce-hint">Phones always get 44 px touch targets.</p>`)}`;
+  }
+
   _npBody() {
     const m = this._c('now_playing');
-    return `<p class="plce-hint">The side panel (tablets) shows the poster, big controls and every TV. Slim controls show whenever the panel does not.</p>
+    return `<p class="plce-hint">Now playing shows only while a movie or episode plays. The side panel (tablets) shows the poster, big controls and every TV; slim controls show whenever the panel does not. Phones use the Phone panel.</p>
       ${this._select('now_playing', 'Now playing', [['auto', 'Automatic (side panel on tablets, slim controls on phones)'], ['panel', 'Side panel'], ['slim', 'Slim controls'], ['off', 'Off']])}
-      ${m === 'panel' || m === 'auto' ? `${this._select('panel_when', 'Side panel', [['always', 'Always'], ['playing', 'Only while something plays']])}
+      ${m === 'panel' || m === 'auto' ? `${''}
         ${this._check('fit_screen', 'Fit the card to the screen height: the player stays put, the library scrolls')}
         ${this._c('fit_screen') ? `${this._slider('screen_offset', 'Space above / below the card', 0, 300)}<p class="plce-hint">Room for the dashboard header and margins. Raise it if the card runs past the bottom of the screen.</p>` : ''}` : ''}
       ${m !== 'off' ? `${this._select('slim_position', 'Slim controls position', [['bottom', 'Bottom'], ['top', 'Top']])}
@@ -2632,12 +2679,7 @@ class PlexCenterCardEditor extends HTMLElement {
     return `${this._sub('ap-layout', 'Layout', `<p class="plce-hint">Automatic uses the phone layout when the card is narrower than ${PHONE_MAX_W}px.</p>
         ${this._select('layout', 'Layout', [['auto', 'Automatic'], ['tablet', 'Tablet'], ['phone', 'Phone']])}${this._text('title', 'Title', 'Plex')}
         ${this._slider('scale', 'Scale (whole card)', 50, 200, '%')}
-        ${this._slider('phone_across', 'Posters across on phones', 1, 8, '')}
-        ${this._check('phone_preset', 'Phone preset: on phones, the most compact header and a larger display')}
-        ${this._c('phone_preset') ? `<p class="plce-hint">Wherever the card uses the phone layout (Layout: Phone, or Automatic on a phone) it sets: compact compact one-row header (tabs as a dropdown in portrait), Filters popover,
-          TV buttons as icons, slim controls at the bottom, header hides while scrolling; and the scale below. It only fills in what you haven't set: any option you change here (and your own header layout) wins.</p>
-          ${this._slider('preset_portrait_scale', 'Scale in portrait', 80, 200, '%')}${this._slider('preset_portrait_across', 'Posters across in portrait', 1, 8, '')}
-          ${this._slider('preset_landscape_scale', 'Scale in landscape', 80, 200, '%')}${this._slider('preset_landscape_across', 'Posters across in landscape', 1, 8, '')}` : ''}`)}
+        <p class="plce-hint">Scale applies to tablets and computers; phones use the Phone panel.</p>`)}
       ${this._sub('ap-card', 'Card', `${this._colorControl('card_bg')}
         ${this._slider('card_border_width', 'Border width', 0, 8)}${this._colorControl('card_border_color')}
         ${this._slider('card_radius', 'Corner radius', 0, 32)}
@@ -2672,6 +2714,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._panel('library', 'mdi:plex', 'Library', this._libraryBody())}
       ${this._panel('home', 'mdi:home-variant', 'Home', this._homeBody())}
       ${this._panel('np', 'mdi:play-box-outline', 'Now playing', this._npBody())}
+      ${this._panel('phone', 'mdi:cellphone', 'Phone', this._phoneBody())}
       ${this._panel('style', 'mdi:palette', 'Appearance', this._styleBody())}
       ${this._panel('integrations', 'mdi:puzzle', 'Integrations found', this._integrationsBody())}
       <div class="plce-foot">Plex Center Card (Ltek) ${BUILD_NUMBER}</div></div>`;
@@ -2708,7 +2751,7 @@ class PlexCenterCardEditor extends HTMLElement {
       el.addEventListener('change', () => { this._set(k, Number(el.value)); this._render(); });
     });
     all('[data-reset]', (b) => b.addEventListener('click', () => { this._set(b.dataset.reset, ''); this._render(); }));
-    const hdrPhone = () => !!(this._hdrPhone && this._config.phone_header);
+    const hdrPhone = () => !!(this._hdrPhone && this._c('phone_header_mode') === 'own');
     const hl = () => headerLayout(this._config, hdrPhone());
     const putH = (list) => { if (hdrPhone()) this._config.header_phone = list; else this._config.header = list; this._emit(); this._render(); };
     all('[data-hdrfor]', (el) => el.addEventListener('change', () => { this._hdrPhone = el.value === 'phone'; this._render(); }));
@@ -2818,7 +2861,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { effectiveConfig, presetFor, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { effectiveConfig, migratePhone, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);

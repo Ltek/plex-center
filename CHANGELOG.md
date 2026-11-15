@@ -1,5 +1,26 @@
 # Changelog
 
+## v2026.11.15.23
+
+**New**
+- **Phone panel** in the editor: everything the phone layout uses, in one place.
+  - *Portrait* and *Landscape*: Scale (default 100 %), **Posters across** (default 3 / 5; sets every Home row,
+    the library grid and search, so Recently Added, Coming Soon, Continue watching and Plex rows all match), Tabs
+    (dropdown / tabs / bottom bar).
+  - *Both orientations*: Header (compact one row, same as tablets, or its own layout), Library filters
+    (popover / inline), Libraries show (grid / list), Now playing (slim / off) and its position, hide the header
+    while scrolling, swipe to change tab.
+  - The other panels now set tablets and computers; their phone options moved here. A Home section can still
+    set its own count on phones (*Items to show on phones*).
+- Replaces the **Phone preset**. Old settings migrate: `phone_preset`, `preset_portrait_scale` / `_across`,
+  `phone_across`, `phone_tabs`, `phone_compact`, `phone_header`, `hide_on_scroll`; with the preset on, your own
+  slim position, header and TV dropdown are kept as the Phone panel's choices.
+
+**Changed**
+- **Now playing shows only while a movie or episode plays**: no side panel, slim bar or full screen for an idle
+  or switched-off TV. (*Side panel: Always* is gone.) After *Play*, the full-screen view opens when playback
+  starts and closes itself if nothing starts within 90 s.
+
 ## v2026.11.15.22
 
 **Fixed**
