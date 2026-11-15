@@ -120,7 +120,16 @@ async def ws_config(hass: HomeAssistant, connection, msg) -> None:
     found = {p for p in (e.platform for e in reg.entities.values()) if p in INTEGRATIONS}
     upcoming = sorted(s.entity_id for s in hass.states.async_all("sensor") if isinstance(s.attributes.get("data"), (list, str))
                       and str(s.attributes.get("data")).lstrip().startswith(("[", "[{")))
-    connection.send_result(msg["id"], {"version": VERSION, "entry_id": entry.entry_id, "server_id": conn.server_id, "tvs": tvs,
+    card_version = ""
+    try:
+        from pathlib import Path  # noqa: PLC0415
+
+        from .card_view import card_file  # noqa: PLC0415
+
+        card_version = (await hass.async_add_executor_job(card_file, Path(__file__).parent / "frontend" / "plex-center-card.js"))[2]
+    except OSError:
+        pass
+    connection.send_result(msg["id"], {"version": VERSION, "card_version": card_version, "entry_id": entry.entry_id, "server_id": conn.server_id, "tvs": tvs,
                                        "libraries": libraries, "integrations": sorted(found), "upcoming_sensors": upcoming})
 
 

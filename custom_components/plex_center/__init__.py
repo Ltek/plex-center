@@ -46,9 +46,10 @@ async def _register_card(hass: HomeAssistant) -> None:
         return
     try:
         from homeassistant.components.frontend import add_extra_js_url  # noqa: PLC0415
-        from homeassistant.components.http import StaticPathConfig  # noqa: PLC0415
 
-        await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(js), False)])
+        from .card_view import PlexCardView  # noqa: PLC0415
+
+        hass.http.register_view(PlexCardView(js))
         add_extra_js_url(hass, f"{CARD_URL}?v={VERSION}")
     except Exception as err:  # noqa: BLE001 - the integration still works without the bundled card
         _LOGGER.warning("Plex Center card not registered: %s", err)

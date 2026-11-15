@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.30
+// Version: v2026.11.15.31
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.30';
+const BUILD_NUMBER = 'v2026.11.15.31';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -604,6 +604,11 @@ const CARD_CSS = `
   color: var(--secondary-text-color); }
 .plc-tab.on { color: var(--primary-text-color); background: var(--plc-bg2); box-shadow: inset 0 -2px 0 var(--plc-a); }
 .plc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+.plc-note { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: .88em;
+  background: color-mix(in srgb, var(--plc-a) 14%, transparent); border-left: 3px solid var(--plc-a); }
+.plc-note.err { background: color-mix(in srgb, var(--error-color, #db4437) 14%, transparent); border-left-color: var(--error-color, #db4437); }
+.plc-note span { flex: 1 1 auto; min-width: 0; }
+.plc-note ha-icon { flex: none; --mdc-icon-size: 20px; }
 /* page menu styles: one layout, colors per preset (--pm-*), user colors on top (--pmu-*) */
 .plc-tabs.pm { gap: var(--pm-gap, 4px); align-items: stretch; }
 .plc-tabs.pm .plc-tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--pm-h, 36px); padding: 0 12px;
@@ -1039,6 +1044,20 @@ class PlexCenterCard extends HTMLElement {
   getGridOptions() { return { columns: 'full', min_columns: 6, rows: 'auto' }; }
 
   setConfig(config) {
+    // Never throw: HA would replace the whole card with "Configuration error". Show the reason instead.
+    try {
+      this._setConfig(config);
+      if (this._cfgErr) { this._cfgErr = null; if (this._built) this._renderTop(); }
+    }
+    catch (e) {
+      console.error('Plex Center card: could not read the config', e);
+      this._cfgErr = String(e?.message || e);
+      if (!this._raw) { this._raw = normalizeConfig({}); this._c = effectiveConfig(this._raw, false); }
+      if (this._built) { try { this._renderTop(); } catch { /* the notice below still shows */ } }
+    }
+  }
+
+  _setConfig(config) {
     const prev = this._c;
     this._raw = normalizeConfig(config);
     this._c = effectiveConfig(this._raw, !!this._phone);
@@ -1479,6 +1498,12 @@ class PlexCenterCard extends HTMLElement {
       ? `<div class="plc-hrow plc-sbar">${pieces.search}</div>`
       : this._headerHtml('library', pieces, playerShown);
     top.insertAdjacentHTML('beforeend', this._chipsHtml());
+    const cv = this._conf?.card_version;
+    const notes = [
+      this._cfgErr ? `<div class="plc-note err"><ha-icon icon="mdi:alert-circle-outline"></ha-icon><span>Part of this card's settings couldn't be read: ${esc(this._cfgErr)}. Open the editor and save again.</span></div>` : '',
+      cv && cv !== BUILD_NUMBER ? `<div class="plc-note"><ha-icon icon="mdi:update"></ha-icon><span>This device is running an older copy of the card (${esc(BUILD_NUMBER)}; Home Assistant has ${esc(cv)}).</span>
+        <button class="plc-btn" data-reload>Reload</button></div>` : ''];
+    if (notes.some(Boolean)) top.insertAdjacentHTML('afterbegin', notes.join(''));
     const bn = this._root.querySelector('.plc-bnav-slot');
     if (bn) bn.innerHTML = foot ? `<footer class="plc-footer${cfg(this._c, 'footer_sticky') ? ' sticky' : ''}">${foot}</footer>` : '';
     const ph = this._root.querySelector('.plc-phead');
@@ -2314,6 +2339,7 @@ Object.assign(PlexCenterCard.prototype, {
       if (!inMenu) { this._closeMenu(); if (sameBtn) return; }
       else if (t('.plc-menu-i')) setTimeout(() => this._closeMenu());
     }
+    if (t('[data-reload]')) { try { location.reload(); } catch { /* */ } return; }
     if ((el = t('[data-tabmenu]'))) { this._tabMenu(el); return; }
     if ((el = t('[data-movemenu]'))) { this._moveMenu(el); return; }
     if ((el = t('[data-moveto]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.moveto); this._closeMenu(); if (tv) this._moveTo(tv); return; }

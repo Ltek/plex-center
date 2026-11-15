@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.15.31
+
+**Fixed**
+- **Phones (Companion App) kept an old copy of the card** after an update, so the card and its saved settings
+  could disagree and HA showed *Configuration error*. The integration now serves the card itself with
+  `Cache-Control: no-cache` and an ETag: every device checks for a newer copy on each load (a quick "not changed"
+  answer when there isn't one).
+- **The card never shows "Configuration error"** for its own settings any more: if part of the config can't be
+  read, the card still loads and shows the reason at the top.
+- **Older copy notice**: when a device runs an older card than the one in Home Assistant, the card says so, with
+  a *Reload* button. (`plex_center/config` now returns `card_version`, read from the card file.)
+
 ## v2026.11.15.30
 
 **New**

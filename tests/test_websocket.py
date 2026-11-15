@@ -109,6 +109,7 @@ async def test_config_lists_tvs_libraries_and_route(ws):
     res = r["result"]
     assert res["tvs"][0]["id"] == "living_room_tv" and res["tvs"][0]["route"] == "pipup" and res["tvs"][0]["user"] == "LivingRoom"
     assert [lib["title"] for lib in res["libraries"]["LivingRoom"]] == ["Kids Movies", "TV"]  # music left out
+    assert res["card_version"].startswith("v20")
 
 
 async def test_items_page_search_unwatched_for_the_tvs_user(ws):
