@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.15.30
+
+**New**
+- **"In the preview now"**: Layout marks the screen the card is showing (for example *Phone: portrait* when the
+  card is narrow or set to Layout: Phone), so it's clear which screen's settings the preview follows.
+- **Appearance → Page menu warns** when the screen in the preview shows the page menu as a chip or icon button: the
+  page menu styles only show where *Page menu* is *Buttons*.
+
 ## v2026.11.15.29
 
 **New**

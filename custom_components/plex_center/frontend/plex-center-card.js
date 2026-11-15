@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.29
+// Version: v2026.11.15.30
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.29';
+const BUILD_NUMBER = 'v2026.11.15.30';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -436,6 +436,8 @@ function haCardStyle(c) {
   return o.join(';');
 }
 
+/** The screen the card on this page is showing now (for the editor's "in the preview" marker). */
+const SHOWN = { screen: null };
 const SAVED_KEYS = ['tab', 'sort', 'unwatched', 'genre', 'decade', 'rating', 'short', 'view'];
 const pickSaved = (v) => Object.fromEntries(SAVED_KEYS.filter((k) => v[k] !== undefined && v[k] !== null).map((k) => [k, v[k]]));
 const RECENT_KEY = 'plc-recent-searches';
@@ -1241,6 +1243,7 @@ class PlexCenterCard extends HTMLElement {
     this._root.classList.toggle('phone', phone);
     this._root.classList.toggle('tablet', !phone);
     this._root.dataset.screen = sig;
+    if (SHOWN.screen !== sig) { SHOWN.screen = sig; window.dispatchEvent(new CustomEvent('plex-center-screen', { detail: sig })); }
     if (this._built) this._renderAll();
   }
 
@@ -2549,6 +2552,9 @@ const EDITOR_CSS = `
         .plce-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-size: 12px;
           background: color-mix(in srgb, var(--primary-text-color) 9%, transparent); color: var(--primary-text-color); }
         .plce-chip.off { color: var(--secondary-text-color); }
+        .plce-chip.on { background: color-mix(in srgb, var(--accent-color, var(--ltek-c-accent)) 22%, transparent); color: var(--accent-color, var(--ltek-c-accent));
+          text-transform: none; letter-spacing: 0; font-weight: 600; margin-left: 8px; }
+        .plce-warn { border-left: 3px solid var(--warning-color, #ffa600); padding-left: 8px; }
         .plce-chip ha-icon { --mdc-icon-size: 14px; }
         .plce-row { display: flex; align-items: center; gap: var(--ltek-sp-4); padding: var(--ltek-sp-1) 0; flex-wrap: wrap; justify-content: flex-start; }
         .plce-row label.lbl { color: var(--ltek-c-label); font-size: var(--ltek-fs-body); font-weight: var(--ltek-fw-normal); flex: none; }
@@ -2627,7 +2633,9 @@ const INTEGRATION_USES = {
 const REVEAL_KEYS = new Set(['page_style', ...PAGE_KEYS, ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
-  constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; }
+  constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; this._onScreen = () => { if (this._rendered) this._render(); }; }
+  connectedCallback() { window.addEventListener('plex-center-screen', this._onScreen); }
+  disconnectedCallback() { window.removeEventListener('plex-center-screen', this._onScreen); }
 
   setConfig(config) {
     const next = normalizeConfig(config);
@@ -2879,7 +2887,7 @@ class PlexCenterCardEditor extends HTMLElement {
     const screen = (sc, name) => {
       const k = (x) => `${sc}_${x}`, phone = sc.startsWith('phone');
       const np = this._c(k('now_playing'));
-      return this._sub(`ly-${sc}`, name, `${this._slider(k('scale'), 'Scale (whole card)', 50, 200, '%')}
+      return this._sub(`ly-${sc}`, `${name}${SHOWN.screen === sc ? ' <span class="plce-chip on">In the preview now</span>' : ''}`, `${this._slider(k('scale'), 'Scale (whole card)', 50, 200, '%')}
         ${this._slider(k('across'), 'Posters across (Home rows, libraries, search)', 1, 12, '')}
         ${this._select(k('view'), 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}
         <div class="plce-group">Header</div>
@@ -2924,7 +2932,11 @@ class PlexCenterCardEditor extends HTMLElement {
     const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
     const pages = tabOrder(this._config, libs);
     const any = PAGE_KEYS.some(set) || Object.keys(COLOR_DEFS).some((k) => k.startsWith('page_') && this._config[k]);
-    return `<p class="plce-hint">How the page menu looks when a screen shows it as <b>Buttons</b> (header or footer). Start from a preset; anything you change here
+    const shown = SHOWN.screen, shownName = (SCREENS.find(([sc]) => sc === shown) || [])[1];
+    const warn = shown && cfg(this._config, `${shown}_tabs`) !== 'tabs'
+      ? `<p class="plce-hint plce-warn">The preview shows <b>${esc(shownName)}</b>, where the page menu is a ${cfg(this._config, `${shown}_tabs`) === 'button' ? 'icon button' : 'chip'}: these styles show when a screen's
+        <i>Page menu</i> is <b>Buttons</b> (Layout → ${esc(shownName)}).</p>` : '';
+    return `${warn}<p class="plce-hint">How the page menu looks when a screen shows it as <b>Buttons</b> (header or footer). Start from a preset; anything you change here
         overrides it. Colors left at <i>The preset</i> follow your theme and the Accent.</p>
       ${this._select('page_style', 'Preset', Object.entries(PAGE_PRESETS).map(([k, p]) => [k, p.name]))}
       ${any ? '<button class="plce-add" data-pmreset>Back to the preset (keeps the page icons)</button>' : ''}
