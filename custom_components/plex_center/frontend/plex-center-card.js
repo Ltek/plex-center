@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.37
+// Version: v2026.11.16.38
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.37';
+const BUILD_NUMBER = 'v2026.11.16.38';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -209,21 +209,28 @@ function pageButtonsHtml(c, items) {
 const SIZE_PX = { title_size: { large: 17, medium: 14, small: 12 }, line_size: { large: 14, medium: 12, small: 11 } };
 const SHADOWS = { none: 'none', soft: '0 2px 8px rgba(0,0,0,.25)', strong: '0 8px 28px rgba(0,0,0,.55)' };
 const HEADER_ITEMS = [['title', 'Title'], ['tabs', 'Page menu (Home and libraries)'], ['search', 'Search'], ['surprise', 'Surprise me'],
-  ['filters', 'All / Unwatched'], ['more', 'Genre / decade / rating / length'], ['sort', 'Sort'], ['view', 'Grid / list switch'], ['tvs', 'TV picker']];
+  ['watched', 'All / Unwatched'], ['genre', 'Genre'], ['decade', 'Decade'], ['rating', 'Content rating'], ['length', 'Under 2 h (movies)'],
+  ['sort', 'Sort'], ['view', 'Grid / list switch'], ['filterbtn', 'Filters button (opens the Filters popup)'], ['tvs', 'TV picker']];
+const SORT_OPTS = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
+const FLABEL = { watched: 'Show', genre: 'Genre', decade: 'Decade', rating: 'Rating', sort: 'Sort', length: 'Length', view: 'View' };
+/** Library filter items: each can sit in the header / footer or in the Filters popup. */
+const FILTER_IDS = new Set(['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view']);
+/** Styles an item can be shown in (first = default). */
+const ITEM_STYLES = { watched: [['buttons', 'All | Unwatched buttons'], ['chip', 'A chip with a menu']],
+  genre: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']], decade: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']],
+  rating: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']], sort: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']] };
 const DEFAULT_HEADER = [
   { id: 'title', section: 'library', row: 1, align: 'left' }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
-  { id: 'filters', section: 'library', row: 1, align: 'right' }, { id: 'more', section: 'library', row: 1, align: 'right' },
-  { id: 'sort', section: 'library', row: 1, align: 'right' }, { id: 'view', section: 'library', row: 1, align: 'right' },
+  ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view', 'filterbtn'].map((id) => ({ id, section: 'library', row: 1, align: 'right' })),
   { id: 'tvs', section: 'library', row: 2, align: 'left' }];
 const DEFAULT_HEADER_PHONE = [
   { id: 'title', section: 'library', row: 1, align: 'left', hidden: true }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
-  { id: 'filters', section: 'library', row: 1, align: 'right' }, { id: 'more', section: 'library', row: 1, align: 'right' },
-  { id: 'sort', section: 'library', row: 1, align: 'right' }, { id: 'view', section: 'library', row: 1, align: 'right', hidden: true },
-  { id: 'tvs', section: 'library', row: 1, align: 'right' }];
+  ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view'].map((id) => ({ id, section: 'popover', row: 1, align: 'right' })),
+  { id: 'filterbtn', section: 'library', row: 1, align: 'right' }, { id: 'tvs', section: 'library', row: 1, align: 'right' }];
 const ALIGNS = ['left', 'center', 'right'];
-const PLACES = ['library', 'player', 'footer'];
+const PLACES = ['library', 'player', 'footer', 'popover'];
 const HOME_BUILTIN = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['recent', 'Recently Added'], ['soon', 'Coming Soon']];
 const SEC_TYPE_TITLE = { recent: 'Recently Added', upcoming: 'Coming Soon', plexhub: 'Plex row' };
 const SEC_TYPE_ICON = { recent: 'mdi:plex', upcoming: 'mdi:calendar-clock', plexhub: 'mdi:star-shooting-outline', sensor: 'mdi:view-carousel' };
@@ -243,7 +250,7 @@ function upcomingSensors(hass, conf) {
 const SCREENS = [['tablet_landscape', 'Tablet / computer: landscape'], ['tablet_portrait', 'Tablet / computer: portrait'],
   ['phone_portrait', 'Phone: portrait'], ['phone_landscape', 'Phone: landscape']];
 const SCREEN_SETTINGS = {
-  tablet: { scale: 100, view: 'grid', search: 'field', tvs: 'chips', tabs: 'tabs', filters: 'inline', header: 'main', hide: false, swipe: false, now_playing: 'panel', slim_position: 'bottom', footer_sticky: false },
+  tablet: { scale: 100, view: 'grid', search: 'field', tvs: 'chips', tabs: 'tabs', filters: 'layout', header: 'main', hide: false, swipe: false, now_playing: 'panel', slim_position: 'bottom', footer_sticky: false },
   phone: { scale: 100, view: 'grid', search: 'icon', tvs: 'button', tabs: 'tabs', filters: 'popover', header: 'one_row', hide: true, swipe: false, now_playing: 'slim', slim_position: 'bottom', footer_sticky: true },
 };
 const SCREEN_ACROSS = { tablet_landscape: 6, tablet_portrait: 4, phone_portrait: 3, phone_landscape: 5 };
@@ -380,6 +387,7 @@ function migrateScreens(c) {
   }
   void all;
   for (const [sc] of SCREENS) for (const x of ['tabs', 'tvs']) if (c[`${sc}_${x}`] === 'dropdown') c[`${sc}_${x}`] = 'chip';
+  for (const [sc] of SCREENS) if (c[`${sc}_filters`] === 'inline') c[`${sc}_filters`] = 'layout';   // 2026.11.16.38
   for (const [sc] of SCREENS) {   // 2026.11.15.28: the bottom tab bar is the page menu in the footer
     if (c[`${sc}_tabs`] !== 'bottom') continue;
     const list = headerLayout(c, sc).map((h) => (h.id === 'tabs' ? { ...h, section: 'footer', row: 1, align: 'center', hidden: undefined } : h));
@@ -495,12 +503,17 @@ function headerLayout(c, screen = null) {
   const known = new Set(HEADER_ITEMS.map(([id]) => id));
   const seen = new Set();
   const out = [];
-  for (const h of Array.isArray(list) ? list : []) {
+  // 2026.11.16.38: "filters" (All / Unwatched) and "more" (genre / decade / rating / length) are separate items now
+  const items = (Array.isArray(list) ? list : []).flatMap((h) => (h?.id === 'filters' ? [{ ...h, id: 'watched' }, { ...h, id: 'filterbtn' }]
+    : h?.id === 'more' ? ['genre', 'decade', 'rating', 'length'].map((id) => ({ ...h, id })) : [h]));
+  for (const h of items) {
     if (!h || !known.has(h.id) || seen.has(h.id)) continue;
     seen.add(h.id);
     const d = defs.find((x) => x.id === h.id);
-    out.push({ id: h.id, section: PLACES.includes(h.section) ? h.section : 'library', row: [1, 2, 3].includes(Number(h.row)) ? Number(h.row) : d.row,
-      align: ALIGNS.includes(h.align) ? h.align : d.align, ...(h.hidden ? { hidden: true } : {}) });
+    const sec = PLACES.includes(h.section) && (h.section !== 'popover' || FILTER_IDS.has(h.id)) ? h.section : 'library';
+    const styles = ITEM_STYLES[h.id], style = styles && styles.some(([v]) => v === h.style) && h.style !== styles[0][0] ? h.style : null;
+    out.push({ id: h.id, section: sec, row: [1, 2, 3].includes(Number(h.row)) ? Number(h.row) : d.row,
+      align: ALIGNS.includes(h.align) ? h.align : d.align, ...(style ? { style } : {}), ...(h.hidden ? { hidden: true } : {}) });
   }
   for (const d of defs) if (!seen.has(d.id)) out.push({ ...d });
   return out;
@@ -1004,6 +1017,10 @@ const CARD_CSS = `
 .plc-hrow .plc-tabs { flex-shrink: 0; max-width: 100%; }
 .plc-tabs .plc-tab { flex: none; }
 .plc-fbtn ha-icon { --mdc-icon-size: 18px; }
+.plc-fbtns { display: inline-flex; gap: 6px; }
+.plc-fchip-l { color: var(--secondary-text-color); font-weight: 500; }
+.plc-fchip.on .plc-fchip-l { color: inherit; opacity: .8; }
+.plc-fcell { min-width: 0; }
 /* details header */
 .plc-detail-head { position: absolute; left: 14px; right: 14px; bottom: 12px; display: flex; gap: 12px; align-items: flex-end; }
 .plc-detail-poster { flex: none; width: 84px; aspect-ratio: 2 / 3; border-radius: 6px; background: #222 center / cover no-repeat; box-shadow: 0 4px 14px rgba(0,0,0,.6); }
@@ -1456,10 +1473,9 @@ class PlexCenterCard extends HTMLElement {
     const v = this._v, inLib = v.tab !== 'home';
     const style = cfg(this._c, 'surprise_style'), icon = cfg(this._c, 'surprise_icon') || DEFAULTS.surprise_icon;
     const label = cfg(this._c, 'surprise_label') || DEFAULTS.surprise_label;
-    const sorts = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
     const searchIcon = cfg(this._c, 'search_mode') === 'icon';
     const tabsMode = cfg(this._c, 'tabs_mode') || 'tabs';
-    const pop = inLib && cfg(this._c, 'filters_mode') === 'popover';
+    const popItems = inLib ? this._popItems() : [];
     const ordered = tabOrder(this._c, libs);
     const curTab = v.tab === 'home' ? { id: 'home', title: 'Home' } : ordered.find((t) => t.id !== 'home' && on(t)) || { id: 'home', title: 'Home' };
     const tabsHtml = tabsMode === 'bottom' ? ''
@@ -1474,19 +1490,25 @@ class PlexCenterCard extends HTMLElement {
       const ic = (this._c.tv_icons || {})[cur?.id] || 'mdi:television';
       picker = `<button class="plc-icon-btn plc-menubtn plc-tvbtn" data-tvsheet title="${esc(tvLabel(cur))}">${dot(cur)}<ha-icon icon="${esc(ic)}"></ha-icon></button>`;
     }
-    const active = [v.unwatched, v.genre, v.decade, v.rating, v.short, v.sort && v.sort !== 'title'].filter(Boolean).length;
+    const activeOf = { watched: v.unwatched, genre: v.genre, decade: v.decade, rating: v.rating, length: v.short, sort: v.sort && v.sort !== 'title' };
+    const active = popItems.filter((h) => activeOf[h.id]).length;
     const filterBtn = `<button class="plc-chip plc-fbtn${active ? ' on' : ''}" data-fpop><ha-icon icon="mdi:filter-variant"></ha-icon>Filters${active ? ` <span class="plc-fcount">${active}</span>` : ''}</button>`;
+    const styleOf = Object.fromEntries(headerLayout(this._c, this._c._screen).map((h) => [h.id, h.style]));
     return {
       title: title ? `<h1 class="plc-title">${esc(title)}</h1>` : '',
       tabs: tabsHtml,
       search: searchHtml,
-      more: inLib && !pop ? this._moreFilters() : '',
+      watched: inLib ? this._fpiece('watched', styleOf.watched) : '',
+      genre: inLib ? this._fpiece('genre', styleOf.genre) : '',
+      decade: inLib ? this._fpiece('decade', styleOf.decade) : '',
+      rating: inLib ? this._fpiece('rating', styleOf.rating) : '',
+      length: inLib ? this._fpiece('length') : '',
+      filterbtn: popItems.length ? filterBtn : '',
       surprise: !cfg(this._c, 'surprise') || !libs.length ? ''
         : style === 'icon' ? `<button class="plc-icon-btn" data-surprise title="${esc(label)}"><ha-icon icon="${esc(icon)}"></ha-icon></button>`
           : `<button class="plc-chip" data-surprise>${style === 'both' ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ''}${esc(label)}</button>`,
-      filters: !inLib ? '' : pop ? filterBtn : `<button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button>`,
-      sort: inLib && !pop ? `<select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>` : '',
-      view: inLib && !pop ? `<button class="plc-icon-btn" data-view="${v.view === 'list' ? 'grid' : 'list'}" title="${v.view === 'list' ? 'Show as a grid' : 'Show as a list'}"><ha-icon icon="mdi:${v.view === 'list' ? 'view-grid-outline' : 'view-list-outline'}"></ha-icon></button>` : '',
+      sort: inLib ? this._fpiece('sort', styleOf.sort) : '',
+      view: inLib ? `<button class="plc-icon-btn" data-view="${v.view === 'list' ? 'grid' : 'list'}" title="${v.view === 'list' ? 'Show as a grid' : 'Show as a list'}"><ha-icon icon="mdi:${v.view === 'list' ? 'view-grid-outline' : 'view-list-outline'}"></ha-icon></button>` : '',
       tvs: picker,
     };
   }
@@ -1575,32 +1597,69 @@ class PlexCenterCard extends HTMLElement {
 
   /** The Filters popover: every library filter and the sort in one panel; changes apply at once. */
   _filtersPopover() {
-    const v = this._v;
-    const sorts = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
+    const v = this._v, items = this._popItems();
+    const rows = items.map((h) => {
+      if (h.id === 'view') return `<label>${FLABEL.view}</label><div class="plc-chips"><button class="plc-chip${v.view !== 'list' ? ' on' : ''}" data-view="grid">Grid</button><button class="plc-chip${v.view === 'list' ? ' on' : ''}" data-view="list">List</button></div>`;
+      const piece = h.id === 'watched' && h.style !== 'chip'
+        ? `<div class="plc-chips"><button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button></div>`
+        : this._fpiece(h.id, h.style, true);
+      return piece ? `<label>${FLABEL[h.id]}</label><div class="plc-fcell">${piece}</div>` : '';
+    }).join('');
     this._sheet(`<div class="plc-detail-body plc-fpanel"><div class="plc-fpanel-h"><h2 class="plc-big">Filters</h2><span class="plc-sp"></span>
         <button class="plc-btn" data-fclear>Clear</button><button class="plc-btn main" data-close-sheet>Done</button></div>
-      <div class="plc-fgrid"><label>Show</label><div class="plc-chips"><button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button></div>
-        <label>View</label><div class="plc-chips"><button class="plc-chip${v.view !== 'list' ? ' on' : ''}" data-view="grid">Grid</button><button class="plc-chip${v.view === 'list' ? ' on' : ''}" data-view="list">List</button></div>
-        <label>Sort</label><select class="plc-select" data-sort>${sorts.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>
-        ${this._moreFilters(true)}</div></div>`, null, false);
+      <div class="plc-fgrid">${rows || '<div class="plc-msg">Nothing is placed in the Filters popup.</div>'}</div></div>`, null, false);
   }
 
+
   /** Genre / decade / content rating selects and an "Under 2 h" chip for the current library. */
-  _moreFilters(labelled = false) {
+  /** Where an item shows: its place, or the Filters popup when this screen puts every filter there. */
+  _placeOf(h) { return FILTER_IDS.has(h.id) && cfg(this._c, 'filters_mode') === 'popover' ? 'popover' : h.section; }
+  /** The items in the Filters popup, in list order. */
+  _popItems() { return headerLayout(this._c, this._c._screen).filter((h) => !h.hidden && this._placeOf(h) === 'popover'); }
+  /** This library's filter values (genres, decades, ratings, type); fetched once, then the header redraws. */
+  _filterData() {
     const tv = this._tv(), lib = this._libKey();
-    if (!tv || !lib) return '';
+    if (!tv || !lib) return null;
     const key = `filters:${tv.id}:${lib}`, f = peek(key);
-    if (!f) { cached(this._hass, key, REFRESH_MS * 10, () => ws(this._hass, 'filters', { tv: tv.id, library: lib })).then(() => { this._renderTop(); if (labelled && this._root.querySelector('.plc-fpanel')) this._filtersPopover(); }).catch(() => {}); return labelled ? '<label></label><div class="plc-msg">Loading…</div>' : ''; }
-    const v = this._v;
-    const sel = (k, label, list) => (list?.length ? `<select class="plc-select" data-filter="${k}"><option value="">${label}</option>${
-      list.map((o) => `<option value="${esc(o.value)}"${String(v[k] ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.title)}</option>`).join('')}</select>` : '');
-    if (labelled) {
-      const row = (k, label, list) => (list?.length ? `<label>${label}</label>${sel(k, `Any ${label.toLowerCase()}`, list)}` : '');
-      return `${row('genre', 'Genre', f.genres)}${row('decade', 'Decade', f.decades)}${row('rating', 'Rating', f.content_ratings)}${
-        f.type === 'movie' ? `<label>Length</label><div class="plc-chips"><button class="plc-chip${v.short ? ' on' : ''}" data-short>Under 2 h</button></div>` : ''}`;
+    if (!f) cached(this._hass, key, REFRESH_MS * 10, () => ws(this._hass, 'filters', { tv: tv.id, library: lib }))
+      .then(() => { this._renderTop(); if (this._root.querySelector('.plc-fpanel')) this._filtersPopover(); }).catch(() => {});
+    return f || null;
+  }
+  /** One filter, as placed: a chip that opens a menu (default), a dropdown, or buttons. inPopup: the popup's row has its own label. */
+  _fpiece(id, style, inPopup = false) {
+    const v = this._v, chip = (on, text) => `<button class="plc-chip plc-menuchip plc-fchip${on ? ' on' : ''}" data-fmenu="${id}">${text}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`;
+    const named = (value) => (inPopup ? `<span class="plc-menuchip-n">${esc(value)}</span>` : `<span class="plc-fchip-l">${FLABEL[id]}</span><span class="plc-menuchip-n">${esc(value)}</span>`);
+    if (id === 'watched') {
+      if (style === 'chip') return chip(v.unwatched, named(v.unwatched ? 'Unwatched' : 'All'));
+      return `<span class="plc-fbtns"><button class="plc-chip${!v.unwatched ? ' on' : ''}" data-unw="0">All</button><button class="plc-chip${v.unwatched ? ' on' : ''}" data-unw="1">Unwatched</button></span>`;
     }
-    return `${sel('genre', 'Genre', f.genres)}${sel('decade', 'Decade', f.decades)}${sel('rating', 'Rating', f.content_ratings)}${
-      f.type === 'movie' ? `<button class="plc-chip${v.short ? ' on' : ''}" data-short>Under 2 h</button>` : ''}`;
+    if (id === 'sort') {
+      if (style === 'dropdown') return `<select class="plc-select" data-sort>${SORT_OPTS.map(([k, n]) => `<option value="${k}"${v.sort === k ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
+      return chip(v.sort && v.sort !== 'title', named((SORT_OPTS.find(([k]) => k === v.sort) || SORT_OPTS[0])[1]));
+    }
+    const f = this._filterData();
+    if (!f) return '';
+    if (id === 'length') return f.type === 'movie' ? `<button class="plc-chip${v.short ? ' on' : ''}" data-short>Under 2 h</button>` : '';
+    const list = { genre: f.genres, decade: f.decades, rating: f.content_ratings }[id];
+    if (!list?.length) return '';
+    if (style === 'dropdown') return `<select class="plc-select" data-filter="${id}"><option value="">${inPopup ? `Any ${FLABEL[id].toLowerCase()}` : FLABEL[id]}</option>${
+      list.map((o) => `<option value="${esc(o.value)}"${String(v[id] ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.title)}</option>`).join('')}</select>`;
+    const cur = list.find((o) => String(o.value) === String(v[id] ?? ''));
+    return chip(!!cur, cur ? named(cur.title) : (inPopup ? named(`Any ${FLABEL[id].toLowerCase()}`) : `<span class="plc-menuchip-n">${FLABEL[id]}</span>`));
+  }
+  /** The menu for a filter chip. */
+  _fMenu(anchor, id) {
+    const v = this._v;
+    if (id === 'sort') { this._menu(anchor, 'Sort by', SORT_OPTS.map(([k, n]) => ({ icon: 'mdi:sort', label: n, on: v.sort === k, attr: `data-fset="sort:${k}"` }))); return; }
+    if (id === 'watched') {
+      this._menu(anchor, 'Show', [{ icon: 'mdi:filter-off-outline', label: 'All', on: !v.unwatched, attr: 'data-fset="watched:0"' },
+        { icon: 'mdi:eye-off-outline', label: 'Unwatched', on: !!v.unwatched, attr: 'data-fset="watched:1"' }]);
+      return;
+    }
+    const f = this._filterData() || {}, list = { genre: f.genres, decade: f.decades, rating: f.content_ratings }[id] || [];
+    const icon = { genre: 'mdi:drama-masks', decade: 'mdi:calendar-range', rating: 'mdi:shield-account-outline' }[id];
+    this._menu(anchor, FLABEL[id], [{ icon: 'mdi:filter-off-outline', label: `Any ${FLABEL[id].toLowerCase()}`, on: !v[id], attr: `data-fset="${id}:"` },
+      ...list.map((o) => ({ icon, label: o.title, on: String(v[id] ?? '') === String(o.value), attr: `data-fset="${id}:${esc(o.value)}"` }))]);
   }
 
   /** Recent searches under the search box while it is focused and empty. */
@@ -1631,7 +1690,7 @@ class PlexCenterCard extends HTMLElement {
     const rows = [1, 2, 3].map((row) => {
       const groups = { left: [], center: [], right: [] };
       for (const h of headerLayout(this._c, this._c._screen)) {
-        const sec = h.section === 'player' && !playerShown ? 'library' : h.section;
+        const placed = this._placeOf(h), sec = placed === 'player' && !playerShown ? 'library' : placed;
         if (h.hidden || sec !== section || h.row !== row || !pieces[h.id]) continue;
         groups[h.align].push(pieces[h.id]);
       }
@@ -2512,6 +2571,15 @@ Object.assign(PlexCenterCard.prototype, {
     }
     if (t('[data-reload]')) { try { location.reload(); } catch { /* */ } return; }
     if ((el = t('[data-tabmenu]'))) { this._tabMenu(el); return; }
+    if ((el = t('[data-fmenu]'))) { this._fMenu(el, el.dataset.fmenu); return; }
+    if ((el = t('[data-fset]'))) {
+      const [k, ...rest] = el.dataset.fset.split(':'), val = rest.join(':');
+      if (k === 'watched') this._v.unwatched = val === '1'; else if (k === 'sort') this._v.sort = val || 'title'; else this._v[k] = val;
+      this._v.detail = null; this._closeMenu();
+      this._renderTop(); this._renderMain(); this._renderDetail();
+      if (this._root.querySelector('.plc-fpanel')) this._filtersPopover();
+      return;
+    }
     if ((el = t('[data-pickmenu]'))) { this._pickMenu(el); return; }
     if ((el = t('[data-pickto]'))) {
       const id = el.dataset.pickto;
@@ -2659,7 +2727,7 @@ Object.assign(PlexCenterCard.prototype, {
 
   _onChange(e) {
     const el = e.target;
-    if (el.matches?.('[data-sort]')) { this._v.sort = el.value; this._renderTop(); this._renderMain(); return; }
+    if (el.matches?.('[data-sort]')) { this._v.sort = el.value; this._renderTop(); this._renderMain(); if (this._root.querySelector('.plc-fpanel')) this._filtersPopover(); return; }
     if (el.matches?.('[data-filter]')) { this._v[el.dataset.filter] = el.value; this._v.detail = null; this._renderTop(); this._renderMain(); this._renderDetail(); return; }
     if (el.matches?.('[data-season]')) { this._v.season = el.value; if (this._detailItem) this._paintSeasons(this._detailItem); }
   },
@@ -2953,18 +3021,21 @@ class PlexCenterCardEditor extends HTMLElement {
     const ph = owns.some(([sc]) => sc === this._hdrFor) ? this._hdrFor : null;
     const items = headerLayout(this._config, ph), names = new Map(HEADER_ITEMS);
     const sel = (i, k, opts, cur) => `<select data-hi="${i}" data-hk="${k}">${opts.map(([v, n]) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
-    const placeName = { library: 'Header', player: 'Player header', footer: 'Footer' }, alignName = { left: 'Left', center: 'Middle', right: 'Right' };
+    const placeName = { library: 'Header', player: 'Player header', footer: 'Footer', popover: 'Filters popup' }, alignName = { left: 'Left', center: 'Middle', right: 'Right' };
+    const styleName = (h) => { const st = ITEM_STYLES[h.id]; return st && h.style ? (st.find(([v]) => v === h.style) || [, ''])[1] : ''; };
     const locked = this._hdrLocked !== false;
     const chipRows = items.map((h) => `<div class="plce-hchips${h.hidden ? ' off' : ''}"><span class="plce-name">${esc(names.get(h.id))}</span>${h.hidden
       ? '<span class="plce-chip off"><ha-icon icon="mdi:eye-off"></ha-icon>Hidden</span>'
-      : `<span class="plce-chip">${placeName[h.section] || 'Header'}</span><span class="plce-chip">Row ${h.row}</span><span class="plce-chip">${alignName[h.align]}</span>`}</div>`).join('');
+      : `<span class="plce-chip">${placeName[h.section] || 'Header'}</span>${h.section === 'popover' ? '' : `<span class="plce-chip">Row ${h.row}</span><span class="plce-chip">${alignName[h.align]}</span>`}${
+        styleName(h) ? `<span class="plce-chip">${esc(styleName(h))}</span>` : ''}`}</div>`).join('');
     const rows = locked ? '' : items.map((h, i) => `<div class="plce-item${h.hidden ? ' off' : ''}"><div class="plce-item-h"><ha-icon icon="mdi:drag-horizontal-variant"></ha-icon>
         <span class="plce-name">${esc(names.get(h.id))}</span>
         <button class="plce-act" data-hiup="${i}" title="Move earlier"${i ? '' : ' disabled'}><ha-icon icon="mdi:arrow-up"></ha-icon></button>
         <button class="plce-act" data-hidown="${i}" title="Move later"${i < items.length - 1 ? '' : ' disabled'}><ha-icon icon="mdi:arrow-down"></ha-icon></button>
         <button class="plce-act" data-hivis="${i}" title="${h.hidden ? 'Show' : 'Hide'}"><ha-icon icon="mdi:${h.hidden ? 'eye-off' : 'eye'}"></ha-icon></button></div>
-      ${h.hidden ? '' : `<div class="plce-row">${sel(i, 'section', [['library', 'Header'], ['player', 'Player header'], ['footer', 'Footer']], h.section)}
-        ${sel(i, 'row', [[1, 'Row 1'], [2, 'Row 2'], [3, 'Row 3']], h.row)}${sel(i, 'align', [['left', 'Left'], ['center', 'Middle'], ['right', 'Right']], h.align)}</div>`}</div>`).join('');
+      ${h.hidden ? '' : `<div class="plce-row">${sel(i, 'section', [['library', 'Header'], ['player', 'Player header'], ['footer', 'Footer'], ...(FILTER_IDS.has(h.id) ? [['popover', 'Filters popup']] : [])], h.section)}
+        ${h.section === 'popover' ? '' : `${sel(i, 'row', [[1, 'Row 1'], [2, 'Row 2'], [3, 'Row 3']], h.row)}${sel(i, 'align', [['left', 'Left'], ['center', 'Middle'], ['right', 'Right']], h.align)}`}
+        ${ITEM_STYLES[h.id] ? sel(i, 'style', ITEM_STYLES[h.id], h.style || ITEM_STYLES[h.id][0][0]) : ''}</div>`}</div>`).join('');
     return `<p class="plce-hint">Each item goes in the <b>Header</b> (above Home and the libraries), the <b>Player header</b> (above the side panel on
         tablets; in the Header when there's no side panel) or the <b>Footer</b> (below the card; it can stick to the bottom of the screen, set per
         screen in Layout). Each place has up to three rows with left / middle / right; items in the same spot follow this list's order.</p>
@@ -3122,7 +3193,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._select(k('tabs'), 'Page menu', [['tabs', 'Buttons'], ['chip', 'A chip with the page name that opens a menu'], ['button', 'An icon button that opens a menu']])}
         ${this._select(k('search'), 'Search', [['field', 'A search box'], ['icon', 'An icon that opens a search bar']])}
         ${this._select(k('tvs'), 'TV picker', [['chips', 'A button for each TV'], ['chip', 'A chip with the TV name that opens a menu'], ['button', 'An icon button that opens a menu'], ['hidden', 'Hidden (always the default TV)']])}
-        ${this._select(k('filters'), 'Library filters', [['inline', 'In the header'], ['popover', 'In a Filters popover']])}
+        ${this._select(k('filters'), 'Library filters', [['layout', 'As placed in Header & footer'], ['popover', 'All in the Filters popup (with a Filters button)']])}
         ${this._check(k('hide'), 'Hide the header while scrolling down (comes back when scrolling up)')}
         ${this._check(k('footer_sticky'), 'The footer sticks to the bottom of the screen')}
         ${this._check(k('swipe'), 'Swipe left / right on the content to change tab')}
@@ -3392,7 +3463,11 @@ class PlexCenterCardEditor extends HTMLElement {
     all('[data-hiup]', (b) => b.addEventListener('click', () => { const l = hl(), i = Number(b.dataset.hiup); [l[i - 1], l[i]] = [l[i], l[i - 1]]; putH(l); }));
     all('[data-hidown]', (b) => b.addEventListener('click', () => { const l = hl(), i = Number(b.dataset.hidown); [l[i + 1], l[i]] = [l[i], l[i + 1]]; putH(l); }));
     all('[data-hivis]', (b) => b.addEventListener('click', () => { const l = hl(), h = l[Number(b.dataset.hivis)]; if (h.hidden) delete h.hidden; else h.hidden = true; putH(l); }));
-    all('[data-hk]', (el) => el.addEventListener('change', () => { const l = hl(), h = l[Number(el.dataset.hi)]; h[el.dataset.hk] = el.dataset.hk === 'row' ? Number(el.value) : el.value; putH(l); }));
+    all('[data-hk]', (el) => el.addEventListener('change', () => {
+      const l = hl(), h = l[Number(el.dataset.hi)], k = el.dataset.hk;
+      if (k === 'style' && ITEM_STYLES[h.id]?.[0][0] === el.value) delete h.style; else h[k] = k === 'row' ? Number(el.value) : el.value;
+      putH(l);
+    }));
     const tabIds = () => { const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
       const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
       const pick = this._config.libraries || [];

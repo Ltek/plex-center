@@ -1,5 +1,23 @@
 # Changelog
 
+## v2026.11.16.38
+
+**New**
+- **Every library filter is its own item** in Header & footer: *All / Unwatched*, *Genre*, *Decade*, *Content
+  rating*, *Under 2 h*, *Sort*, *Grid / list*, plus the **Filters button**. Each can be shown or hidden, ordered,
+  and placed in the Header, the Player header, the Footer or the **Filters popup**.
+- **Filter chips**: Genre, Decade, Content rating and Sort show as a chip with the current value (for example
+  *Genre Comedy*, highlighted when set) that opens a menu to pick from (*Any …* clears it). Each item's *Style*
+  can be the chip (default) or a dropdown; All / Unwatched can be two buttons (default) or one chip.
+- **The Filters popup** shows exactly the items placed in it, in list order; the Filters button appears only when
+  it has something, and its count is the active filters inside it.
+- Per screen (Layout), *Library filters*: **As placed in Header & footer** (default on tablets) or **All in the
+  Filters popup** (default on phones).
+
+**Changed**
+- The old *All / Unwatched* and *Genre / decade / rating / length* items are split into the new items, in the same
+  places; a Filters button is added where *All / Unwatched* was.
+
 ## v2026.11.16.37
 
 **Fixed**
