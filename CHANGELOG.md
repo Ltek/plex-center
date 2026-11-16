@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.16.63
+
+**New**
+- **Stagger auto-rotate** (Home panel, card-wide, off by default): sections that fade or slide change one after
+  another, spread evenly over the cycle (in Home order) instead of all at once; scrolling rows start a moment apart
+  and run at slightly different speeds so they don't move in step.
+
 ## v2026.11.16.62
 
 **Fixed**

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.62
+// Version: v2026.11.16.63
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.62';
+const BUILD_NUMBER = 'v2026.11.16.63';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -453,6 +453,7 @@ const DEFAULTS = {
   slim_position: 'bottom',
   slim_controls: 'toggle',
   watching_tvs: 'all',
+  stagger_rotate: false,
   calendar: true,
   calendar_view: 'month',
   week_start: 'mon',
@@ -1711,7 +1712,7 @@ class PlexCenterCard extends HTMLElement {
   disconnectedCallback() {
     this._detached = true;
     clearInterval(this._tick); clearInterval(this._poll); this._tick = this._poll = null;
-    for (const t of Object.values(this._anim || {})) clearInterval(t); this._anim = {}; clearTimeout(this._popTimer);
+    for (const t of Object.values(this._anim || {})) { clearInterval(t); clearTimeout(t); } this._anim = {}; clearTimeout(this._popTimer);
     if (this._onAnyScroll) document.removeEventListener('scroll', this._onAnyScroll, true);
     this._orient?.removeEventListener?.('change', this._onOrient); this._orient = null;
     this._ro?.disconnect(); this._ro = null; this._io?.disconnect();
@@ -2446,7 +2447,7 @@ class PlexCenterCard extends HTMLElement {
     if (!force && sec.dataset.cwsig === sg && sec.firstElementChild) return;
     sec.dataset.cwsig = sg;
     this._anim = this._anim || {};
-    if (layout !== 'banner' || st.auto === 'off') { clearInterval(this._anim.continueBanner); delete this._anim.continueBanner; this._cwTimer = null; }
+    if (layout !== 'banner' || st.auto === 'off') { clearInterval(this._anim.continueBanner); clearTimeout(this._anim.continueBanner); delete this._anim.continueBanner; this._cwTimer = null; }
     if (layout !== 'banner') {   // a row / column like the other sections (items to show, scroll, auto-rotate, image style)
       this._lists.set('continue', items);
       this._fill('continue', sec, 'Continue watching', items.length, items.slice(0, st.max), 'continue');
@@ -2459,10 +2460,10 @@ class PlexCenterCard extends HTMLElement {
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (st.auto !== 'off' && items.length > 1 && !reduce) {
       if (!this._anim.continueBanner || this._cwTimer !== tsig) {
-        clearInterval(this._anim.continueBanner);
+        clearInterval(this._anim.continueBanner); clearTimeout(this._anim.continueBanner);
         this._cwTimer = tsig;
-        const ms = Math.max(0, Number(st.fade_ms));
-        this._anim.continueBanner = setInterval(() => {
+        const ms = Math.max(0, Number(st.fade_ms)), period = Math.max(2, Number(st.s.speed ?? 5) || 5) * 1000 + 2 * ms;
+        const step2 = () => {
           const box = this._root?.querySelector('[data-sec="continue"]'), list = this._lists.get('continue') || [];
           if (!box || !box.isConnected || list.length < 2 || this._cwHold) return;   // paused only while the pointer is on its buttons
           const hero = box.querySelector('.plc-hero'), nxt = list[((this._v.hero || 0) + 1) % list.length];
@@ -2477,9 +2478,12 @@ class PlexCenterCard extends HTMLElement {
             if (slide) { nh.classList.add('plc-slide', `from-${dir}`); void nh.offsetWidth; nextFrame(() => nh.classList.remove(`from-${dir}`)); setTimeout(() => box.classList.remove('plc-sliding'), ms + 50); }
             else { nh.classList.add('plc-fade', 'out'); void nh.offsetWidth; nextFrame(() => nh.classList.remove('out')); }
           }, ms);
-        }, Math.max(2, Number(st.s.speed ?? 5) || 5) * 1000 + 2 * ms);
+        };
+        const off = this._stagger('continue') * period;
+        if (off) this._anim.continueBanner = setTimeout(() => { this._anim.continueBanner = setInterval(step2, period); }, off);
+        else this._anim.continueBanner = setInterval(step2, period);
       }
-    } else { clearInterval(this._anim.continueBanner); delete this._anim.continueBanner; this._cwTimer = null; }
+    } else { clearInterval(this._anim.continueBanner); clearTimeout(this._anim.continueBanner); delete this._anim.continueBanner; this._cwTimer = null; }
     const i = Math.min(this._v.hero || 0, items.length - 1), it = items[i];
     const sub = it.type === 'episode' ? `Season ${it.season}, Episode ${it.episode} · ${it.title}` : [it.year, it.duration ? fmtTime(it.duration) : ''].filter(Boolean).join(' · ');
     const left = it.offset ? `${fmtTime(it.offset)} of ${fmtTime(it.duration)} · ends ${endsAt((it.duration || 0) - it.offset, cfg(this._c, 'clock'))} if started now` : '';
@@ -2555,7 +2559,7 @@ class PlexCenterCard extends HTMLElement {
   _fill(id, sec, title, total, items, listId, extraHead = '') {
     sec.innerHTML = this._sectionHtml(id, sec, title, total, items, listId, extraHead);
     this._anim = this._anim || {};
-    clearInterval(this._anim[id]); delete this._anim[id];
+    clearInterval(this._anim[id]); clearTimeout(this._anim[id]); delete this._anim[id];
     const st = secStyle(this._c, id);
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (st.auto === 'off' || reduce || items.length <= st.show) return;
@@ -2564,11 +2568,12 @@ class PlexCenterCard extends HTMLElement {
     body.addEventListener('pointerenter', () => { paused = true; });
     body.addEventListener('pointerleave', () => { paused = false; });
     if (st.auto === 'scroll') {
-      const step = 50, px = Math.max(1, st.speed) * step / 1000;
+      const stg = this._stagger(id), step = 50, px = Math.max(1, st.speed) * (1 + (stg ? (stg - 0.5) * 0.3 : 0)) * step / 1000;
       // Left / Up: the items move left / up (forward); Right / Down: they move right / down (from the end back)
       const back = st.scroll_dir === 'right' || st.scroll_dir === 'down';
-      let acc = 0, started = false;
+      let acc = 0, started = false, waitUntil = Date.now() + stg * 4000;
       this._anim[id] = setInterval(() => {
+        if (Date.now() < waitUntil) return;
         const box = body.querySelector('.plc-row, .plc-list');
         if (!box || paused || !box.isConnected) return;
         const horiz = box.classList.contains('plc-row');
@@ -2582,8 +2587,8 @@ class PlexCenterCard extends HTMLElement {
         set(back ? (pos <= 1 ? end : pos - move) : (pos >= end - 1 ? 0 : pos + move));
       }, step);
     } else {
-      const pages = Math.ceil(items.length / st.show);
-      this._anim[id] = setInterval(() => {
+      const pages = Math.ceil(items.length / st.show), period = Math.max(2, st.speed) * 1000 + 2 * st.fade_ms;
+      const tick = () => {
         if (paused || !body.isConnected) return;
         const box = body.querySelector('.plc-fade');
         this._fadePage = { ...(this._fadePage || {}), [id]: ((this._fadePage?.[id] || 0) + 1) % pages };
@@ -2596,8 +2601,19 @@ class PlexCenterCard extends HTMLElement {
           const nb = body.querySelector('.plc-fade');
           if (nb) { nb.classList.add('out'); void nb.offsetWidth; nextFrame(() => nb.classList.remove('out')); }
         }, st.fade_ms);
-      }, Math.max(2, st.speed) * 1000 + 2 * st.fade_ms);
+      };
+      const off = this._stagger(id) * period;
+      if (off) this._anim[id] = setTimeout(() => { if (body.isConnected) this._anim[id] = setInterval(tick, period); }, off);
+      else this._anim[id] = setInterval(tick, period);
     }
+  }
+
+  /** Stagger (card-wide option): 0…1, this section's place among the auto-rotating ones on Home. */
+  _stagger(id) {
+    if (!cfg(this._c, 'stagger_rotate')) return 0;
+    const ids = homeOrder(this._c).filter((x) => homeVisible(this._c, x) && secStyle(this._c, x).auto !== 'off');
+    const i = ids.indexOf(id);
+    return i <= 0 ? 0 : i / ids.length;
   }
 
   async _renderExtraCards() {
@@ -3806,6 +3822,7 @@ class PlexCenterCardEditor extends HTMLElement {
       <p class="plce-hint">Each screen type has its own order and visible sections. The pencil opens the section's own panel (its content, and its look per screen).</p>
       <div class="plce-list">${list}</div>
       <div class="plce-row"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>
+      ${this._check('stagger_rotate', 'Stagger auto-rotate: sections that scroll or fade don\'t all move at the same time')}
       ${this._check('surprise', 'Surprise me button')}
       ${this._c('surprise') ? `${this._select('surprise_style', 'Surprise me shows', [['icon', 'Icon only'], ['both', 'Icon and text'], ['text', 'Text only']])}
         ${this._c('surprise_style') !== 'icon' ? this._text('surprise_label', 'Text', DEFAULTS.surprise_label) : ''}
