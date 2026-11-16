@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.16.61
+
+**Changed** (every section panel)
+- **Layout** is only how items show and move: layout, items to show, scroll, Auto Rotate (direction and timings),
+  items to load. For the Continue watching banner, *Scroll to see more items* is hidden (one title at a time) and
+  *Items to load* reads **Titles to rotate through**.
+- **Content Visuals** is how each item looks: image style, border, icons, watched tick, Fanart / Fanart fade
+  settings, corner radius, and the **"New" flag** on / off (moved from Layout) with its colour.
+- The Fanart fade sliders no longer clash with Auto Rotate's fade: **Image fade starts at** and **Image fade
+  length**.
+
 ## v2026.11.16.60
 
 **New** (Layout → Auto Rotate, per section and screen)

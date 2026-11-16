@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.60
+// Version: v2026.11.16.61
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.60';
+const BUILD_NUMBER = 'v2026.11.16.61';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -3654,7 +3654,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${l.text_bg === 'gradient' ? `${sel('text_bg_dir', 'Gradient direction', GRAD_DIRS)}${pct('text_bg_start', 'Fade starts at', 0, 95)}${pct('text_bg_reach', 'Gradient strength (how far it reaches)', 5, 100)}` : ''}
         ${l.text_bg === 'box' ? `${pct('text_bg_blur', 'Edge blur', 0, 40, 'px')}${sel('box_dir', 'Box fade direction', [['none', 'No fade'], ...GRAD_DIRS])}
           ${l.box_dir !== 'none' ? pct('box_start', 'Fade starts at', 0, 95) : ''}` : ''}` : ''}
-      ${l.image === 'fade' ? `${pct('fade_start', 'Fade starts at (from the left)', 0, 90)}${pct('fade_dist', 'Fade distance (how long the fade is)', 0, 100)}${pct('fade_width', 'Image width', 30, 100)}` : ''}
+      ${l.image === 'fade' ? `${pct('fade_start', 'Image fade starts at (from the left)', 0, 90)}${pct('fade_dist', 'Image fade length', 0, 100)}${pct('fade_width', 'Image width', 30, 100)}` : ''}
 `;
     const lines = LOOK_LINES.filter(([id]) => !(cal && id === 'extra')).map(([id, label]) => `<div class="plce-group">${esc(lineLabel(id, label))}</div>${chk(`${id}_show`, 'Show')}${l[`${id}_show`] ? `${sl(`${id}_px`, 'Size', 8, 40)}${sel(`${id}_weight`, 'Weight', weights)}
         ${this._colorControl(K(`${id}_color`), ['Colour', id === 'title' ? 'Theme text' : 'Theme secondary text', id === 'title' ? '#ffffff' : '#bbbbbb'])}` : ''}`).join('');
@@ -3884,7 +3884,7 @@ class PlexCenterCardEditor extends HTMLElement {
           : sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
         ${id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner' ? '' : `${sl('show', 'Items to show', 0, 20, 0, '')}
         <p class="plce-hint">0 = the screen's Posters across (half for Fanart rows).</p>`}
-        ${chk('scroll', 'Scroll to see more items', false)}
+        ${id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner' ? '' : chk('scroll', 'Scroll to see more items', false)}
         ${(() => {
           const lay = id === 'continue' ? (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) : (s.layout || 'row');
           if (lay === 'banner') {
@@ -3897,10 +3897,10 @@ class PlexCenterCardEditor extends HTMLElement {
             ${st.auto === 'scroll' ? `${sel('scroll_dir', 'Direction', lay === 'list' ? [['up', 'Up'], ['down', 'Down']] : [['left', 'Left'], ['right', 'Right']])}${sl('speed', 'Scrolling speed', 5, 200, st.speed, ' px/s')}` : ''}`;
         })()}
         ${st.auto === 'fade' && !(id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner') ? `${sl('speed', 'Next set every', 2, 60, st.speed, ' s')}${sl('fade_ms', 'Fade time', 0, 3000, st.fade_ms, ' ms')}` : ''}
-        ${st.scroll || st.auto !== 'off' ? sl('total', 'Items to load', st.show, 100, st.total, '') : ''}
-        ${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}`)}
+        ${st.scroll || st.auto !== 'off' ? sl('total', id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner' ? 'Titles to rotate through' : 'Items to load', st.show, 100, st.total, '') : ''}`)}
       ${sub('lines', 'Text Lines', this._lookBody(id, 'lines'))}
-      ${sub('shape', 'Content Visuals', `${this._lookBody(id, 'visual')}${col('flag_color', '"New" flag colour', '#0099cc')}${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}
+      ${sub('shape', 'Content Visuals', `${this._lookBody(id, 'visual')}${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}
+        ${st.flag ? col('flag_color', '"New" flag colour', '#0099cc') : ''}${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}
         ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
         ${list ? `${col('item_bg', 'Item background', '#0d0d0d', true)}${col('border_color', 'Item border', '#000000', true)}` : ''}`)}
 `;
