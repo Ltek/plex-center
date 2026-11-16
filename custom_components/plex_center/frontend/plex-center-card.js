@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.57
+// Version: v2026.11.16.58
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.57';
+const BUILD_NUMBER = 'v2026.11.16.58';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -823,7 +823,7 @@ function secStyle(c, id) {
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
     show: (() => { const n = Math.max(1, Number((s.show ?? s.max) || c.across || cfg(c, 'across')) || 6);
       return wide && !(s.show ?? s.max) ? Math.max(1, Math.round(n / 2)) : n; })(),
-    scroll: !!s.scroll, auto: s.auto || 'off', speed: Number(s.speed ?? (s.auto === 'fade' ? 6 : 30)), fade_ms: Math.max(0, Number(s.fade_ms ?? 600)),
+    scroll: !!s.scroll, auto: s.auto || 'off', speed: Number(s.speed ?? (s.auto === 'scroll' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
     flag: s.flag ?? cfg(c, 'flag'), list_w: Number(s.list_w ?? 340), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
     get max() { return this.total; } };
@@ -1092,8 +1092,8 @@ const CARD_CSS = `
 /* fanart – fade (the upcoming-media look): the backdrop on the right, fading in behind the text */
 .plc-ci.img-fade { background: var(--plc-li-bg, #0d0d0d); align-items: center; }
 .plc-ci.img-fade .plc-ci-fan { position: absolute; top: 0; right: 0; bottom: 0; width: var(--li-fade-w, 62%); background: center / cover no-repeat;
-  -webkit-mask-image: linear-gradient(to right, transparent var(--li-fade-s, 0%), #000 calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%)));
-  mask-image: linear-gradient(to right, transparent var(--li-fade-s, 0%), #000 calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%))); }
+  -webkit-mask-image: linear-gradient(to right, transparent var(--li-fade-s, 0%), rgb(0 0 0 / .04) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .15), rgb(0 0 0 / .15) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .3), rgb(0 0 0 / .35) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .45), rgb(0 0 0 / .6) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .6), rgb(0 0 0 / .82) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .75), rgb(0 0 0 / .95) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .9), #000 calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%)));
+  mask-image: linear-gradient(to right, transparent var(--li-fade-s, 0%), rgb(0 0 0 / .04) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .15), rgb(0 0 0 / .15) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .3), rgb(0 0 0 / .35) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .45), rgb(0 0 0 / .6) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .6), rgb(0 0 0 / .82) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .75), rgb(0 0 0 / .95) calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%) * .9), #000 calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%))); }
 .plc-ci.img-fade .plc-ci-txt { max-width: 62%; }
 /* calendar: phones */
 .plc-calp-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; }
@@ -1242,8 +1242,8 @@ const CARD_CSS = `
 .lk-hide-title .plc-t, .lk-hide-info .plc-s.l1, .lk-hide-when .plc-s.l2, .lk-hide-meta .plc-s.l3, .lk-hide-extra .plc-s.l4 { display: none; }
 .plc-poster.fade { background-color: #0d0d0d; }
 .plc-fadeimg { position: absolute; top: 0; right: 0; bottom: 0; width: var(--plc-fade-w, 62%); background: center / cover no-repeat; border-radius: inherit;
-  -webkit-mask-image: linear-gradient(to right, transparent var(--plc-fade-s, 0%), #000 calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%)));
-  mask-image: linear-gradient(to right, transparent var(--plc-fade-s, 0%), #000 calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%))); }
+  -webkit-mask-image: linear-gradient(to right, transparent var(--plc-fade-s, 0%), rgb(0 0 0 / .04) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .15), rgb(0 0 0 / .15) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .3), rgb(0 0 0 / .35) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .45), rgb(0 0 0 / .6) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .6), rgb(0 0 0 / .82) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .75), rgb(0 0 0 / .95) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .9), #000 calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%)));
+  mask-image: linear-gradient(to right, transparent var(--plc-fade-s, 0%), rgb(0 0 0 / .04) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .15), rgb(0 0 0 / .15) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .3), rgb(0 0 0 / .35) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .45), rgb(0 0 0 / .6) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .6), rgb(0 0 0 / .82) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .75), rgb(0 0 0 / .95) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .9), #000 calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%))); }
 .plc-poster.fade .plc-fan-text { background: none; right: calc(var(--plc-fade-w, 62%) - 30%); top: 0; display: flex; flex-direction: column; justify-content: center; }
 .plc-sess.fan { background-size: cover; background-position: center; }
 .plc-sess.fan .plc-t, .plc-sess.fan .plc-s { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
@@ -1418,7 +1418,7 @@ const CARD_CSS = `
 .plc-sec-body.limit .plc-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--plc-li-w, 340px)), 1fr)); }
 .plc-sec-body.auto .plc-row, .plc-sec-body.auto .plc-list { scrollbar-width: none; }
 .plc-sec-body.auto .plc-row::-webkit-scrollbar, .plc-sec-body.auto .plc-list::-webkit-scrollbar { display: none; }
-.plc-fade { transition: opacity var(--plc-fade-ms, 600ms) ease; }
+.plc-fade { transition: opacity var(--plc-fade-ms, 1200ms) ease-in-out; }
 .plc-fade.out { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .plc-fade { transition: none; } }
 .plc-main.searching > .plc-sec:not([data-sec="search"]), .plc-main.searching > .plc-cards { display: none; }
@@ -2420,9 +2420,13 @@ class PlexCenterCard extends HTMLElement {
     }).join('')}</div>`;
   }
 
-  _paintContinue(sec, items) {
+  _paintContinue(sec, items, force = false) {
     const lk = lookOwn(this._c, 'continue'), st = secStyle(this._c, 'continue');
     const layout = st.s.layout || (this._phone ? 'row' : 'banner');
+    // the hubs refresh repaints every few seconds: only when something changed, or the auto-rotate restarts every time
+    const sg = JSON.stringify([layout, this._c._screen, JSON.stringify(st.s), JSON.stringify(lk), this._v.hero || 0, items.map((x) => [x.key, x.offset, x.watched])]);
+    if (!force && sec.dataset.cwsig === sg && sec.firstElementChild) return;
+    sec.dataset.cwsig = sg;
     this._anim = this._anim || {};
     clearInterval(this._anim.continueBanner); delete this._anim.continueBanner;
     if (layout !== 'banner') {   // a row / column like the other sections (items to show, scroll, auto-rotate, image style)
@@ -2431,11 +2435,22 @@ class PlexCenterCard extends HTMLElement {
       return;
     }
     applyLook(sec, lk);
+    sec.style.setProperty('--plc-fade-ms', `${Math.max(0, Number(st.fade_ms))}ms`);
     if (st.auto !== 'off' && items.length > 1 && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      const ms = Math.max(0, Number(st.fade_ms));
       this._anim.continueBanner = setInterval(() => {
         if (!sec.isConnected || sec.matches(':hover')) return;
-        this._v.hero = ((this._v.hero || 0) + 1) % items.length; this._paintContinue(sec, items);
-      }, Math.max(2, Number(st.speed) || 8) * 1000);
+        const hero = sec.querySelector('.plc-hero');
+        const nxt = items[((this._v.hero || 0) + 1) % items.length];
+        preloadImages(`url('${cssUrl(nxt?.art || nxt?.still || nxt?.poster || '')}')`);
+        hero?.classList.add('plc-fade', 'out');
+        setTimeout(() => {
+          if (!sec.isConnected) return;
+          this._v.hero = ((this._v.hero || 0) + 1) % items.length; this._paintContinue(sec, items, true);
+          const nh = sec.querySelector('.plc-hero');
+          if (nh) { nh.classList.add('plc-fade', 'out'); void nh.offsetWidth; nextFrame(() => nh.classList.remove('out')); }
+        }, ms);
+      }, Math.max(2, Number(st.speed) || 5) * 1000 + 2 * ms);
     }
     const i = Math.min(this._v.hero || 0, items.length - 1), it = items[i];
     const sub = it.type === 'episode' ? `Season ${it.season}, Episode ${it.episode} · ${it.title}` : [it.year, it.duration ? fmtTime(it.duration) : ''].filter(Boolean).join(' · ');
@@ -2536,14 +2551,16 @@ class PlexCenterCard extends HTMLElement {
         if (paused || !body.isConnected) return;
         const box = body.querySelector('.plc-fade');
         this._fadePage = { ...(this._fadePage || {}), [id]: ((this._fadePage?.[id] || 0) + 1) % pages };
+        const next = this._sectionItems(st, items, listId, this._fadePage[id]);
+        preloadImages(next);   // so the next set is ready when it fades in (no pop-in that makes the fade-in look shorter)
         box?.classList.add('out');
         setTimeout(() => {
           if (!body.isConnected) return;
-          body.innerHTML = this._sectionItems(st, items, listId, this._fadePage[id]);
+          body.innerHTML = next;
           const nb = body.querySelector('.plc-fade');
-          if (nb) { nb.classList.add('out'); void nb.offsetWidth; setTimeout(() => nb.classList.remove('out'), 20); }
+          if (nb) { nb.classList.add('out'); void nb.offsetWidth; nextFrame(() => nb.classList.remove('out')); }
         }, st.fade_ms);
-      }, Math.max(2, st.speed) * 1000 + st.fade_ms);
+      }, Math.max(2, st.speed) * 1000 + 2 * st.fade_ms);
     }
   }
 
@@ -2562,6 +2579,13 @@ class PlexCenterCard extends HTMLElement {
 
 const STYLE_KEYS = ['search_width', 'screen_offset', 'poster_width', 'corner_radius', 'title_size', 'line_size', 'header_size', 'section_size', 'card_padding', 'card_radius',
   'card_border_width', 'card_shadow', 'box_shadows', 'text_shadows', 'layout', ...Object.keys(COLOR_DEFS)];
+/** Run after the browser has painted (so a CSS transition starts from the state just set). */
+const nextFrame = (fn) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => requestAnimationFrame(fn)) : setTimeout(fn, 30));
+/** Start loading the images in some HTML (background-image urls) before it is shown. */
+function preloadImages(html) {
+  if (typeof Image === 'undefined') return;
+  for (const m of String(html).matchAll(/url\('([^']+)'\)/g)) { const im = new Image(); im.src = m[1]; }
+}
 function sig(node, s, paint) { if (node.dataset.sig === s) return; node.dataset.sig = s; paint(); }
 const cssUrl = (u) => String(u).replace(/['"\\()\s]/g, (c) => encodeURIComponent(c));
 
@@ -3202,7 +3226,7 @@ Object.assign(PlexCenterCard.prototype, {
     if ((el = t('[data-hero]'))) {
       const items = this._lists.get('continue') || [];
       this._v.hero = ((this._v.hero || 0) + Number(el.dataset.hero) + items.length) % Math.max(1, items.length);
-      const sec = this._root.querySelector('[data-sec="continue"]'); if (sec) this._paintContinue(sec, items); return;
+      const sec = this._root.querySelector('[data-sec="continue"]'); if (sec) this._paintContinue(sec, items, true); return;
     }
     if ((el = t('[data-open]'))) {
       if (this._v.query) addRecent(this._v.query);
@@ -3831,10 +3855,13 @@ class PlexCenterCardEditor extends HTMLElement {
         ${s.collapsible ? `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsed"${s.collapsed ? ' checked' : ''}>Start collapsed</label>` : ''}`)}
       ${sub('items', 'Layout', `${id === 'continue' ? sel('layout', 'Layout', [['', this._eds().startsWith('phone') ? 'Row (phones\' default)' : 'Banner, one at a time (tablets\' default)'], ['banner', 'Banner, one at a time'], ['row', 'Row'], ['list', 'Column']])
           : sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
-        ${sl('show', 'Items to show (0 = the screen\'s Posters across; half for Fanart rows)', 0, 20, 0, '')}
+        ${id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner' ? '' : `${sl('show', 'Items to show', 0, 20, 0, '')}
+        <p class="plce-hint">0 = the screen's Posters across (half for Fanart rows).</p>`}
         ${chk('scroll', 'Scroll to see more items', false)}
-        ${sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Ticker (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
-        ${st.auto === 'scroll' ? sl('speed', 'Ticker speed', 5, 200, st.speed, ' px/s') : ''}
+        ${id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner'
+          ? sel('auto', 'Auto Rotate', [['', 'Off'], ['fade', 'Fade (fades to the next title)']])
+          : sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Scroll (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
+        ${st.auto === 'scroll' ? sl('speed', 'Scrolling speed', 5, 200, st.speed, ' px/s') : ''}
         ${st.auto === 'fade' ? `${sl('speed', 'Next set every', 2, 60, st.speed, ' s')}${sl('fade_ms', 'Fade time', 0, 3000, st.fade_ms, ' ms')}` : ''}
         ${st.scroll || st.auto !== 'off' ? sl('total', 'Items to load', st.show, 100, st.total, '') : ''}
         ${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}`)}

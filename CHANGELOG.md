@@ -1,5 +1,21 @@
 # Changelog
 
+## v2026.11.16.58
+
+**Fixed**
+- **Continue watching's auto-rotate** didn't work: the regular refresh repainted the section every few seconds,
+  restarting the timer before it fired. It now repaints only when something changed. The **banner fades** to the
+  next title (it used to jump), and its Auto Rotate offers *Off / Fade*.
+- **Fade in and fade out take the same time**: the next set's images load while the old set fades out (they used
+  to pop in, so the fade-in looked shorter), and both use the same easing.
+- **Items to show** slider no longer runs off the editor (shorter label, the note below it); it's hidden for the
+  banner.
+- **Fanart fade** blends smoothly: the fade from dark to the picture is eased instead of a straight line.
+
+**Changed**
+- Auto-rotate defaults: **next set every 5 s**, **fade time 1200 ms**.
+- *Ticker* is now **Scroll** (*Scrolling speed*).
+
 ## v2026.11.16.57
 
 **Fixed**
