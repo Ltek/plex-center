@@ -1,5 +1,20 @@
 # Changelog
 
+## v2026.11.16.52
+
+**Fixed**
+- **Cut-off text on Fanart rows**: a row in Fanart now shows half as many items across as Posters across (wider
+  tiles, so the lines fit), titles are kept to two lines, and the text never runs above the image. A row's own
+  *Items to show* still wins.
+
+**Changed** (section panels)
+- *Look* is now **Visuals**. The row's **Title** and **Show** (Movies / TV) are there too.
+- **Info Lines** is merged into Visuals: **Text lines** is a collapsible section of its own (title and lines 1–4:
+  show, size, weight, colour, per screen). Existing Info Lines sizes and colours move there for every screen.
+- **Source** (Plex row, Recently Added source, Coming Soon sensors) is a collapsible section.
+- Appearance → *Posters & rows* no longer has the card-wide **Image style**: it's per section, in Visuals.
+  A card set to Fanart gets Fanart in every section's Visuals, so nothing changes on the dashboard.
+
 ## v2026.11.16.51
 
 **Changed: the editor has one place per section**
