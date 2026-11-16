@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.16.36
+
+**New**
+- **Saved presets** (Appearance → Page menu): *Save as new preset* stores how the page buttons look now (the preset
+  and every ticked group) under a name, in this card's settings. Saved presets show in the Preset list with a ★.
+  With one picked: *Update “name”* saves your changes into it, *Delete “name”* removes it and keeps the look as the
+  card's own settings. Export includes a saved preset's full look and name.
+
+**Removed**
+- The sample buttons in the editor: the dashboard preview shows page button changes as you make them (the note at
+  the top still says when the screen in the preview shows a chip instead of buttons).
+
 ## v2026.11.16.35
 
 **Fixed**

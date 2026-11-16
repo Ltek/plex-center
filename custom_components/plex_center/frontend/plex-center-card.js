@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.35
+// Version: v2026.11.16.36
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.35';
+const BUILD_NUMBER = 'v2026.11.16.36';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -81,20 +81,40 @@ const PAGE_PRESETS = {
   neon: { name: 'Neon', ...PAGE_BASE, page_grad: true, page_glow: 'active', page_shadow: true, page_shadow_opacity: 50 },
 };
 /** The page buttons' settings: the preset, with the checked groups' own values on top. */
+/** A saved preset of this card: { name, base (a built-in), groups, values }. page_style 'custom:<id>' picks one. */
+const savedPreset = (c, style = c.page_style) => (String(style || '').startsWith('custom:') ? (c.page_presets || {})[String(style).slice(7)] || null : null);
+/** The look of the chosen preset alone (built-in, or saved = its built-in base with its own groups on top). */
+function presetLook(c) {
+  const sp = savedPreset(c);
+  const base = sp ? (PAGE_PRESETS[sp.base] ? sp.base : 'standard') : PAGE_PRESETS[c.page_style] ? c.page_style : 'standard';
+  const out = { style: base, ...PAGE_PRESETS[base] };
+  if (sp) { const on = new Set(sp.groups || []); for (const [g, , keys] of PAGE_GROUPS) if (on.has(g)) for (const k of keys) if (sp.values?.[k] !== undefined) out[k] = sp.values[k]; }
+  return out;
+}
+/** The page buttons' settings: the preset, with the card's checked groups on top. */
 function pageLook(c) {
-  const style = PAGE_PRESETS[c.page_style] ? c.page_style : 'standard';
-  const out = { style, ...PAGE_PRESETS[style] };
+  const out = presetLook(c);
   const on = new Set(Array.isArray(c.page_groups) ? c.page_groups : []);
   for (const [g, , keys] of PAGE_GROUPS) if (on.has(g)) for (const k of keys) if (c[k] !== undefined) out[k] = c[k];
   if (!out.page_show_icon && !out.page_show_label) out.page_show_label = true;
   return out;
 }
+/** Everything that makes the current look, flattened onto a built-in base: for export and for saving a preset. */
+function flatPageStyle(c) {
+  const sp = savedPreset(c), base = presetLook(c).style;
+  const groups = new Set([...(sp?.groups || []), ...(Array.isArray(c.page_groups) ? c.page_groups : [])]);
+  const values = {};
+  for (const [g, , keys] of PAGE_GROUPS) {
+    if (!groups.has(g)) continue;
+    for (const k of keys) { const v = (Array.isArray(c.page_groups) && c.page_groups.includes(g) && c[k] !== undefined) ? c[k] : sp?.values?.[k]; if (v !== undefined) values[k] = v; }
+  }
+  return { base, groups: PAGE_GROUPS.map(([g]) => g).filter((g) => groups.has(g)), values };
+}
 /** Export: the page button style as text (page icons stay with the card: they name its own pages). */
 function exportPageStyle(c) {
-  const style = { page_style: PAGE_PRESETS[c.page_style] ? c.page_style : 'standard' };
-  if (Array.isArray(c.page_groups) && c.page_groups.length) style.page_groups = [...c.page_groups];
-  for (const k of PAGE_ALL) if (c[k] !== undefined) style[k] = c[k];
-  return { kind: 'plex-center/page-style', v: 1, style };
+  const f = flatPageStyle(c), sp = savedPreset(c);
+  const style = { page_style: f.base, ...(f.groups.length ? { page_groups: f.groups } : {}), ...f.values };
+  return { kind: 'plex-center/page-style', v: 1, ...(sp?.name ? { name: sp.name } : {}), style };
 }
 const HEX = (v) => (typeof v === 'string' && /^#[0-9a-f]{3,8}$/i.test(v.trim()) ? v.trim() : '');
 /** A Color Light Manager Button Style (flat, a { layers } stack, or the library envelope) → page style settings. */
@@ -425,8 +445,20 @@ function normalizeConfig(raw) {
     const h = headerLayout({ ...c, [`${sc}_header`]: 'own' }, sc);
     if (JSON.stringify(h) === JSON.stringify(sc.startsWith('phone') ? DEFAULT_HEADER_PHONE : DEFAULT_HEADER)) delete c[k]; else c[k] = h;
   }
-  { const pre = PAGE_PRESETS[c.page_style] || PAGE_PRESETS.standard;
-    if (c.page_style && !PAGE_PRESETS[c.page_style]) delete c.page_style;
+  { if (c.page_presets && typeof c.page_presets === 'object') {
+      const out = {};
+      for (const [id, sp] of Object.entries(c.page_presets)) {
+        if (!/^[a-z0-9_-]{1,40}$/.test(id) || !sp || typeof sp !== 'object') continue;
+        const groups = (Array.isArray(sp.groups) ? sp.groups : []).filter((g) => PAGE_GROUPS.some(([x]) => x === g));
+        const allowed = new Set(PAGE_GROUPS.filter(([g]) => groups.includes(g)).flatMap(([, , k]) => k));
+        const values = Object.fromEntries(Object.entries(sp.values || {}).filter(([k, v]) => allowed.has(k) && v !== '' && v != null)
+          .map(([k, v]) => [k, COLOR_DEFS[k] ? String(v).replace(/[;{}<>]/g, '') : v]));
+        out[id] = { name: String(sp.name || id).slice(0, 60), base: PAGE_PRESETS[sp.base] ? sp.base : 'standard', groups, values };
+      }
+      if (Object.keys(out).length) c.page_presets = out; else delete c.page_presets;
+    } else delete c.page_presets;
+    if (c.page_style && !PAGE_PRESETS[c.page_style] && !savedPreset(c)) delete c.page_style;
+    const pre = presetLook(c);
     if ('page_active' in c) {   // 2026.11.15.33: "current page marked by" → underline / glow groups
       if (c.page_active === 'underline') c.page_underline = true;
       if (c.page_active === 'glow') c.page_glow = 'active';
@@ -435,7 +467,7 @@ function normalizeConfig(raw) {
     if (!Array.isArray(c.page_groups)) c.page_groups = PAGE_GROUPS.filter(([, , keys]) => keys.some((k) => c[k] !== undefined && c[k] !== '')).map(([g]) => g);
     const on = new Set(c.page_groups.filter((g) => PAGE_GROUPS.some(([x]) => x === g)));
     c.page_groups = PAGE_GROUPS.map(([g]) => g).filter((g) => on.has(g));
-    for (const [g, , keys] of PAGE_GROUPS) for (const k of keys) if (!on.has(g) || c[k] === '' || c[k] == null || (!COLOR_DEFS[k] && c[k] === pre[k])) delete c[k];
+    for (const [g, , keys] of PAGE_GROUPS) for (const k of keys) if (!on.has(g) || c[k] === '' || c[k] == null || c[k] === pre[k]) delete c[k];
     if (!c.page_groups.length) delete c.page_groups;
     if (c.page_icons && typeof c.page_icons === 'object') {
       const o = Object.fromEntries(Object.entries(c.page_icons).filter(([k, v]) => k && typeof v === 'string' && v.trim()).map(([k, v]) => [k, v.trim()]));
@@ -593,7 +625,8 @@ function cardVars(c) {
     `--plc-title-px:${Number(cfg(c, 'title_size'))}px`, `--plc-line-px:${Number(cfg(c, 'line_size'))}px`,
     `--plc-head-px:${Number(cfg(c, 'header_size'))}px`, `--plc-sec-px:${Number(cfg(c, 'section_size'))}px`, `--plc-pad:${Number(cfg(c, 'card_padding'))}px`,
     `--plc-offset:${Number(cfg(c, 'screen_offset'))}px`, `--plc-search-w:${Number(cfg(c, 'search_width'))}px`];
-  for (const [k, d] of Object.entries(COLOR_DEFS)) if (c[k] && d[3]) v.push(`${d[3]}:${String(c[k]).replace(/[;{}<>]/g, '')}`);
+  const pl = pageLook(c);
+  for (const [k, d] of Object.entries(COLOR_DEFS)) { const val = k.startsWith('page_') ? pl[k] : c[k]; if (val && d[3]) v.push(`${d[3]}:${String(val).replace(/[;{}<>]/g, '')}`); }
   return v.join(';');
 }
 
@@ -739,7 +772,7 @@ const CARD_CSS = `
 /* page menu styles: one layout; colors per preset (--pm-*), user colors on top (--pmu-*); shadow, glow and gradient lines computed per card */
 .plc-tabs.pm { gap: var(--pm-gap, 4px); align-items: stretch; padding: var(--pm-pad, 0px);
   margin: calc(10px - var(--pm-pad, 0px)) calc(-1 * var(--pm-pad, 0px)) calc(8px - var(--pm-pad, 0px)); }
-.plc-footer .plc-tabs.pm, .plce-sample-row .plc-tabs.pm { margin: calc(-1 * var(--pm-pad, 0px)); }
+.plc-footer .plc-tabs.pm { margin: calc(-1 * var(--pm-pad, 0px)); }
 .plc.onerow .plc-hl:has(.plc-tabs.pm) { overflow: visible; }
 .plc-tabs.pm .plc-tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--pm-h, 36px); padding: 0 12px;
   border-radius: var(--pm-r, 8px); font-size: var(--pm-fs, 14px); font-weight: var(--pm-fw, 600); line-height: 1.1; box-sizing: border-box;
@@ -2724,11 +2757,6 @@ const EDITOR_CSS = `
         .plce-chip.on { background: color-mix(in srgb, var(--accent-color, var(--ltek-c-accent)) 22%, transparent); color: var(--accent-color, var(--ltek-c-accent));
           text-transform: none; letter-spacing: 0; font-weight: 600; margin-left: 8px; }
         .plce-warn { border-left: 3px solid var(--warning-color, #ffa600); padding-left: 8px; }
-        .plce-sample { margin: 6px 0 10px; padding: 12px; border-radius: 10px; border: 1px dashed var(--divider-color, #444); background: var(--card-background-color, #1c1c1c); }
-        .plce-sample .plc { padding: 0; overflow: visible; background: none; }
-        .plce-sample-row .plc-tabs { margin: 0; justify-content: flex-start; }
-        .plce-sample-key { display: flex; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--secondary-text-color); }
-        .plce-sample-key span:first-child { color: var(--accent-color, var(--ltek-c-accent)); }
         .plce-pgs { margin-top: 6px; }
         .plce-pg { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--divider-color, #333); }
         .plce-pg > input { margin: 2px 0 0; width: 18px; height: 18px; flex: none; accent-color: var(--accent-color, var(--ltek-c-accent)); }
@@ -2750,6 +2778,8 @@ const EDITOR_CSS = `
         .plce-dlg-b { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
         .plce-btn { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--divider-color, #555); background: transparent; color: var(--primary-text-color); font: inherit; cursor: pointer; }
         .plce-btn.main { background: var(--accent-color, var(--ltek-c-accent)); border-color: transparent; color: var(--text-primary-color, #fff); }
+        .plce-dlg-name { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--divider-color, #444); background: var(--secondary-background-color, #111); color: var(--primary-text-color); font: inherit; }
+        .plce-del:hover { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
         .plce-pg-sub { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--secondary-text-color); }
         .plce-chip ha-icon { --mdc-icon-size: 14px; }
         .plce-row { display: flex; align-items: center; gap: var(--ltek-sp-4); padding: var(--ltek-sp-1) 0; flex-wrap: wrap; justify-content: flex-start; }
@@ -2850,8 +2880,6 @@ class PlexCenterCardEditor extends HTMLElement {
 
   _emit() {
     this._config = normalizeConfig(this._config);
-    const smp = this.querySelector('[data-pmsample]');
-    if (smp) smp.innerHTML = this._pageSample();
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: { type: `custom:${CARD_TAG}`, ...this._config } }, bubbles: true, composed: true }));
   }
   _set(key, value) {
@@ -3118,6 +3146,36 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._select('slim_controls', 'Remote buttons in the slim controls', [['toggle', 'Button to show / hide them'], ['shown', 'Always shown'], ['hidden', 'Hidden']])}`;
   }
 
+  /** Save the current look as a preset of this card (asks for a name). */
+  _savePresetDialog() {
+    this.querySelector('dialog.plce-dlg')?.remove();
+    this.insertAdjacentHTML('beforeend', `<dialog class="plce-dlg"><style>dialog.plce-dlg::backdrop { background: rgba(0,0,0,.55); }</style><div class="plce-dlg-in">
+      <div class="plce-dlg-h">Save as a new preset</div><p class="plce-hint">Saves how the page buttons look now (the preset and every ticked group) as a preset of this card.</p>
+      <input class="plce-dlg-name" type="text" maxlength="60" placeholder="Name, e.g. Glowtie"><div class="plce-dlg-msg"></div>
+      <div class="plce-dlg-b"><button class="plce-btn main" data-dsave>Save</button><button class="plce-btn" data-dclose>Cancel</button></div></div></dialog>`);
+    const dlg = this.querySelector('dialog.plce-dlg'), name = dlg.querySelector('input');
+    const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); };
+    dlg.addEventListener('cancel', close); dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+    dlg.querySelector('[data-dclose]').addEventListener('click', close);
+    const save = () => {
+      const n = name.value.trim();
+      if (!n) { dlg.querySelector('.plce-dlg-msg').textContent = 'Give it a name.'; return; }
+      const presets = { ...(this._config.page_presets || {}) };
+      let id = n.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'preset';
+      for (let i = 2; presets[id]; i++) id = `${id.replace(/_\d+$/, '')}_${i}`;
+      presets[id] = { name: n, ...flatPageStyle(this._config) };
+      this._config.page_presets = presets;
+      for (const k of PAGE_ALL) delete this._config[k];
+      delete this._config.page_groups;
+      this._config.page_style = `custom:${id}`;
+      this._emit(); this._render(); close();
+    };
+    dlg.querySelector('[data-dsave]').addEventListener('click', save);
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    name.focus();
+  }
+
   /** Export / import dialog (design guide: native <dialog> in the top layer, a visible textarea, copy / paste with fallbacks). */
   _styleDialog(mode) {
     this.querySelector('dialog.plce-dlg')?.remove();
@@ -3158,17 +3216,6 @@ class PlexCenterCardEditor extends HTMLElement {
     if (exp) { ta.focus(); ta.select(); } else ta.focus();
   }
 
-  /** The sample page buttons at the top of Appearance → Page menu, drawn with the card's own styles. */
-  _pageSample() {
-    const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
-    const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
-    const pages = tabOrder(this._config, libs).slice(0, 3);
-    while (pages.length < 3) pages.push([{ id: 'Movies', title: 'Movies', type: 'movie' }, { id: 'TV Shows', title: 'TV Shows', type: 'show' }][pages.length - 1] || { id: 'x', title: 'Page' });
-    const items = pages.map((t, i) => ({ id: t.id, title: t.title, icon: tabIcon(t, this._config), on: i === 0 }));
-    return `<div class="plc" style="${cardVars({ ...this._config, scale: 100 })}"><div class="plce-sample-row">${pageButtonsHtml(this._config, items)}</div>
-      <div class="plce-sample-key"><span>Active</span><span>Not active</span></div></div>`;
-  }
-
   /** Appearance → Page menu: like the Style Builder. A preset, then groups: tick a group to set its values, untick to use the preset's. */
   _pageBody() {
     const pl = pageLook(this._config), groups = new Set(this._config.page_groups || []);
@@ -3199,11 +3246,16 @@ class PlexCenterCardEditor extends HTMLElement {
     const shown = SHOWN.screen, shownName = (SCREENS.find(([sc]) => sc === shown) || [])[1];
     const warn = shown && cfg(this._config, `${shown}_tabs`) !== 'tabs'
       ? `<p class="plce-hint plce-warn">The preview shows <b>${esc(shownName)}</b>, where the page menu is a ${cfg(this._config, `${shown}_tabs`) === 'button' ? 'icon button' : 'chip'}: these styles show
-        where a screen's <i>Page menu</i> is <b>Buttons</b> (Layout → ${esc(shownName)}). The sample below always shows them.</p>` : '';
-    return `${warn}<div class="plce-sample" data-pmsample>${this._pageSample()}</div>
-      <p class="plce-hint">The page buttons (Page menu: Buttons, in the header or footer). Pick a preset; tick a group to set its own values, untick it to use the
-        preset's. Colors left at <i>The preset</i> follow your theme and the Accent.</p>
-      ${this._select('page_style', 'Preset', Object.entries(PAGE_PRESETS).map(([k, pr]) => [k, pr.name]))}
+        where a screen's <i>Page menu</i> is <b>Buttons</b> (Layout → ${esc(shownName)}).</p>` : '';
+    const saved = Object.entries(this._config.page_presets || {}), cur = savedPreset(this._config);
+    const presetOpts = [...Object.entries(PAGE_PRESETS).map(([k, pr]) => [k, pr.name]), ...saved.map(([id, sp]) => [`custom:${id}`, `★ ${sp.name}`])];
+    return `${warn}
+      <p class="plce-hint">The page buttons (Page menu: Buttons, in the header or footer); the preview shows changes as you make them. Pick a preset; tick a
+        group to set its own values, untick it to use the preset's. Colors left at <i>The preset</i> follow your theme and the Accent.</p>
+      ${this._select('page_style', 'Preset', presetOpts)}
+      <div class="plce-row"><button class="plce-add" data-pmsave><ha-icon icon="mdi:content-save-plus-outline"></ha-icon>Save as new preset</button>
+        ${cur && groups.size ? `<button class="plce-add" data-pmupdate><ha-icon icon="mdi:content-save-edit-outline"></ha-icon>Update “${esc(cur.name)}”</button>` : ''}
+        ${cur ? `<button class="plce-add plce-del" data-pmdelete><ha-icon icon="mdi:trash-can-outline"></ha-icon>Delete “${esc(cur.name)}”</button>` : ''}</div>
       <div class="plce-row"><button class="plce-add" data-pmexport><ha-icon icon="mdi:export"></ha-icon>Export style</button>
         <button class="plce-add" data-pmimport><ha-icon icon="mdi:import"></ha-icon>Import style</button></div>
       ${groups.size ? '<button class="plce-add" data-pmreset>Back to the preset (keeps the page icons)</button>' : ''}
@@ -3303,6 +3355,24 @@ class PlexCenterCardEditor extends HTMLElement {
       this._emit(); this._render();
     }));
     all('[data-pmexport]', (b) => b.addEventListener('click', () => this._styleDialog('export')));
+    all('[data-pmsave]', (b) => b.addEventListener('click', () => this._savePresetDialog()));
+    all('[data-pmupdate]', (b) => b.addEventListener('click', () => {
+      const id = String(this._config.page_style).slice(7), sp = this._config.page_presets?.[id];
+      if (!sp) return;
+      this._config.page_presets = { ...this._config.page_presets, [id]: { name: sp.name, ...flatPageStyle(this._config) } };
+      for (const k of PAGE_ALL) delete this._config[k];
+      delete this._config.page_groups;
+      this._emit(); this._render();
+    }));
+    all('[data-pmdelete]', (b) => b.addEventListener('click', () => {
+      const id = String(this._config.page_style).slice(7), sp = this._config.page_presets?.[id];
+      if (!sp || !window.confirm(`Delete the preset “${sp.name}”? The page buttons keep their look.`)) return;
+      const f = flatPageStyle(this._config), presets = { ...this._config.page_presets };
+      delete presets[id];
+      this._config.page_presets = presets;
+      this._config.page_style = f.base; this._config.page_groups = f.groups; Object.assign(this._config, f.values);   // the look stays, as the card's own settings
+      this._emit(); this._render();
+    }));
     all('[data-pmimport]', (b) => b.addEventListener('click', () => this._styleDialog('import')));
     all('[data-pgroup]', (el) => el.addEventListener('change', () => {
       const g = el.dataset.pgroup, on = new Set(this._config.page_groups || []);
@@ -3424,7 +3494,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);
