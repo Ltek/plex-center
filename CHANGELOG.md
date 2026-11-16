@@ -1,5 +1,27 @@
 # Changelog
 
+## v2026.11.16.54
+
+**Changed** (every section panel)
+- **Screen Profile** is a subtitle with *Select Screen type to edit that profile*; the screen's settings sit under a
+  divider that reads **Settings for <screen>** (no filled box, no *Content & Layout* heading).
+- **Section Title**, with **Hide Section Title** (moved out of Header).
+- **Text Lines** now holds all text settings (title and lines 1–4: show, size, weight, colour); *Text Attributes* is
+  gone and its title / line sizes and colours moved into Text Lines on each screen.
+- **Content Visuals** (was *Item Visuals*): image style, border, icons, watched tick, corner radius and the
+  **"New" flag colour** (moved from Text Attributes).
+
+**New**
+- **Fanart text backdrop** (Content Visuals, for Fanart and Fanart – fade): *Gradient from the bottom*, *A box only
+  behind the text* or *None*, and its **opacity**, per section and screen. Also for the Calendar.
+- **Resets** (both ask first): **Reset this screen type** in Screens clears everything for that screen type (its
+  screen settings, Home order and visible sections, every section's settings on it); **Reset** next to *Settings
+  for <screen>* in a section clears just that section on that screen. Sources and other screen types are kept.
+
+**Fixed**
+- A section row's look is its own: a second Coming Soon or Recently Added row no longer takes the first row's
+  look. (A second row set to Fanart only through the old card-wide image style may need Fanart set again.)
+
 ## v2026.11.16.53
 
 **Changed: screen profiles**
