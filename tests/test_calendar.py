@@ -41,3 +41,26 @@ async def test_calendar_one_source_down(hass, aioclient_mock):
     arr._CACHE.clear()
     res = await arr.async_calendar(hass, datetime(2026, 3, 1, tzinfo=timezone.utc), datetime(2026, 3, 2, tzinfo=timezone.utc))
     assert res == {"events": [], "sources": {"sonarr": "error", "radarr": "missing"}}
+
+
+def test_plex_status_in_plex_and_watched():
+    from types import SimpleNamespace as NS
+
+    ep = NS(ratingKey=11, viewCount=1)
+    show = NS(ratingKey=10, episode=lambda season, episode: ep if (season, episode) == (2, 1) else (_ for _ in ()).throw(KeyError()))
+    movie = NS(ratingKey=20, viewCount=0)
+
+    def get_guid(kind):
+        def g(guid):
+            if kind == "show" and guid == "tvdb://5":
+                return show
+            if kind == "movie" and guid == "tmdb://7":
+                return movie
+            raise KeyError(guid)
+        return g
+    server = NS(library=NS(sections=lambda: [NS(type="movie", getGuid=get_guid("movie")), NS(type="show", getGuid=get_guid("show"))]))
+    evs = [{"key": "a", "kind": "episode", "tvdb": 5, "season": 2, "episode": 1}, {"key": "b", "kind": "episode", "tvdb": 5, "season": 2, "episode": 2},
+           {"key": "c", "kind": "movie", "tmdb": 7}, {"key": "d", "kind": "movie", "tmdb": 8}]
+    out = arr.plex_status(server, evs)
+    assert out["a"] == {"plex_key": "11", "plex_show": "10", "watched": True}
+    assert out["b"] == {"plex_show": "10"} and out["c"] == {"plex_key": "20", "watched": False} and "d" not in out

@@ -1,5 +1,22 @@
 # Changelog
 
+## v2026.11.16.49
+
+**After updating: restart Home Assistant** (the calendar command now marks what's in Plex and watched).
+
+**New** (Calendar → *Look (per screen type)*; each of the four screen types has its own look)
+- **Image style**: *Poster*, *Fanart* (the backdrop behind the text, shaded so it stays readable) or **Fanart –
+  fade** (the upcoming-media look: the backdrop on the right fading in behind the text).
+- **Each text line** (title, episode / release info, air date and time, network / studio · runtime): show or
+  hide, size, weight and colour (four-mode), each with its own reset; *Reset all* for the screen. Posters and panels
+  grow with the title size.
+- **Coloured left border** on or off; **movie / TV icon** in the lower-right corner; **air time** in the
+  lower-right corner instead of the date line.
+- **Status marks**: a solid green dot when it's available (downloaded), a **tick when this TV's Plex user has
+  watched it**. The calendar now matches each entry to Plex (by TMDB / TVDB id) for the selected TV's Plex user,
+  so the quick look shows *Watched* and offers Play straight away.
+- Applies to the Week and Day views and the phone list (Month view keeps its compact blocks).
+
 ## v2026.11.16.48
 
 **New**

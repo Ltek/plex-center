@@ -177,7 +177,8 @@ async def ws_items(hass: HomeAssistant, connection, msg) -> None:
     await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/calendar", vol.Required("start"): str, vol.Required("end"): str})
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/calendar", vol.Required("start"): str, vol.Required("end"): str,
+                                  vol.Optional("tv"): str, vol.Optional("entry_id"): str})
 @websocket_api.async_response
 async def ws_calendar(hass: HomeAssistant, connection, msg) -> None:
     """Upcoming episodes and movie releases between start and end, from Home Assistant's Sonarr / Radarr."""
@@ -188,7 +189,16 @@ async def ws_calendar(hass: HomeAssistant, connection, msg) -> None:
     except ValueError as err:
         connection.send_error(msg["id"], "invalid_format", str(err))
         return
-    connection.send_result(msg["id"], await async_calendar(hass, start, end))
+    result = await async_calendar(hass, start, end)
+    if msg.get("tv"):   # in Plex / watched for this TV's Plex user
+        from .arr import async_mark_plex  # noqa: PLC0415
+
+        try:
+            entry = _entry(hass, msg.get("entry_id"))
+            result = await async_mark_plex(hass, entry.runtime_data.conn, _tv(entry, msg["tv"]).get(TV_USER), result)
+        except Exception as err:  # noqa: BLE001 - marks are extra; the calendar still shows
+            _LOGGER.debug("calendar marks: %s", err)
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/letters", vol.Optional("entry_id"): str, vol.Optional("tv"): str,

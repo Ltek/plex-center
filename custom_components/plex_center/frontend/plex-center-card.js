@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.48
+// Version: v2026.11.16.49
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.48';
+const BUILD_NUMBER = 'v2026.11.16.49';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -262,6 +262,46 @@ const SCREEN_ACROSS = { tablet_landscape: 6, tablet_portrait: 4, phone_portrait:
 const SCREEN_DEFAULTS = Object.fromEntries(SCREENS.flatMap(([sc]) => Object.entries({ ...SCREEN_SETTINGS[sc.split('_')[0]], across: SCREEN_ACROSS[sc],
   ...(sc === 'phone_portrait' ? { tabs: 'chip' } : {}) }).map(([k, v]) => [`${sc}_${k}`, v])));
 
+// ---------------------------------------------------------------------------------------------------- item look
+/** Kinds of item, each with its own look per screen type (Appearance → Rows; the Calendar's in its panel for now). */
+const ITEM_KINDS = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['recent', 'Recently Added'], ['soon', 'Coming Soon'],
+  ['hub', 'Plex rows'], ['library', 'Library grid'], ['calendar', 'Calendar']];
+/** The text lines of an item: [id, label, default size px, default weight]. */
+const LOOK_LINES = [['title', 'Title', 15, '700'], ['info', 'Episode / release info', 12, '600'], ['when', 'Air date and time', 12, '400'], ['meta', 'Network / studio · runtime', 11, '400']];
+const LOOK_BASE = { image: 'poster', border: true, type_icon: false, time_corner: false, status: true,
+  ...Object.fromEntries(LOOK_LINES.flatMap(([id, , px, w]) => [[`${id}_show`, true], [`${id}_px`, px], [`${id}_weight`, w], [`${id}_color`, '']])) };
+const LOOK_KEYS = Object.keys(LOOK_BASE);
+/** The look of a kind on a screen: built-in defaults with the card's values on top. */
+function lookFor(c, kind, screen) {
+  const own = (c.looks || {})[`${kind}:${screen}`] || {};
+  const out = { ...LOOK_BASE };
+  for (const k of LOOK_KEYS) if (own[k] !== undefined && own[k] !== '') out[k] = own[k];
+  return out;
+}
+function cleanLooks(c) {
+  if (!c.looks || typeof c.looks !== 'object') { delete c.looks; return; }
+  const out = {};
+  for (const [lk, o] of Object.entries(c.looks)) {
+    const [kind, screen] = String(lk).split(':');
+    if (!ITEM_KINDS.some(([k]) => k === kind) || !SCREENS.some(([sc]) => sc === screen) || !o || typeof o !== 'object') continue;
+    const keep = {};
+    for (const k of LOOK_KEYS) {
+      let v = o[k];
+      if (v === undefined || v === null || v === '' || v === LOOK_BASE[k]) continue;
+      if (k.endsWith('_px')) { v = Number(v); if (!Number.isFinite(v) || v === LOOK_BASE[k]) continue; }
+      if (k.endsWith('_color')) v = String(v).replace(/[;{}<>]/g, '');
+      if (k === 'image' && !['poster', 'fanart', 'fade'].includes(v)) continue;
+      keep[k] = v;
+    }
+    if (Object.keys(keep).length) out[lk] = keep;
+  }
+  if (Object.keys(out).length) c.looks = out; else delete c.looks;
+}
+/** CSS variables for a look (sizes, weights, colours of each line). */
+function lookVars(l) {
+  return LOOK_LINES.map(([id]) => `--li-${id}-px:${Number(l[`${id}_px`])}px;--li-${id}-w:${esc(String(l[`${id}_weight`]))};${l[`${id}_color`] ? `--li-${id}-c:${String(l[`${id}_color`]).replace(/[;{}<>"]/g, '')};` : ''}`).join('');
+}
+
 const DEFAULTS = {
   ...SCREEN_DEFAULTS,
   page_style: 'standard',
@@ -449,6 +489,7 @@ function normalizeConfig(raw) {
   for (const [id] of HOME_BUILTIN) { if (c[`show_${id}`] === false) hidden.add(id); delete c[`show_${id}`]; }
   c.home_hidden = [...hidden];
   migratePhone(c);
+  cleanLooks(c);
   migrateScreens(c);
   for (const [k, v] of Object.entries(DEFAULTS)) if (c[k] === v) delete c[k];
   for (const k of Object.keys(c)) if (c[k] === '' || c[k] == null) delete c[k];
@@ -841,6 +882,40 @@ const CARD_CSS = `
   color: var(--secondary-text-color); }
 .plc-tab.on { color: var(--primary-text-color); background: var(--plc-bg2); box-shadow: inset 0 -2px 0 var(--plc-a); }
 .plc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+/* items in a look (calendar) */
+.plc-ci { --li-title-px: 15px; position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 8px; border: none; border-radius: 10px;
+  text-align: left; background: color-mix(in srgb, var(--c) 8%, var(--plc-bg2)); color: inherit; font: inherit; cursor: pointer; overflow: hidden; }
+.plc-ci.bordered { border-left: 4px solid var(--c); }
+.plc-ci:hover { filter: brightness(1.1); }
+.plc-ci.phone { padding: 10px 12px; border-radius: 14px; }
+.plc-ci-poster { position: relative; flex: none; width: calc(var(--li-title-px) * 2.9); aspect-ratio: 2 / 3; border-radius: 6px; background: #222 center / cover no-repeat;
+  display: flex; align-items: center; justify-content: center; }
+.plc-ci.big .plc-ci-poster { width: calc(var(--li-title-px) * 4.4); }
+.plc-ci.phone .plc-ci-poster { width: calc(var(--li-title-px) * 3.6); }
+.plc-ci-txt { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 22px; }
+.plc-ci-title { font-size: var(--li-title-px); font-weight: var(--li-title-w); color: var(--li-title-c, var(--primary-text-color)); overflow: hidden; text-overflow: ellipsis; }
+.plc-ci-info { font-size: var(--li-info-px); font-weight: var(--li-info-w); color: var(--li-info-c, var(--secondary-text-color)); }
+.plc-ci-info b { color: var(--c); }
+.plc-ci-when { font-size: var(--li-when-px); font-weight: var(--li-when-w); color: var(--li-when-c, var(--secondary-text-color)); }
+.plc-ci-meta { font-size: var(--li-meta-px); font-weight: var(--li-meta-w); color: var(--li-meta-c, var(--secondary-text-color)); opacity: .85; }
+.plc-ci-time, .plc-ci-type { position: absolute; right: 3px; bottom: 3px; }
+.plc-ci-time { padding: 1px 5px; border-radius: 4px; background: rgba(0,0,0,.72); color: #fff; font-size: 10px; font-weight: 700; }
+.plc-ci-time + .plc-ci-type { bottom: 22px; }
+.plc-ci-type { --mdc-icon-size: 16px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.9)); }
+.plc-ci-corner { position: absolute; right: 8px; bottom: 8px; width: 60px; height: 40px; z-index: 1; }
+.plc-ci-avail { position: absolute; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 2px rgba(0,0,0,.35); z-index: 2; }
+.plc-ci-watched { position: absolute; top: 6px; right: 6px; --mdc-icon-size: 18px; color: #22c55e; z-index: 2; }
+.plc-ci .plc-calp-ring { margin-left: auto; z-index: 1; }
+/* fanart: the backdrop behind the text, with a shade so the text stays readable */
+.plc-ci.img-fanart, .plc-ci.img-fade { min-height: calc(var(--li-title-px) * 5.6); align-items: flex-end; }
+.plc-ci.img-fanart .plc-ci-fan { position: absolute; inset: 0; background: #222 center / cover no-repeat; }
+.plc-ci.img-fanart .plc-ci-fan::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,.85), rgba(0,0,0,.35) 60%, rgba(0,0,0,.15)); }
+.plc-ci.img-fanart .plc-ci-txt > span { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+/* fanart – fade (the upcoming-media look): the backdrop on the right, fading in behind the text */
+.plc-ci.img-fade { background: var(--plc-li-bg, #0d0d0d); align-items: center; }
+.plc-ci.img-fade .plc-ci-fan { position: absolute; top: 0; right: 0; bottom: 0; width: 62%; background: center / cover no-repeat;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 45%); mask-image: linear-gradient(to right, transparent, #000 45%); }
+.plc-ci.img-fade .plc-ci-txt { max-width: 62%; }
 /* calendar: phones */
 .plc-calp-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; }
 .plc-calp-head > ha-icon { --mdc-icon-size: 30px; color: var(--plc-a); }
@@ -862,15 +937,9 @@ const CARD_CSS = `
 .plc-calp-dots i { width: 6px; height: 6px; border-radius: 50%; }
 .plc-calp-sep { height: 4px; border-radius: 2px; margin: 12px 4px; background: var(--plc-bg2); }
 .plc-calp-list { display: flex; flex-direction: column; gap: 10px; }
-.plc-calp-card { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; border-radius: 14px; text-align: left;
   background: color-mix(in srgb, var(--c) 8%, var(--plc-bg2)); color: inherit; font: inherit; cursor: pointer; }
-.plc-calp-bar { flex: none; width: 4px; align-self: stretch; border-radius: 2px; background: var(--c); }
-.plc-calp-card .plc-cal-poster { width: 52px; }
-.plc-calp-card .plc-cal-txt .plc-t { font-size: 1em; }
-.plc-calp-card .plc-cal-txt .plc-s { font-size: .82em; white-space: normal; }
 .plc-calp-ring { flex: none; margin-left: auto; width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--c); display: flex; align-items: center; justify-content: center;
   font-weight: 800; color: var(--c); }
-.plc-calp-card .plc-cal-ok { position: static; margin-left: auto; }
 /* calendar */
 .plc-cal-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
 .plc-cal-title { display: flex; align-items: center; gap: 10px; font-size: 1.35em; font-weight: 800; }
@@ -907,18 +976,15 @@ const CARD_CSS = `
 .plc-cal-whead { display: flex; align-items: baseline; gap: 6px; border: none; background: none; color: var(--secondary-text-color); font: inherit; cursor: pointer; padding: 0 2px 4px; }
 .plc-cal-whead b { font-size: 1.3em; color: var(--primary-text-color); }
 .plc-cal-wcol.today .plc-cal-whead b { color: var(--plc-a); }
+.plc-cal-wcol .plc-ci { flex-direction: column; align-items: stretch; gap: 6px; }
+.plc-cal-wcol .plc-ci.img-poster .plc-ci-poster { width: 100%; }
+.plc-cal-wcol .plc-ci-txt { padding-right: 0; }
 .plc-cal-empty { color: var(--secondary-text-color); text-align: center; opacity: .5; }
-.plc-cal-card { position: relative; display: flex; gap: 8px; align-items: flex-start; width: 100%; text-align: left; border: none; border-left: 3px solid var(--c); border-radius: 8px;
-  padding: 6px; background: color-mix(in srgb, var(--c) 10%, var(--card-background-color, #1c1c1c)); color: inherit; font: inherit; cursor: pointer; min-width: 0; }
-.plc-cal-card:hover { filter: brightness(1.12); }
 .plc-cal-poster { flex: none; width: 40px; aspect-ratio: 2 / 3; border-radius: 4px; background: #222 center / cover no-repeat; display: flex; align-items: center; justify-content: center; }
-.plc-cal-card.big .plc-cal-poster { width: 64px; }
 .plc-cal-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 18px; }
 .plc-cal-txt .plc-t { font-size: .88em; }
 .plc-cal-txt .plc-s { font-size: .76em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plc-cal-ok { position: absolute; top: 6px; right: 6px; --mdc-icon-size: 16px; color: #22c55e; }
 .plc-cal-daylist { display: flex; flex-direction: column; gap: 8px; }
-.plc-cal-daylist .plc-cal-card { padding: 10px; }
 .plc-cal-daylist .plc-cal-txt .plc-t { font-size: 1.05em; }
 .plc-cq { position: relative; }
 .plc-cq-art { height: 160px; background: center / cover no-repeat; border-radius: 16px 16px 0 0; }
@@ -3208,9 +3274,20 @@ class PlexCenterCardEditor extends HTMLElement {
     return `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label><input type="range" data-skey="${key}" data-unit="${unit}" min="${min}" max="${max}" step="1" value="${v}">
       <span class="plce-val" data-val="${key}">${v}${unit}</span>${this._config[key] !== undefined ? `<button class="plce-reset" data-reset="${key}" title="Back to default"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>`;
   }
-  _colorControl(key) {
-    const [label, defLabel, seed] = COLOR_DEFS[key];
-    const cur = this._config[key] || '';
+  _getK(k) {
+    if (String(k).startsWith('look:')) { const [, kind, screen, f] = String(k).split(':'); return this._config.looks?.[`${kind}:${screen}`]?.[f] ?? ''; }
+    return this._config[k];
+  }
+  _setK(k, v) {
+    if (!String(k).startsWith('look:')) { this._set(k, v); return; }
+    const [, kind, screen, f] = String(k).split(':'), lk = `${kind}:${screen}`, looks = { ...(this._config.looks || {}) }, o = { ...(looks[lk] || {}) };
+    if (v === '' || v === undefined || v === null) delete o[f]; else o[f] = v;
+    looks[lk] = o; this._config.looks = looks; this._emit();
+  }
+
+  _colorControl(key, def = null) {
+    const [label, defLabel, seed] = def || COLOR_DEFS[key];
+    const cur = this._getK(key) || '';
     const mode = this._cmode[key] || (cur === 'transparent' ? 'transparent' : colorMode(cur));
     let field = '';
     if (mode === 'theme') field = `<select class="plce-ctheme" data-ckey="${key}">${THEME_COLORS.map(([v, n]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
@@ -3245,6 +3322,27 @@ class PlexCenterCardEditor extends HTMLElement {
   /** Sonarr / Radarr found and the Calendar page on: the page shows in the page lists. */
   _calAvail() { return !!this._c('calendar') && Object.values(this._conf?.arr || {}).some(Boolean); }
 
+  /** The look of a kind of item on one screen type (picked under Editing; the preview's screen first). */
+  _lookBody(kind) {
+    const screen = this._lookScreen && SCREENS.some(([sc]) => sc === this._lookScreen) ? this._lookScreen : (SHOWN.screen || 'tablet_landscape');
+    const l = lookFor(this._config, kind, screen), own = this._config.looks?.[`${kind}:${screen}`] || {}, K = (f) => `look:${kind}:${screen}:${f}`;
+    const reset = (f) => (own[f] !== undefined ? `<button class="plce-reset" data-lookreset="${esc(K(f))}" title="Back to the default"><ha-icon icon="mdi:restore"></ha-icon></button>` : '');
+    const chk = (f, label) => `<label class="plce-check"><input type="checkbox" data-lookk="${esc(K(f))}"${l[f] ? ' checked' : ''}>${label}</label>`;
+    const sel = (f, label, opts) => `<div class="plce-row"><label class="lbl">${label}</label><select data-lookk="${esc(K(f))}">${opts.map(([v, n]) => `<option value="${v}"${String(l[f]) === v ? ' selected' : ''}>${n}</option>`).join('')}</select>${reset(f)}</div>`;
+    const sl = (f, label, min, max) => `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label><input type="range" data-lookr="${esc(K(f))}" min="${min}" max="${max}" step="1" value="${Number(l[f])}">
+      <span class="plce-val" data-lookv="${esc(K(f))}">${Number(l[f])}px</span>${reset(f)}</div>`;
+    const weights = [['400', 'Regular'], ['500', 'Medium'], ['600', 'Semi-bold'], ['700', 'Bold'], ['800', 'Extra bold']];
+    return `<div class="plce-row"><label class="lbl">Editing</label><select data-lookscreen>${SCREENS.map(([sc, n]) => `<option value="${sc}"${sc === screen ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
+        ${Object.keys(own).length ? `<button class="plce-chip reset" data-lookresetall="${esc(`${kind}:${screen}`)}" title="Reset this screen's look"><ha-icon icon="mdi:restore"></ha-icon>Reset all</button>` : ''}</div>
+      ${screen === SHOWN.screen ? '<div class="plce-inuse"><span class="plce-chip inuse"><ha-icon icon="mdi:check-circle-outline"></ha-icon>In the preview now</span></div>' : ''}
+      ${sel('image', 'Image style', [['poster', 'Poster'], ['fanart', 'Fanart (shaded behind the text)'], ['fade', 'Fanart – fade (the upcoming-media look)']])}
+      ${chk('border', 'Coloured border on the left (the type colour)')}${chk('status', 'Status marks: a green dot when available, a tick when this TV\'s Plex user has watched it')}
+      ${chk('type_icon', 'Movie / TV icon in the lower-right corner')}${chk('time_corner', 'Air time in the lower-right corner (instead of the date line)')}
+      ${LOOK_LINES.map(([id, label]) => `<div class="plce-group">${esc(label)}</div>${chk(`${id}_show`, 'Show')}${l[`${id}_show`] ? `${sl(`${id}_px`, 'Size', 8, 40)}${sel(`${id}_weight`, 'Weight', weights)}
+        ${this._colorControl(K(`${id}_color`), ['Colour', id === 'title' ? 'Theme text' : 'Theme secondary text', id === 'title' ? '#ffffff' : '#bbbbbb'])}` : ''}`).join('')}
+      <p class="plce-hint">Posters and panels grow with the title size.</p>`;
+  }
+
   _calendarBody() {
     const arr = this._conf?.arr || {}, found = Object.entries(arr).filter(([, v]) => v).map(([k]) => k[0].toUpperCase() + k.slice(1));
     return `<p class="plce-hint">Upcoming episodes (Sonarr) and movie releases (Radarr: in cinemas, digital, Blu-ray), read through Home Assistant's own Sonarr
@@ -3252,7 +3350,8 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._check('calendar', 'Show the Calendar page (in the page menu)')}
       ${this._select('calendar_view', 'Opens in', [['month', 'Month'], ['week', 'Week'], ['day', 'Day']])}
       ${this._select('week_start', 'Weeks start on', [['mon', 'Monday'], ['sun', 'Sunday']])}
-      ${this._slider('calendar_max', 'Entries per day in Month view (then “+N more”)', 1, 10, '')}`;
+      ${this._slider('calendar_max', 'Entries per day in Month view (then “+N more”)', 1, 10, '')}
+      ${this._sub('cal-look', 'Look (per screen type)', this._lookBody('calendar'))}`;
   }
 
   /** Which controls layout the panel is editing: 'main' (Standard) or 'lay:<id>'. */
@@ -3835,6 +3934,20 @@ class PlexCenterCardEditor extends HTMLElement {
       if (v) icons[el.dataset.pageicon] = v; else delete icons[el.dataset.pageicon];
       this._config.page_icons = icons; this._emit();
     }));
+    all('[data-lookscreen]', (el) => el.addEventListener('change', () => { this._lookScreen = el.value; this._render(); }));
+    all('[data-lookk]', (el) => el.addEventListener('change', () => {
+      const k = el.dataset.lookk, f = k.split(':')[3];
+      const v = el.type === 'checkbox' ? el.checked : el.value;
+      this._setK(k, v === LOOK_BASE[f] ? '' : v); this._render();
+    }));
+    all('[data-lookr]', (el) => {
+      el.addEventListener('input', () => { const v = this.querySelector(`[data-lookv="${CSS.escape(el.dataset.lookr)}"]`); if (v) v.textContent = `${el.value}px`; });
+      el.addEventListener('change', () => { const f = el.dataset.lookr.split(':')[3], n = Number(el.value); this._setK(el.dataset.lookr, n === LOOK_BASE[f] ? '' : n); this._render(); });
+    });
+    all('[data-lookreset]', (b) => b.addEventListener('click', () => { this._setK(b.dataset.lookreset, ''); this._render(); }));
+    all('[data-lookresetall]', (b) => b.addEventListener('click', () => {
+      const looks = { ...(this._config.looks || {}) }; delete looks[b.dataset.lookresetall]; this._config.looks = looks; this._emit(); this._render();
+    }));
     all('[data-hlock]', (b) => b.addEventListener('click', () => { this._hdrLocked = this._hdrLocked === false; this._render(); }));
     all('[data-hiup]', (b) => b.addEventListener('click', () => { const l = hl(), i = Number(b.dataset.hiup); [l[i - 1], l[i]] = [l[i], l[i - 1]]; putH(l); }));
     all('[data-hidown]', (b) => b.addEventListener('click', () => { const l = hl(), i = Number(b.dataset.hidown); [l[i + 1], l[i]] = [l[i], l[i + 1]]; putH(l); }));
@@ -3933,23 +4046,23 @@ class PlexCenterCardEditor extends HTMLElement {
       this._emit();
     }));
     all('.plce-cmode', (sel) => sel.addEventListener('change', () => {
-      const k = sel.dataset.ckey, cur = this._config[k] || '', was = colorMode(cur);
+      const k = sel.dataset.ckey, cur = this._getK(k) || '', was = colorMode(cur);
       let next = '';
       if (sel.value === 'theme') next = was === 'theme' ? cur : 'var(--primary-color)';
       else if (sel.value === 'custom') next = /^#[0-9a-fA-F]{6}$/.test(cur) ? cur : sel.dataset.seed;
       else if (sel.value === 'css') next = cur === 'transparent' ? '' : cur;
       else if (sel.value === 'transparent') next = 'transparent';
-      this._cmode[k] = sel.value; this._set(k, next); this._render();
+      this._cmode[k] = sel.value; this._setK(k, next); this._render();
     }));
-    all('.plce-ctheme', (el) => el.addEventListener('change', () => this._set(el.dataset.ckey, el.value)));
-    all('.plce-chex', (el) => el.addEventListener('input', () => this._set(el.dataset.ckey, el.value)));
-    all('.plce-ccss', (el) => el.addEventListener('change', () => this._set(el.dataset.ckey, el.value.trim())));
+    all('.plce-ctheme', (el) => el.addEventListener('change', () => this._setK(el.dataset.ckey, el.value)));
+    all('.plce-chex', (el) => el.addEventListener('input', () => this._setK(el.dataset.ckey, el.value)));
+    all('.plce-ccss', (el) => el.addEventListener('change', () => this._setK(el.dataset.ckey, el.value.trim())));
   }
 }
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 
@@ -3994,7 +4107,7 @@ Object.assign(PlexCenterCard.prototype, {
   async _renderCalendar(main) {
     if (this._phone) { this._renderCalPhone(main); return; }
     const v = this._v, [start, days, view] = this._calRange(), at = v.calDate ? parseYmd(v.calDate) : new Date();
-    const key = `cal:${ymd(start)}:${days}`;
+    const key = `cal:${ymd(start)}:${days}:${this._tv()?.id || ''}`;
     const title = view === 'month' ? at.toLocaleDateString([], { month: 'long', year: 'numeric' })
       : view === 'week' ? `${start.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${addDays(start, 6).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
         : at.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -4011,7 +4124,7 @@ Object.assign(PlexCenterCard.prototype, {
     let res;
     try {
       const end = addDays(start, days);
-      res = await cached(this._hass, key, 120000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: end.toISOString() }));
+      res = await cached(this._hass, key, 120000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: end.toISOString(), tv: this._tv()?.id }));
     } catch (e) { main.querySelector('.plc-cal-body').innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; return; }
     if (!main.isConnected || this._v.tab !== 'calendar') return;
     const bad = Object.entries(res.sources || {}).filter(([, st]) => st === 'error').map(([a]) => a[0].toUpperCase() + a.slice(1));
@@ -4044,7 +4157,7 @@ Object.assign(PlexCenterCard.prototype, {
         ${CAL_STATUS.map(([k, n, c]) => pill(`data-calstatus="${k}"`, status === k, c, n)).join('')}</div>` : ''}
       <div class="plc-cal-note"></div><div class="plc-calp-body"><div class="plc-msg">Loading…</div></div></div>`;
     let res;
-    try { res = await cached(this._hass, `cal:${ymd(start)}:42`, 120000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: addDays(start, 42).toISOString() })); }
+    try { res = await cached(this._hass, `cal:${ymd(start)}:42:${this._tv()?.id || ''}`, 120000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: addDays(start, 42).toISOString(), tv: this._tv()?.id })); }
     catch (e) { main.querySelector('.plc-calp-body').innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; return; }
     if (!main.isConnected || this._v.tab !== 'calendar') return;
     const bad = Object.entries(res.sources || {}).filter(([, st]) => st === 'error').map(([a]) => a[0].toUpperCase() + a.slice(1));
@@ -4070,16 +4183,7 @@ Object.assign(PlexCenterCard.prototype, {
         <span class="plc-calp-num">${d.getDate()}</span>${label ? `<span class="plc-calp-lbl" style="color:${this._calColor(labelEv)}">${esc(label)}</span>` : ''}<span class="plc-calp-dots">${dots}</span></button>`;
     }).join('');
     const groups = calGroups(byDay.get(sel) || [], this._calEvents);
-    const cards = groups.map((g) => {
-      const ev = this._calEvents[g.n], last = this._calEvents[g.idx[g.idx.length - 1]], c = this._calColor(ev), badge = this._calBadge(ev);
-      const when = `${(ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}${this._calTime(ev) ? ` at ${this._calTime(ev)}` : ''}`;
-      const line2 = ev.kind === 'episode' ? (g.count > 1 ? `${nx(ev)} – ${nx(last)}` : [nx(ev), ev.episode_title].filter(Boolean).join(' • ')) : (CAL_TYPES[ev.release] || CAL_TYPES.episode)[0];
-      return `<button class="plc-calp-card" style="--c:${c}" data-calev="${g.n}"><span class="plc-calp-bar"></span>
-        <span class="plc-cal-poster"${ev.poster ? ` style="background-image:url('${cssUrl(ev.poster)}')"` : ''}></span>
-        <span class="plc-cal-txt"><span class="plc-t">${esc(ev.title)}${ev.year && ev.kind === 'episode' ? ` (${ev.year})` : ''}</span>
-          <span class="plc-s">${badge ? `<b>${esc(badge)}</b> ` : ''}${esc(line2)}</span><span class="plc-s">${esc(when)}</span></span>
-        ${g.count > 1 ? `<span class="plc-calp-ring">${g.count}</span>` : ev.has_file ? '<ha-icon class="plc-cal-ok" icon="mdi:check-circle"></ha-icon>' : ''}</button>`;
-    }).join('');
+    const cards = groups.map((g) => this._calItem(g.n, { phone: true, group: g })).join('');
     main.querySelector('.plc-calp-body').innerHTML = `<div class="plc-calp-grid">${dows.map((n) => `<div class="plc-cal-dow">${esc(n)}</div>`).join('')}${cells}</div>
       <div class="plc-calp-sep"></div><div class="plc-calp-list">${cards || `<div class="plc-msg">Nothing on ${esc(parseYmd(sel).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }))}.</div>`}</div>`;
   },
@@ -4103,16 +4207,33 @@ Object.assign(PlexCenterCard.prototype, {
     return `<div class="plc-cal-grid">${dows.map((n) => `<div class="plc-cal-dow">${esc(n)}</div>`).join('')}${cells}</div>`;
   },
 
-  _calCard(n, big = false) {
-    const ev = this._calEvents[n], c = this._calColor(ev), badge = this._calBadge(ev), [label, icon] = CAL_TYPES[ev.release] || CAL_TYPES.episode;
-    const sub = ev.kind === 'episode' ? [sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : label;
-    return `<button class="plc-cal-card${big ? ' big' : ''}${ev.has_file ? ' has' : ''}" style="--c:${c}" data-calev="${n}">
-      <span class="plc-cal-poster"${ev.poster ? ` style="background-image:url('${cssUrl(ev.poster)}')"` : ''}>${ev.poster ? '' : `<ha-icon icon="${icon}"></ha-icon>`}</span>
-      <span class="plc-cal-txt"><span class="plc-t">${esc(ev.title)}</span><span class="plc-s">${badge ? `<b>${esc(badge)}</b> ` : ''}${esc(sub)}</span>
-        <span class="plc-s">${esc([this._calTime(ev) || (ev.kind === 'movie' ? label : ''), ev.network || ev.studio].filter(Boolean).join(' · '))}</span>
-        ${big && ev.overview ? `<span class="plc-lrow-sum">${esc(ev.overview)}</span>` : ''}</span>
-      ${ev.has_file ? '<ha-icon class="plc-cal-ok" icon="mdi:check-circle" title="Available"></ha-icon>' : ''}</button>`;
+  /** A calendar item in the look of this screen: poster / fanart / fanart-fade, the lines, corner icons, status. */
+  _calItem(n, { big = false, phone = false, group = null } = {}) {
+    const ev = this._calEvents[n], l = lookFor(this._c, 'calendar', this._c._screen || 'tablet_landscape');
+    const c = this._calColor(ev), badge = this._calBadge(ev), [label, icon] = CAL_TYPES[ev.release] || CAL_TYPES.episode;
+    const last = group && group.count > 1 ? this._calEvents[group.idx[group.idx.length - 1]] : null;
+    const time = this._calTime(ev);
+    const day = (ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    const info = ev.kind === 'episode' ? (last ? `${nx(ev)} – ${nx(last)}` : [phone ? nx(ev) : sxe(ev), ev.episode_title].filter(Boolean).join(phone ? ' • ' : ' · ')) : label;
+    const lines = {
+      title: esc(`${ev.title}${phone && ev.year && ev.kind === 'episode' ? ` (${ev.year})` : ''}`),
+      info: `${badge ? `<b>${esc(badge)}</b> ` : ''}${esc(info)}`,
+      when: esc(l.time_corner ? day : [day, time].filter(Boolean).join(phone ? ' at ' : ' · ')),
+      meta: esc([ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : ''].filter(Boolean).join(' · ')),
+    };
+    const text = LOOK_LINES.filter(([id]) => l[`${id}_show`] && lines[id]).map(([id]) => `<span class="plc-ci-${id}">${lines[id]}</span>`).join('')
+      + (big && ev.overview ? `<span class="plc-lrow-sum">${esc(ev.overview)}</span>` : '');
+    const corner = `${l.time_corner && time ? `<span class="plc-ci-time">${esc(time)}</span>` : ''}${l.type_icon ? `<ha-icon class="plc-ci-type" icon="mdi:${ev.kind === 'movie' ? 'movie-open' : 'television-classic'}"></ha-icon>` : ''}`;
+    const marks = `${l.status && ev.watched ? '<ha-icon class="plc-ci-watched" icon="mdi:check-circle" title="Watched"></ha-icon>' : ''}${l.status && ev.has_file && !ev.watched ? '<span class="plc-ci-avail" title="Available"></span>' : ''}`;
+    const img = l.image === 'poster'
+      ? `<span class="plc-ci-poster"${ev.poster ? ` style="background-image:url('${cssUrl(ev.poster)}')"` : ''}>${ev.poster ? '' : `<ha-icon icon="${icon}"></ha-icon>`}${corner}</span>`
+      : `<span class="plc-ci-fan"${(ev.fanart || ev.poster) ? ` style="background-image:url('${cssUrl(ev.fanart || ev.poster)}')"` : ''}></span>`;
+    return `<button class="plc-ci img-${l.image}${l.border ? ' bordered' : ''}${big ? ' big' : ''}${phone ? ' phone' : ''}" style="--c:${c};${lookVars(l)}" data-calev="${n}">
+      ${img}<span class="plc-ci-txt">${text}</span>${l.image === 'poster' ? '' : `<span class="plc-ci-corner">${corner}</span>`}
+      ${group && group.count > 1 ? `<span class="plc-calp-ring">${group.count}</span>` : ''}${marks}</button>`;
   },
+
+  _calCard(n, big = false) { return this._calItem(n, { big }); },
 
   _calWeek(start, byDay, today) {
     return `<div class="plc-cal-week">${Array.from({ length: 7 }, (_, i) => {
@@ -4133,7 +4254,7 @@ Object.assign(PlexCenterCard.prototype, {
     if (!ev) return;
     const [label, icon] = CAL_TYPES[ev.release] || CAL_TYPES.episode, c = this._calColor(ev), badge = this._calBadge(ev);
     const when = `${(ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}${this._calTime(ev) ? ` · ${this._calTime(ev)}` : ''}`;
-    const chips = [ev.has_file ? ['Available', '#22c55e'] : ev.monitored ? (evDay(ev) <= ymd(new Date()) ? ['Missing', '#f59e0b'] : ['Monitored', '#818cf8']) : ['Not monitored', '#9ca3af'],
+    const chips = [ev.watched && ['Watched', '#22c55e'], ev.has_file ? ['Available', '#22c55e'] : ev.monitored ? (evDay(ev) <= ymd(new Date()) ? ['Missing', '#f59e0b'] : ['Monitored', '#818cf8']) : ['Not monitored', '#9ca3af'],
       badge && [badge, c]].filter(Boolean).map(([t, col]) => `<span class="plc-cal-chip" style="--c:${col}">${esc(t)}</span>`).join('');
     const meta = [ev.year, ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : '', ev.certification, (ev.genres || []).join(', ')].filter(Boolean).join(' · ');
     this._sheet(`<div class="plc-cq">${ev.fanart ? `<div class="plc-cq-art" style="background-image:url('${cssUrl(ev.fanart)}')"></div>` : ''}
@@ -4145,6 +4266,14 @@ Object.assign(PlexCenterCard.prototype, {
         <div class="plc-btns"><span data-calplex></span><button class="plc-btn" data-caltrailer><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>
           <button class="plc-btn" data-close-sheet>Close</button></div></div></div>`, null, false);
     this._calQuickEv = ev;
+    if (ev.plex_key || ev.plex_show) {   // known in Plex from the calendar's marks
+      this._calHit = ev.plex_key && ev.kind === 'movie' ? { key: ev.plex_key, type: 'movie', title: ev.title }
+        : { key: ev.plex_show || ev.plex_key, type: 'show', title: ev.title };
+      const slot = this._root.querySelector('.plc-cq [data-calplex]'), tgt = this._target();
+      if (slot) slot.outerHTML = `<button class="plc-btn main" data-calplay><ha-icon icon="mdi:${tgt === 'local' ? 'open-in-new' : 'play'}"></ha-icon>${tgt === 'local' ? 'Open on this device'
+        : `${this._calHit.type === 'show' ? 'Play next episode' : 'Play'} on ${esc(tvLabel(tgt))}`}</button>`;
+      return;
+    }
     try {   // is it in Plex? (same title, the right type, the year for movies)
       const res = await ws(this._hass, 'search', { tv: this._tv()?.id, query: ev.title, limit: 10 });
       const want = ev.kind === 'movie' ? 'movie' : 'show', low = (x) => String(x || '').toLowerCase();

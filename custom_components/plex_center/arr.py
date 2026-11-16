@@ -147,3 +147,75 @@ def parse_range(start: str, end: str) -> tuple[datetime, datetime]:
     if b - a > timedelta(days=62):
         b = a + timedelta(days=62)
     return a.astimezone(timezone.utc), b.astimezone(timezone.utc)
+
+
+_PLEX_CACHE: dict[tuple, tuple[float, dict]] = {}
+PLEX_CACHE_S = 600
+MAX_LOOKUPS = 60
+
+
+def plex_status(server, events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """For each entry key: {key: Plex ratingKey, watched: bool} when it is in Plex (by TMDB / TVDB id). Runs in the executor."""
+    out: dict[str, dict[str, Any]] = {}
+    sections = [s for s in server.library.sections() if s.type in ("movie", "show")]
+    found: dict[str, Any] = {}
+    lookups = 0
+
+    def by_guid(kind: str, guid: str):
+        nonlocal lookups
+        if guid in found:
+            return found[guid]
+        hit = None
+        if lookups < MAX_LOOKUPS:
+            lookups += 1
+            for sec in sections:
+                if sec.type != kind:
+                    continue
+                try:
+                    hit = sec.getGuid(guid)
+                    break
+                except Exception:  # noqa: BLE001 - not in this library
+                    continue
+        found[guid] = hit
+        return hit
+
+    for ev in events:
+        try:
+            if ev.get("kind") == "movie" and ev.get("tmdb"):
+                m = by_guid("movie", f"tmdb://{ev['tmdb']}")
+                if m is not None:
+                    out[ev["key"]] = {"plex_key": str(m.ratingKey), "watched": bool(getattr(m, "viewCount", 0))}
+            elif ev.get("kind") == "episode" and ev.get("tvdb"):
+                show = by_guid("show", f"tvdb://{ev['tvdb']}")
+                if show is None:
+                    continue
+                try:
+                    e = show.episode(season=ev.get("season"), episode=ev.get("episode"))
+                except Exception:  # noqa: BLE001 - the show is there, this episode not yet
+                    out[ev["key"]] = {"plex_show": str(show.ratingKey)}
+                    continue
+                out[ev["key"]] = {"plex_key": str(e.ratingKey), "plex_show": str(show.ratingKey), "watched": bool(getattr(e, "viewCount", 0))}
+        except Exception:  # noqa: BLE001 - best effort per entry
+            continue
+    return out
+
+
+async def async_mark_plex(hass: HomeAssistant, conn, user: str | None, result: dict[str, Any]) -> dict[str, Any]:
+    """The calendar result with in-Plex / watched marks for this Plex user (cached per user and range)."""
+    events = result.get("events") or []
+    if not events:
+        return result
+    ck = (user or "", tuple(e["key"] for e in events))
+    hit = _PLEX_CACHE.get(ck)
+    if hit and time.monotonic() - hit[0] < PLEX_CACHE_S:
+        marks = hit[1]
+    else:
+        try:
+            marks = await conn.async_call(user, lambda server: plex_status(server, events))
+        except Exception as err:  # noqa: BLE001 - the calendar still shows without the marks
+            _LOGGER.debug("Plex Center calendar: Plex lookup failed: %s", err)
+            return result
+        _PLEX_CACHE[ck] = (time.monotonic(), marks)
+        for k in [k for k, (t, _) in _PLEX_CACHE.items() if time.monotonic() - t > PLEX_CACHE_S]:
+            _PLEX_CACHE.pop(k, None)
+    return {**result, "events": [{**e, **marks.get(e["key"], {})} for e in events]}
