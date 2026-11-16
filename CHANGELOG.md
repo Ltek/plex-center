@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.16.42
+
+**Removed**
+- **The slim bar.** Watching now replaces it: tap a Watching now card for the controls (full screen on phones).
+  Screens that used the slim bar change to *Off*; tablets can still show the side panel while something plays
+  (per screen, in Layout).
+
+**New**
+- **Watching now → Show**: *Every TV (and other Plex players)* (default) or *Only the TV in the selector*; it
+  follows the selector.
+- **Watching now above the library pages** too (on by default; Now playing panel), so the controls are one tap
+  away from any page.
+
 ## v2026.11.16.41
 
 **Fixed**

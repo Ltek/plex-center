@@ -38,7 +38,7 @@ type: custom:plex-center-card
 ```
 
 Everything else is in the card's editor: which TVs it offers, the TV picker (buttons, dropdown or hidden),
-libraries, Home rows, now-playing views (side panel, slim bar), layout and look.
+libraries, Home rows, now-playing views (Watching now, side panel), layout and look.
 
 ## Actions
 
