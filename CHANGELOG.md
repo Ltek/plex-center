@@ -1,5 +1,21 @@
 # Changelog
 
+## v2026.11.16.53
+
+**Changed: screen profiles**
+- In each section panel, **only the Source is shared** by every screen type (Recently Added's source, Coming Soon's
+  sensors / Sonarr-Radarr, a Plex row's library and row). **Everything else is the screen's profile**: pick the
+  screen chip once and the box below it, *Settings for <screen>*, shows and edits that screen's title, Movies / TV,
+  header, layout, items to show, auto-rotate, text and visuals.
+- The box: **Content & Layout** (title, Show), then the collapsible **Header**, **Layout** (was *Items*: row /
+  column, items to show, scroll, auto-rotate, "New" flag), **Text Lines**, **Text Attributes** (was *Text &
+  Colors*) and **Item Visuals** (was *Item Size & Shape*, now also the image style chips, border, icons and watched
+  tick).
+- Watching now, Continue watching, Library and Calendar use the same screen box for their visuals.
+- *Items to show* is one setting per screen (was separate tablet / phone settings).
+- Existing row settings are copied to every screen profile (phones keep their own item count), so nothing changes on
+  the dashboard.
+
 ## v2026.11.16.52
 
 **Fixed**

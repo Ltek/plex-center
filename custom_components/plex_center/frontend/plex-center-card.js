@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.52
+// Version: v2026.11.16.53
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.52';
+const BUILD_NUMBER = 'v2026.11.16.53';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -586,6 +586,7 @@ function normalizeConfig(raw) {
     const o = Object.fromEntries(Object.entries(c.home_style).map(([k, v]) => [k, cleanSecStyle(v)]).filter(([, v]) => Object.keys(v).length));
     if (Object.keys(o).length) c.home_style = o; else delete c.home_style;
   } else delete c.home_style;
+  splitSecStyles(c);
   for (const k of ['libraries', 'tvs', 'home_cards', 'home_hidden', 'tab_order']) if (!Array.isArray(c[k]) || !c[k].length) delete c[k];
   if (Array.isArray(c.header)) {
     const h = headerLayout(c);
@@ -707,6 +708,34 @@ const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phon
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
   border_color: 'str', flag: 'bool' };
+/** A Home row's settings shared by every screen type: what the row is (its source). Everything else is per screen. */
+const SEC_SHARED = new Set(['source', 'sensors', 'library', 'hub']);
+/** 2026.11.16.53: rows' settings become screen profiles (sec_styles['<id>:<screen>']); only the source stays in home_style. */
+function splitSecStyles(c) {
+  const ids = new Set(homeSections(c).map(([id]) => id));
+  const out = {};
+  for (const [k, v] of Object.entries(c.sec_styles && typeof c.sec_styles === 'object' ? c.sec_styles : {})) {
+    const [id, sc] = String(k).split(':');
+    if (!ids.has(id) || !SCREENS.some(([x]) => x === sc)) continue;
+    const o = cleanSecStyle(v); for (const x of SEC_SHARED) delete o[x];
+    if (Object.keys(o).length) out[k] = o;
+  }
+  for (const [id, st] of Object.entries(c.home_style || {})) {
+    const rest = Object.fromEntries(Object.entries(st).filter(([k]) => !SEC_SHARED.has(k)));
+    if (!Object.keys(rest).length) continue;
+    for (const [sc] of SCREENS) {
+      const phone = sc.startsWith('phone'), r = { ...rest };
+      if (phone) { if (r.phone_show !== undefined) r.show = r.phone_show; else delete r.show; delete r.max; }
+      delete r.phone_show;
+      const k = `${id}:${sc}`, o = { ...r, ...(out[k] || {}) };
+      if (Object.keys(o).length) out[k] = o;
+    }
+    c.home_style[id] = Object.fromEntries(Object.entries(st).filter(([k]) => SEC_SHARED.has(k)));
+    if (!Object.keys(c.home_style[id]).length) delete c.home_style[id];
+  }
+  if (c.home_style && !Object.keys(c.home_style).length) delete c.home_style;
+  if (Object.keys(out).length) c.sec_styles = out; else delete c.sec_styles;
+}
 function cleanSecStyle(o) {
   const out = {};
   for (const [k, kind] of Object.entries(SEC_KEYS)) {
@@ -720,7 +749,7 @@ function cleanSecStyle(o) {
 }
 /** One resolver for a section: its own setting, else the card's. */
 function secStyle(c, id) {
-  const s = (c.home_style || {})[id] || {};
+  const s = { ...((c.home_style || {})[id] || {}), ...((c.sec_styles || {})[`${id}:${c._screen || 'tablet_landscape'}`] || {}) };
   const type = secType(c, id) || 'sensor';
   const collapsible = !!s.collapsible;
   const own = { ...lookOwn(c, SEC_KIND[type] || type), ...lookOwn(c, id) }, lkImg = own.image;
@@ -729,8 +758,8 @@ function secStyle(c, id) {
   return { layout: s.layout || 'row', image, fade: lkImg === 'fade', wide, lkind: SEC_KIND[type] || type, look: own, collapsible, collapsed: !!s.collapsed,
     icon: s.icon || SEC_TYPE_ICON[type] || '', show_icon: s.show_icon ?? (collapsible || !!s.icon), show_title: s.show_title ?? true,
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
-    show: (() => { const n = Math.max(1, Number((c._phone_layout ? s.phone_show : (s.show ?? s.max)) || c.across || cfg(c, 'across')) || 6);
-      return wide && !(c._phone_layout ? s.phone_show : (s.show ?? s.max)) ? Math.max(1, Math.round(n / 2)) : n; })(),
+    show: (() => { const n = Math.max(1, Number((s.show ?? s.max) || c.across || cfg(c, 'across')) || 6);
+      return wide && !(s.show ?? s.max) ? Math.max(1, Math.round(n / 2)) : n; })(),
     scroll: !!s.scroll, auto: s.auto || 'off', speed: Number(s.speed ?? (s.auto === 'fade' ? 6 : 30)), fade_ms: Math.max(0, Number(s.fade_ms ?? 600)),
     flag: s.flag ?? cfg(c, 'flag'), list_w: Number(s.list_w ?? 340), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
@@ -770,8 +799,9 @@ function tabOrder(c, libs, calendar = false) {
 
 /** Home sections in their default order: [id, label]. Rows are keyed by their sensor. */
 function homeSections(c) {
-  return [...HOME_BUILTIN.map(([id, n]) => [id, (c.home_style?.[id]?.title) || n]),
-    ...(c.home_extra || []).map((e) => [e.id, (c.home_style?.[e.id]?.title) || SEC_TYPE_TITLE[e.type]]),
+  const t = (id) => c.sec_styles?.[`${id}:${c._screen || 'tablet_landscape'}`]?.title || c.home_style?.[id]?.title;
+  return [...HOME_BUILTIN.map(([id, n]) => [id, t(id) || n]),
+    ...(c.home_extra || []).map((e) => [e.id, t(e.id) || SEC_TYPE_TITLE[e.type]]),
     ...(c.home_cards?.length ? [['cards', 'Extra cards']] : [])];
 }
 /** The user's order (unknown ids dropped, new sections appended). */
@@ -3254,6 +3284,10 @@ const EDITOR_CSS = `
         .plce-pick ha-icon { --mdc-icon-size: 16px; }
         .plce-pick.on { border-color: var(--accent-color, var(--ltek-c-accent)); background: color-mix(in srgb, var(--accent-color, var(--ltek-c-accent)) 22%, transparent); font-weight: 600; }
         .plce-pick.add { border-style: dashed; color: var(--accent-color, var(--ltek-c-accent)); }
+        .plce-scrbox { margin: 4px 0 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--accent-color, var(--ltek-c-accent)) 45%, transparent);
+          border-radius: 12px; background: color-mix(in srgb, var(--accent-color, var(--ltek-c-accent)) 5%, transparent); }
+        .plce-scrbox-h { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 6px; }
+        .plce-scrbox-h b { color: var(--primary-text-color); }
         .plce-pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--success-color, #43a047); margin-left: 2px; }
         .plce-del:hover { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
         .plce-pg-sub { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--secondary-text-color); }
@@ -3448,7 +3482,7 @@ class PlexCenterCardEditor extends HTMLElement {
   }
 
   /** The look of a kind of item on one screen type (picked under Editing; the preview's screen first). */
-  _lookBody(kind) {
+  _lookBody(kind, part = 'all') {
     const cal = kind === 'calendar';
     const lineLabel = (id, label) => (cal ? label : { title: 'Title', info: 'Line 1', when: 'Line 2', meta: 'Line 3', extra: 'Line 4' }[id]);
     const screen = this._eds();
@@ -3460,14 +3494,17 @@ class PlexCenterCardEditor extends HTMLElement {
       <span class="plce-val" data-lookv="${esc(K(f))}">${Number(l[f])}px</span>${reset(f)}</div>`;
     const weights = [['400', 'Regular'], ['500', 'Medium'], ['600', 'Semi-bold'], ['700', 'Bold'], ['800', 'Extra bold']];
     const imgs = [['poster', 'Poster', 'mdi:image-outline'], ['fanart', 'Fanart', 'mdi:image-area'], ['fade', 'Fanart – fade', 'mdi:image-filter-hdr']];
-    return `${this._scrChips('Screen')}
-      <div class="plce-chiprow"><span class="plce-chiplbl">Image style</span>${imgs.map(([v, n, ic]) => `<button class="plce-pick${l.image === v ? ' on' : ''}" data-lookimg="${esc(K('image'))}|${v}"><ha-icon icon="${ic}"></ha-icon>${n}</button>`).join('')}
+    const visual = `<div class="plce-chiprow"><span class="plce-chiplbl">Image style</span>${imgs.map(([v, n, ic]) => `<button class="plce-pick${l.image === v ? ' on' : ''}" data-lookimg="${esc(K('image'))}|${v}"><ha-icon icon="${ic}"></ha-icon>${n}</button>`).join('')}
         ${Object.keys(own).length ? `<button class="plce-chip reset" data-lookresetall="${esc(`${kind}:${screen}`)}" title="Reset this screen's look"><ha-icon icon="mdi:restore"></ha-icon>Reset all</button>` : ''}</div>
       ${chk('border', cal ? 'Coloured border on the left (the type colour)' : 'Accent border on the left')}${chk('status', cal ? 'Status marks: a green dot when available, a tick when this TV\'s Plex user has watched it' : 'Watched tick')}
       ${chk('type_icon', 'Movie / TV icon in the lower-right corner')}${cal ? chk('time_corner', 'Air time in the lower-right corner (instead of the date line)') : ''}
-      ${this._sub(`lk-lines:${kind}`, 'Text lines', LOOK_LINES.filter(([id]) => !(cal && id === 'extra')).map(([id, label]) => `<div class="plce-group">${esc(lineLabel(id, label))}</div>${chk(`${id}_show`, 'Show')}${l[`${id}_show`] ? `${sl(`${id}_px`, 'Size', 8, 40)}${sel(`${id}_weight`, 'Weight', weights)}
-        ${this._colorControl(K(`${id}_color`), ['Colour', id === 'title' ? 'Theme text' : 'Theme secondary text', id === 'title' ? '#ffffff' : '#bbbbbb'])}` : ''}`).join(''))}
-      <p class="plce-hint">${cal ? 'Posters and panels grow with the title size.' : 'Only what you change here applies; a Home section\'s own settings (its pencil) still win. Poster size comes from Screens → Posters across.'}</p>`;
+`;
+    const lines = LOOK_LINES.filter(([id]) => !(cal && id === 'extra')).map(([id, label]) => `<div class="plce-group">${esc(lineLabel(id, label))}</div>${chk(`${id}_show`, 'Show')}${l[`${id}_show`] ? `${sl(`${id}_px`, 'Size', 8, 40)}${sel(`${id}_weight`, 'Weight', weights)}
+        ${this._colorControl(K(`${id}_color`), ['Colour', id === 'title' ? 'Theme text' : 'Theme secondary text', id === 'title' ? '#ffffff' : '#bbbbbb'])}` : ''}`).join('');
+    const hintTxt = cal ? '<p class="plce-hint">Posters and panels grow with the title size.</p>' : '';
+    if (part === 'visual') return visual;
+    if (part === 'lines') return lines;
+    return `${visual}${this._sub(`lk-lines:${kind}`, 'Text Lines', lines)}${hintTxt}`;
   }
 
   _calendarBody() {
@@ -3478,7 +3515,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._select('calendar_view', 'Opens in', [['month', 'Month'], ['week', 'Week'], ['day', 'Day']])}
       ${this._select('week_start', 'Weeks start on', [['mon', 'Monday'], ['sun', 'Sunday']])}
       ${this._slider('calendar_max', 'Entries per day in Month view (then “+N more”)', 1, 10, '')}
-      <div class="plce-group">Visuals</div>${this._lookBody('calendar')}`;
+      ${this._profile(`${this._visualSubs('calendar')}<p class="plce-hint">Posters and panels grow with the title size.</p>`)}`;
   }
 
   /** Which controls layout the panel is editing: 'main' (Standard) or 'lay:<id>'. */
@@ -3574,20 +3611,19 @@ class PlexCenterCardEditor extends HTMLElement {
   _secPanel(kind) {
     const type = { recent: 'recent', soon: 'upcoming', hub: 'plexhub' }[kind];
     const ids = homeSections(this._config).map(([id]) => id).filter((id) => secType(this._config, id) === type);
-    const labels = new Map(homeSections(this._config));
+    const labels = new Map(homeSections({ ...this._config, _screen: this._eds() }));
     const pick = ids.includes(this._secPick?.[kind]) ? this._secPick[kind] : ids[0];
     const add = `<button class="plce-pick add" data-xadd="${type}"><ha-icon icon="mdi:plus"></ha-icon>Add</button>`;
     if (!pick) return `<p class="plce-hint">No ${esc(SEC_TYPE_TITLE[type] || kind)} row yet.</p><div class="plce-chiprow">${add}</div>`;
     return `<div class="plce-chiprow"><span class="plce-chiplbl">Row</span>${ids.map((id) => `<button class="plce-pick${id === pick ? ' on' : ''}" data-secpick="${kind}|${esc(id)}">${esc(labels.get(id) || id)}</button>`).join('')}${add}</div>
-      ${this._sub(`src:${pick}`, 'Source', this._secStyleBody(pick, 'source'))}
-      <div class="plce-group">Content and layout (every screen)</div>${this._secStyleBody(pick, 'rest')}
-      <div class="plce-group">Visuals</div>${this._secStyleBody(pick, 'visual')}${this._lookBody(pick)}`;
+      ${this._sub(`src:${pick}`, 'Source (every screen)', this._secStyleBody(pick, 'source'))}
+      ${this._profile(`<div class="plce-group first">Content &amp; Layout</div>${this._secStyleBody(pick, 'visual')}${this._secStyleBody(pick, 'rest')}`)}`;
   }
   _homeCfg() { const sc = this._homeScreen(); return { ...this._config, home_order: this._config[`home_order_${sc}`], home_hidden: this._config[`home_hidden_${sc}`] }; }
 
   _homeBody() {
     const hc = this._homeCfg(), hsc = this._homeScreen();
-    const order = homeOrder(hc), labels = new Map(homeSections(this._config));
+    const order = homeOrder(hc), labels = new Map(homeSections({ ...this._config, _screen: this._eds() }));
     const list = order.map((id, i) => `<div class="plce-item${homeVisible(hc, id) ? '' : ' off'}"><div class="plce-item-h">
         <ha-icon icon="${{ watching: 'mdi:account-eye', continue: 'mdi:play-pause', cards: 'mdi:cards-outline' }[id] || SEC_TYPE_ICON[secType(this._config, id)] || 'mdi:plex'}"></ha-icon>
         <span class="plce-name">${esc(labels.get(id) || id)}</span>
@@ -3622,8 +3658,11 @@ class PlexCenterCardEditor extends HTMLElement {
   }
 
   /** Style of one Home section; every value unset = the card's setting (Appearance). */
+  /** A row's settings as the screen being edited sees them (shared source + that screen's profile). */
+  _secS(id) { return { ...((this._config.home_style || {})[id] || {}), ...((this._config.sec_styles || {})[`${id}:${this._eds()}`] || {}) }; }
+
   _secStyleBody(id, part = 'all') {
-    const s = (this._config.home_style || {})[id] || {};
+    const s = this._secS(id);
     const sel = (k, label, opts) => `<div class="plce-row"><label class="lbl">${label}</label><select data-sid="${esc(id)}" data-sk="${k}">${
       opts.map(([v, n]) => `<option value="${v}"${String(s[k] ?? '') === String(v) ? ' selected' : ''}>${n}</option>`).join('')}</select></div>`;
     const sl = (k, label, min, max, def, unit = 'px') => {
@@ -3643,7 +3682,7 @@ class PlexCenterCardEditor extends HTMLElement {
         modes.map(([m, n]) => `<option value="${m}"${m === mode ? ' selected' : ''}>${n}</option>`).join('')}</select>${field}</div></div>`;
     };
     const list = s.layout === 'list';
-    const st = secStyle(this._config, id);
+    const st = secStyle({ ...this._config, _screen: this._eds() }, id);
     const chk = (k, label, def) => `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-stri="${k}" data-def="${def ? 1 : 0}"${(s[k] ?? def) ? ' checked' : ''}>${label}</label>`;
     const sensorsAll = this._conf?.upcoming_sensors || [];
     const fn = (x) => this._hass.states[x]?.attributes?.friendly_name || x;
@@ -3683,21 +3722,20 @@ class PlexCenterCardEditor extends HTMLElement {
         ${st.divider ? col('divider_color', 'Divider color', '#2196f3', false, 'Section text color') : ''}
         <label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsible"${s.collapsible ? ' checked' : ''}>Collapsible, with a header bar</label>
         ${s.collapsible ? `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsed"${s.collapsed ? ' checked' : ''}>Start collapsed</label>` : ''}`)}
-      ${sub('items', 'Items', `${sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
-
-        ${sl('show', 'Items to show on tablets (0 = the screen\'s Posters across)', 0, 20, 0, '')}
-        ${sl('phone_show', 'Items to show on phones (0 = the screen\'s Posters across)', 0, 12, 0, '')}
+      ${sub('items', 'Layout', `${sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
+        ${sl('show', 'Items to show (0 = the screen\'s Posters across; half for Fanart rows)', 0, 20, 0, '')}
         ${chk('scroll', 'Scroll to see more items', false)}
         ${sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Ticker (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
         ${st.auto === 'scroll' ? sl('speed', 'Ticker speed', 5, 200, st.speed, ' px/s') : ''}
         ${st.auto === 'fade' ? `${sl('speed', 'Next set every', 2, 60, st.speed, ' s')}${sl('fade_ms', 'Fade time', 0, 3000, st.fade_ms, ' ms')}` : ''}
         ${st.scroll || st.auto !== 'off' ? sl('total', 'Items to load', st.show, 100, st.total, '') : ''}
         ${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}`)}
-      ${sub('shape', 'Item Size &amp; Shape', `${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}
+      ${sub('lines', 'Text Lines', this._lookBody(id, 'lines'))}
+      ${sub('text', 'Text Attributes', `${sl('title_px', 'Title size', 8, 30, this._c('title_size'))}${sl('line_px', 'Line size', 8, 24, this._c('line_size'))}
+        ${col('title_color', 'Title color', '#d3d3d3')}${col('line_color', 'Line color (all lines)', '#9a9a9a')}${col('flag_color', 'Flag color', '#0099cc')}`)}
+      ${sub('shape', 'Item Visuals', `${this._lookBody(id, 'visual')}${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}
         ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
         ${list ? `${col('item_bg', 'Item background', '#0d0d0d', true)}${col('border_color', 'Item border', '#000000', true)}` : ''}`)}
-      ${sub('text', 'Text &amp; Colors', `${sl('title_px', 'Title size', 8, 30, this._c('title_size'))}${sl('line_px', 'Line size', 8, 24, this._c('line_size'))}
-        ${col('title_color', 'Title color', '#d3d3d3')}${col('line_color', 'Line color (all lines)', '#9a9a9a')}${col('flag_color', 'Flag color', '#0099cc')}`)}
 `;
   }
 
@@ -3734,19 +3772,27 @@ class PlexCenterCardEditor extends HTMLElement {
       <p class="plce-hint">Phones always get 44 px touch targets.</p>`;
   }
 
+  /** The screen chips and the box of settings that belong to the lit screen. */
+  _profile(inner) {
+    const name = (SCREENS.find(([sc]) => sc === this._eds()) || [, ''])[1];
+    return `${this._scrChips('Screen profile')}<div class="plce-scrbox"><div class="plce-scrbox-h">Settings for <b>${esc(name)}</b></div>${inner}</div>`;
+  }
+  _visualSubs(kind) {
+    return `${this._sub(`lk-lines:${kind}`, 'Text Lines', this._lookBody(kind, 'lines'))}${this._sub(`lk-vis:${kind}`, 'Item Visuals', this._lookBody(kind, 'visual'))}`;
+  }
+
   /** Watching now: what it shows (every screen), and its look per screen. */
   _watchBody() {
     return `<p class="plce-hint">Tap a Watching now card to open that TV's controls (full screen on phones).</p>
       ${this._select('watching_tvs', 'Show', [['all', 'Every TV (and other Plex players)'], ['selected', 'Only the TV in the selector']])}
       ${this._check('watching_libraries', 'Also above the library pages (not only Home)')}
-      <div class="plce-group">Visuals</div>${this._lookBody('watching')}`;
+      ${this._profile(this._visualSubs('watching'))}`;
   }
   /** Library: which libraries and in what order, how they behave, and per screen how the grid looks. */
   _libraryPanel() {
     const sc = this._eds();
     return `${this._libraryBody()}
-      <div class="plce-group">Visuals</div>${this._lookBody('library')}
-      ${this._select(`${sc}_view`, 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}`;
+      ${this._profile(`${this._select(`${sc}_view`, 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}${this._visualSubs('library')}`)}`;
   }
 
   _npBody() {
@@ -3973,7 +4019,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._panel('home', 'mdi:home-variant', 'Home', this._homeBody())}
       <div class="plce-gh">Sections</div>
       ${this._panel('sec-watching', 'mdi:account-eye', 'Watching now', this._watchBody())}
-      ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', this._lookBody('continue'))}
+      ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', this._profile(this._visualSubs('continue')))}
       ${this._panel('sec-recent', 'mdi:new-box', 'Recently Added', this._secPanel('recent'))}
       ${this._panel('sec-soon', 'mdi:calendar-clock', 'Coming Soon', this._secPanel('soon'))}
       ${this._panel('sec-hub', 'mdi:plex', 'Plex rows', this._secPanel('hub'))}
@@ -4159,9 +4205,10 @@ class PlexCenterCardEditor extends HTMLElement {
     all('[data-tdown]', (b) => b.addEventListener('click', () => moveTab(Number(b.dataset.tdown), 1)));
     all('[data-treset]', (b) => b.addEventListener('click', () => { delete this._config.tab_order; this._emit(); this._render(); }));
     const setSec = (id, k, v) => {
-      const all2 = { ...(this._config.home_style || {}) }, o = { ...(all2[id] || {}) };
+      const shared = SEC_SHARED.has(k), bag = shared ? 'home_style' : 'sec_styles', key = shared ? id : `${id}:${this._eds()}`;
+      const all2 = { ...(this._config[bag] || {}) }, o = { ...(all2[key] || {}) };
       if (v === '' || v === undefined || v === null) delete o[k]; else o[k] = v;
-      all2[id] = o; this._config.home_style = all2; this._emit();
+      all2[key] = o; this._config[bag] = all2; this._emit();
     };
     all('[data-sk]', (el) => el.addEventListener('change', () => {
       const k = el.dataset.sk; let v = el.value.trim();
@@ -4192,6 +4239,7 @@ class PlexCenterCardEditor extends HTMLElement {
       const id = b.dataset.xdel;
       this._config.home_extra = (this._config.home_extra || []).filter((x) => x.id !== id);
       if (this._config.home_style) delete this._config.home_style[id];
+      if (this._config.sec_styles) for (const k of Object.keys(this._config.sec_styles)) if (k.startsWith(`${id}:`)) delete this._config.sec_styles[k];
       this._emit(); this._render();
     }));
     all('[data-sbool]', (el) => el.addEventListener('change', () => { setSec(el.dataset.sid, el.dataset.sbool, el.checked || ''); this._render(); }));
@@ -4203,7 +4251,7 @@ class PlexCenterCardEditor extends HTMLElement {
     all('[data-sreset]', (b) => b.addEventListener('click', () => { const [id, k] = b.dataset.sreset.split(/:(?=[^:]+$)/); setSec(id, k, ''); this._render(); }));
     all('[data-sclr]', (el) => el.addEventListener('input', () => setSec(el.dataset.sid, el.dataset.sclr, el.value)));
     all('[data-smode]', (el) => el.addEventListener('change', () => {
-      const id = el.dataset.sid, k = el.dataset.smode, cur = (this._config.home_style?.[id] || {})[k] || '', was = colorMode(cur);
+      const id = el.dataset.sid, k = el.dataset.smode, cur = this._secS(id)[k] || '', was = colorMode(cur);
       let next = '';
       if (el.value === 'theme') next = was === 'theme' ? cur : 'var(--primary-color)';
       else if (el.value === 'custom') next = /^#[0-9a-fA-F]{6}$/.test(cur) ? cur : el.dataset.seed;
