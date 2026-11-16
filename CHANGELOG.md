@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.16.59
+
+**Fixed**
+- **Continue watching banner didn't fade**: it paused whenever the mouse was anywhere over it (on a computer that's
+  most of the time), and any repaint (new progress from the TV, a state update) restarted its timer. It now pauses
+  only while the pointer is on its buttons, and one timer keeps running across repaints. First change after
+  *Next set every* + 2 × the fade time (7.4 s with the defaults).
+
 ## v2026.11.16.58
 
 **Fixed**

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.58
+// Version: v2026.11.16.59
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.58';
+const BUILD_NUMBER = 'v2026.11.16.59';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -2428,7 +2428,7 @@ class PlexCenterCard extends HTMLElement {
     if (!force && sec.dataset.cwsig === sg && sec.firstElementChild) return;
     sec.dataset.cwsig = sg;
     this._anim = this._anim || {};
-    clearInterval(this._anim.continueBanner); delete this._anim.continueBanner;
+    if (layout !== 'banner' || st.auto === 'off') { clearInterval(this._anim.continueBanner); delete this._anim.continueBanner; this._cwTimer = null; }
     if (layout !== 'banner') {   // a row / column like the other sections (items to show, scroll, auto-rotate, image style)
       this._lists.set('continue', items);
       this._fill('continue', sec, 'Continue watching', items.length, items.slice(0, st.max), 'continue');
@@ -2436,26 +2436,38 @@ class PlexCenterCard extends HTMLElement {
     }
     applyLook(sec, lk);
     sec.style.setProperty('--plc-fade-ms', `${Math.max(0, Number(st.fade_ms))}ms`);
-    if (st.auto !== 'off' && items.length > 1 && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
-      const ms = Math.max(0, Number(st.fade_ms));
-      this._anim.continueBanner = setInterval(() => {
-        if (!sec.isConnected || sec.matches(':hover')) return;
-        const hero = sec.querySelector('.plc-hero');
-        const nxt = items[((this._v.hero || 0) + 1) % items.length];
-        preloadImages(`url('${cssUrl(nxt?.art || nxt?.still || nxt?.poster || '')}')`);
-        hero?.classList.add('plc-fade', 'out');
-        setTimeout(() => {
-          if (!sec.isConnected) return;
-          this._v.hero = ((this._v.hero || 0) + 1) % items.length; this._paintContinue(sec, items, true);
-          const nh = sec.querySelector('.plc-hero');
-          if (nh) { nh.classList.add('plc-fade', 'out'); void nh.offsetWidth; nextFrame(() => nh.classList.remove('out')); }
-        }, ms);
-      }, Math.max(2, Number(st.speed) || 5) * 1000 + 2 * ms);
-    }
+    // one timer for the banner, kept across repaints (a repaint must not restart it); it reads the current list each time
+    const tsig = JSON.stringify([st.speed, st.fade_ms]);
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (st.auto !== 'off' && items.length > 1 && !reduce) {
+      if (!this._anim.continueBanner || this._cwTimer !== tsig) {
+        clearInterval(this._anim.continueBanner);
+        this._cwTimer = tsig;
+        const ms = Math.max(0, Number(st.fade_ms));
+        this._anim.continueBanner = setInterval(() => {
+          const box = this._root?.querySelector('[data-sec="continue"]'), list = this._lists.get('continue') || [];
+          if (!box || !box.isConnected || list.length < 2 || this._cwHold) return;   // paused only while the pointer is on its buttons
+          const hero = box.querySelector('.plc-hero'), nxt = list[((this._v.hero || 0) + 1) % list.length];
+          preloadImages(`url('${cssUrl(nxt?.art || nxt?.still || nxt?.poster || '')}')`);
+          hero?.classList.add('plc-fade', 'out');
+          setTimeout(() => {
+            if (!box.isConnected) return;
+            this._v.hero = ((this._v.hero || 0) + 1) % list.length; this._paintContinue(box, list, true);
+            const nh = box.querySelector('.plc-hero');
+            if (nh) { nh.classList.add('plc-fade', 'out'); void nh.offsetWidth; nextFrame(() => nh.classList.remove('out')); }
+          }, ms);
+        }, Math.max(2, Number(st.speed) || 5) * 1000 + 2 * ms);
+      }
+    } else { clearInterval(this._anim.continueBanner); delete this._anim.continueBanner; this._cwTimer = null; }
     const i = Math.min(this._v.hero || 0, items.length - 1), it = items[i];
     const sub = it.type === 'episode' ? `Season ${it.season}, Episode ${it.episode} · ${it.title}` : [it.year, it.duration ? fmtTime(it.duration) : ''].filter(Boolean).join(' · ');
     const left = it.offset ? `${fmtTime(it.offset)} of ${fmtTime(it.duration)} · ends ${endsAt((it.duration || 0) - it.offset, cfg(this._c, 'clock'))} if started now` : '';
     const img = it.art || it.still || it.poster;
+    if (!sec.dataset.cwhold) {
+      sec.dataset.cwhold = '1';
+      sec.addEventListener('pointerover', (e) => { this._cwHold = e.pointerType === 'mouse' && !!e.target.closest?.('.plc-btns, .plc-pager'); });
+      sec.addEventListener('pointerleave', () => { this._cwHold = false; });
+    }
     sec.innerHTML = `<div class="plc-hero"><div class="plc-hero-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
       <div class="plc-hero-info"><div class="plc-eyebrow">Continue watching on ${esc(tvLabel(this._tv()))}</div>
         <h2 class="plc-big">${esc(it.show || it.title)}</h2><div class="plc-meta">${esc(sub)}</div>
