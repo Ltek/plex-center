@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.61
+// Version: v2026.11.16.62
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.61';
+const BUILD_NUMBER = 'v2026.11.16.62';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1418,6 +1418,8 @@ const CARD_CSS = `
   max-height: calc(var(--plc-show, 5) * (var(--plc-li-h, 150px) + 16px) - 12px); }
 .plc-sec-body.limit .plc-list { grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--plc-li-w, 340px)), 1fr)); }
 .plc-sec-body.auto .plc-row, .plc-sec-body.auto .plc-list { scrollbar-width: none; }
+/* auto-scroll moves a pixel or two at a time: snapping would pull it straight back */
+.plc-sec-body.auto .plc-row, .plc-sec-body.auto .plc-list { scroll-snap-type: none; scroll-behavior: auto; }
 .plc-sec-body.auto .plc-row::-webkit-scrollbar, .plc-sec-body.auto .plc-list::-webkit-scrollbar { display: none; }
 .plc-fade { transition: opacity var(--plc-fade-ms, 1200ms) ease-in-out; }
 /* the banner sliding to the next title (out one way, the next one in from the other side) */
@@ -1699,8 +1701,15 @@ class PlexCenterCard extends HTMLElement {
     clearInterval(this._tick); this._tick = setInterval(() => this._progress(), 1000);
     clearInterval(this._poll); this._poll = setInterval(() => this._refresh(), SESSIONS_MS);
     if (this._root && !this._ro) this._observeSize();
+    // re-attached (dashboards move cards around while loading / resizing): the timers were stopped, so repaint the sections
+    if (this._built && this._detached) {
+      this._detached = false; this._cwTimer = null;
+      this._root.querySelectorAll('[data-sig], [data-cwsig]').forEach((n) => { delete n.dataset.sig; delete n.dataset.cwsig; });
+      if (this._v.tab === 'home') this._renderMain();
+    }
   }
   disconnectedCallback() {
+    this._detached = true;
     clearInterval(this._tick); clearInterval(this._poll); this._tick = this._poll = null;
     for (const t of Object.values(this._anim || {})) clearInterval(t); this._anim = {}; clearTimeout(this._popTimer);
     if (this._onAnyScroll) document.removeEventListener('scroll', this._onAnyScroll, true);

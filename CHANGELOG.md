@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.16.62
+
+**Fixed**
+- **Auto Rotate (scroll, fade, slide) stopped on the live dashboard** but worked with the editor open. Dashboards
+  detach and re-attach cards while loading or resizing; that stopped the timers, and the sections didn't repaint
+  afterwards (nothing had changed), so they never started again. Re-attaching now repaints the Home sections and
+  restarts them. Affects every section and the Continue watching banner.
+- **Scroll never moved on the live dashboard**: rows snap to the nearest poster, and the browser pulled each
+  1–2 px step straight back. Snapping is off while a row or column auto-scrolls.
+
 ## v2026.11.16.61
 
 **Changed** (every section panel)
