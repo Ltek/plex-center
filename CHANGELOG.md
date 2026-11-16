@@ -1,5 +1,22 @@
 # Changelog
 
+## v2026.11.16.51
+
+**Changed: the editor has one place per section**
+- **Sections** group with a panel each: **Watching now**, **Continue watching**, **Recently Added**, **Coming
+  Soon**, **Plex rows**, **Library**, **Calendar**. Each holds everything about that section: what it shows (the
+  same on every screen) and its **Look per screen type**, with the **Image style** as chips at the top: *Poster*,
+  *Fanart*, *Fanart – fade* (the upcoming-media look).
+- **Chips instead of dropdowns**: screen types (the lit chip is the one being edited; a green dot marks the one in
+  the preview; one choice for the whole editor), the rows of a section (e.g. *Coming Soon* and a second Coming Soon
+  row, with *+ Add*), and the controls layout being edited.
+- **Home** keeps order and show / hide per screen type; its pencil opens the section's panel. Adding a row opens
+  it there.
+- **Screens** shows one screen type at a time (chips) and now also has the side-panel settings. *Libraries show*
+  moved to **Library**, which also holds the library list and behaviour (was under Apps & devices). *Now playing*
+  and *Appearance → Items* are gone (their settings are in Watching now, Screens and the section panels).
+- Each Home row has its own look per screen; a row's old pencil image is copied to every screen type.
+
 ## v2026.11.16.50
 
 **New**
