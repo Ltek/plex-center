@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.16.39
+
+**Fixed**
+- **The Filters popup** is only as large as its content, centered, and *Clear* / *Done* are normal-size buttons
+  (Done was stretched across the panel).
+
+**Changed**
+- **Active-filter chips** (Header & footer → *Show the active filters as chips*) no longer have an ✕. Tapping one
+  opens a menu like the TV picker's: the other choices (current one ticked) and **Remove filter**. The
+  **All / Unwatched** chip is always shown when that item is visible (as *All* or *Unwatched*).
+
 ## v2026.11.16.38
 
 **New**

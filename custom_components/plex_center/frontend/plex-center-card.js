@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.38
+// Version: v2026.11.16.39
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.38';
+const BUILD_NUMBER = 'v2026.11.16.39';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1119,6 +1119,7 @@ const CARD_CSS = `
 .plc-achips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .plc-achips .plc-chip { padding: 4px 10px; font-size: .8em; }
 .plc-achips ha-icon { --mdc-icon-size: 14px; }
+.plc-achips .plc-menuchip .chev { opacity: .7; }
 /* bottom tab bar */
 .plc-footer { margin: 12px calc(-1 * var(--plc-pad, 14px)) calc(-1 * var(--plc-pad, 14px)); padding: 6px var(--plc-pad, 14px) calc(6px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--divider-color, #333); background: var(--card-background-color, var(--ha-card-background, #1c1c1c)); }
@@ -1138,6 +1139,11 @@ const CARD_CSS = `
 @media (prefers-reduced-motion: reduce) { .plc.stickyhdr .plc-top { transition: none; } }
 .plc-fcount { display: inline-flex; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--plc-a); color: #fff; font-size: .75em; align-items: center; justify-content: center; }
 .plc-fpanel-h { display: flex; align-items: center; gap: 8px; }
+.plc-sheet.fit { align-items: center; }
+.plc-sheet.fit .plc-sheet-in { width: auto; max-width: min(520px, calc(100% - 24px)); border-radius: 16px; }
+.plc-sheet.fit .plc-fpanel-h { gap: 6px; }
+.plc-sheet.fit .plc-fpanel-h .plc-big { margin: 0 12px 0 0; }
+.plc-sheet.fit .plc-btn { flex: none; padding: 6px 14px; min-height: 0; }
 .plc-fgrid { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px 12px; align-items: center; margin-top: 8px; }
 .plc-fgrid > label { color: var(--secondary-text-color); font-size: .9em; }
 .plc-fgrid .plc-select { width: 100%; }
@@ -1607,7 +1613,7 @@ class PlexCenterCard extends HTMLElement {
     }).join('');
     this._sheet(`<div class="plc-detail-body plc-fpanel"><div class="plc-fpanel-h"><h2 class="plc-big">Filters</h2><span class="plc-sp"></span>
         <button class="plc-btn" data-fclear>Clear</button><button class="plc-btn main" data-close-sheet>Done</button></div>
-      <div class="plc-fgrid">${rows || '<div class="plc-msg">Nothing is placed in the Filters popup.</div>'}</div></div>`, null, false);
+      <div class="plc-fgrid">${rows || '<div class="plc-msg">Nothing is placed in the Filters popup.</div>'}</div></div>`, null, false, 'fit');
   }
 
 
@@ -1649,8 +1655,13 @@ class PlexCenterCard extends HTMLElement {
   }
   /** The menu for a filter chip. */
   _fMenu(anchor, id) {
-    const v = this._v;
-    if (id === 'sort') { this._menu(anchor, 'Sort by', SORT_OPTS.map(([k, n]) => ({ icon: 'mdi:sort', label: n, on: v.sort === k, attr: `data-fset="sort:${k}"` }))); return; }
+    const v = this._v, fromActive = anchor.hasAttribute('data-active');
+    const remove = (attr) => (fromActive ? [{ icon: 'mdi:filter-remove-outline', label: 'Remove filter', attr }] : []);
+    if (id === 'length') {
+      this._menu(anchor, 'Length', [{ icon: 'mdi:timer-outline', label: 'Under 2 h', on: !!v.short, attr: 'data-fset="length:1"' }, { icon: 'mdi:filter-off-outline', label: 'Any length', on: !v.short, attr: 'data-fset="length:"' }]);
+      return;
+    }
+    if (id === 'sort') { this._menu(anchor, 'Sort by', [...SORT_OPTS.map(([k, n]) => ({ icon: 'mdi:sort', label: n, on: v.sort === k, attr: `data-fset="sort:${k}"` })), ...remove('data-fset="sort:title"')]); return; }
     if (id === 'watched') {
       this._menu(anchor, 'Show', [{ icon: 'mdi:filter-off-outline', label: 'All', on: !v.unwatched, attr: 'data-fset="watched:0"' },
         { icon: 'mdi:eye-off-outline', label: 'Unwatched', on: !!v.unwatched, attr: 'data-fset="watched:1"' }]);
@@ -1658,7 +1669,7 @@ class PlexCenterCard extends HTMLElement {
     }
     const f = this._filterData() || {}, list = { genre: f.genres, decade: f.decades, rating: f.content_ratings }[id] || [];
     const icon = { genre: 'mdi:drama-masks', decade: 'mdi:calendar-range', rating: 'mdi:shield-account-outline' }[id];
-    this._menu(anchor, FLABEL[id], [{ icon: 'mdi:filter-off-outline', label: `Any ${FLABEL[id].toLowerCase()}`, on: !v[id], attr: `data-fset="${id}:"` },
+    this._menu(anchor, FLABEL[id], [...(fromActive ? remove(`data-fset="${id}:"`) : [{ icon: 'mdi:filter-off-outline', label: `Any ${FLABEL[id].toLowerCase()}`, on: !v[id], attr: `data-fset="${id}:"` }]),
       ...list.map((o) => ({ icon, label: o.title, on: String(v[id] ?? '') === String(o.value), attr: `data-fset="${id}:${esc(o.value)}"` }))]);
   }
 
@@ -1680,9 +1691,11 @@ class PlexCenterCard extends HTMLElement {
     const sortNames = { added: 'Recently added', released: 'Release date', year: 'Year', rating: 'Rating', viewed: 'Last watched' };
     const f = peek(`filters:${this._tv()?.id}:${this._libKey()}`) || {};
     const name = (list, val) => (list || []).find((o) => String(o.value) === String(val))?.title || val;
-    const chips = [v.unwatched && ['unwatched', 'Unwatched'], v.genre && ['genre', name(f.genres, v.genre)], v.decade && ['decade', name(f.decades, v.decade)],
-      v.rating && ['rating', name(f.content_ratings, v.rating)], v.short && ['short', 'Under 2 h'], v.sort && v.sort !== 'title' && ['sort', sortNames[v.sort]]].filter(Boolean);
-    return chips.length ? `<div class="plc-achips">${chips.map(([k, n]) => `<button class="plc-chip on" data-unchip="${k}">${esc(n)}<ha-icon icon="mdi:close"></ha-icon></button>`).join('')}</div>` : '';
+    const watchedShown = headerLayout(this._c, this._c._screen).some((h) => h.id === 'watched' && !h.hidden);
+    const chips = [(v.unwatched || watchedShown) && ['watched', v.unwatched ? 'Unwatched' : 'All', !!v.unwatched], v.genre && ['genre', name(f.genres, v.genre), true],
+      v.decade && ['decade', name(f.decades, v.decade), true], v.rating && ['rating', name(f.content_ratings, v.rating), true], v.short && ['length', 'Under 2 h', true],
+      v.sort && v.sort !== 'title' && ['sort', sortNames[v.sort], true]].filter(Boolean);
+    return chips.length ? `<div class="plc-achips">${chips.map(([k, n, on]) => `<button class="plc-chip plc-menuchip${on ? ' on' : ''}" data-fmenu="${k}" data-active>${esc(n)}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`).join('')}</div>` : '';
   }
 
   /** Up to three rows of left / middle / right groups; a row with nothing to show is left out. */
@@ -2295,9 +2308,9 @@ Object.assign(PlexCenterCard.prototype, {
     this._renderDetail();
   },
 
-  _sheet(html, item = null, autoClose = true) {
+  _sheet(html, item = null, autoClose = true, cls = '') {
     this._sheetItem = item;
-    this._root.querySelector('.plc-sheet-slot').innerHTML = `<div class="plc-sheet" data-close-sheet><div class="plc-sheet-in">${html}</div></div>`;
+    this._root.querySelector('.plc-sheet-slot').innerHTML = `<div class="plc-sheet${cls ? ` ${cls}` : ''}" data-close-sheet><div class="plc-sheet-in">${html}</div></div>`;
     this._sheetAuto = autoClose;
     this._armPopup();
   },
@@ -2574,7 +2587,7 @@ Object.assign(PlexCenterCard.prototype, {
     if ((el = t('[data-fmenu]'))) { this._fMenu(el, el.dataset.fmenu); return; }
     if ((el = t('[data-fset]'))) {
       const [k, ...rest] = el.dataset.fset.split(':'), val = rest.join(':');
-      if (k === 'watched') this._v.unwatched = val === '1'; else if (k === 'sort') this._v.sort = val || 'title'; else this._v[k] = val;
+      if (k === 'watched') this._v.unwatched = val === '1'; else if (k === 'length') this._v.short = !!val; else if (k === 'sort') this._v.sort = val || 'title'; else this._v[k] = val;
       this._v.detail = null; this._closeMenu();
       this._renderTop(); this._renderMain(); this._renderDetail();
       if (this._root.querySelector('.plc-fpanel')) this._filtersPopover();
@@ -2673,11 +2686,6 @@ Object.assign(PlexCenterCard.prototype, {
     }
     if ((el = t('[data-tvsheet]'))) { this._tvSheet(el); return; }
     if ((el = t('[data-tvpick]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.tvpick); this._closeMenu(); if (tv) this._setTv(tv); return; }
-    if ((el = t('[data-unchip]'))) {
-      const k = el.dataset.unchip;
-      if (k === 'sort') this._v.sort = 'title'; else if (k === 'unwatched' || k === 'short') this._v[k] = false; else this._v[k] = '';
-      this._v.detail = null; this._renderTop(); this._renderMain(); this._renderDetail(); return;
-    }
     if (t('[data-fclear]')) {
       Object.assign(this._v, { unwatched: false, genre: '', decade: '', rating: '', short: false, sort: 'title', detail: null });
       this._renderTop(); this._renderMain(); this._renderDetail(); this._filtersPopover(); return;
