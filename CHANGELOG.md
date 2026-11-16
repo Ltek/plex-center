@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.16.44
+
+**New**
+- **Active filters is a Header & footer item**: show / hide it, and place it like any other item (Header, Player
+  header or Footer, row 1–3, left / middle / right). It replaces the separate *Show the active filters as chips*
+  checkbox; cards that had it on get the item shown in their arrangements.
+
+**Changed**
+- Layout → each screen: *Header layout* is now **Header & footer arrangement**, with clearer choices:
+  **Shared** (the arrangement edited in Header & footer, used by every screen set to Shared), **Compact one row**
+  (built in: pages left, buttons right) and **Custom for this screen** (its own list, picked under *Editing* in
+  Header & footer).
+
 ## v2026.11.16.43
 
 **After updating: restart Home Assistant, then close and reopen the Companion App.**

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.43
+// Version: v2026.11.16.44
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.43';
+const BUILD_NUMBER = 'v2026.11.16.44';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -210,7 +210,7 @@ const SIZE_PX = { title_size: { large: 17, medium: 14, small: 12 }, line_size: {
 const SHADOWS = { none: 'none', soft: '0 2px 8px rgba(0,0,0,.25)', strong: '0 8px 28px rgba(0,0,0,.55)' };
 const HEADER_ITEMS = [['title', 'Title'], ['tabs', 'Page menu (Home and libraries)'], ['search', 'Search'], ['surprise', 'Surprise me'],
   ['watched', 'All / Unwatched'], ['genre', 'Genre'], ['decade', 'Decade'], ['rating', 'Content rating'], ['length', 'Under 2 h (movies)'],
-  ['sort', 'Sort'], ['view', 'Grid / list switch'], ['filterbtn', 'Filters button (opens the Filters popup)'], ['tvs', 'TV picker']];
+  ['sort', 'Sort'], ['view', 'Grid / list switch'], ['filterbtn', 'Filters button (opens the Filters popup)'], ['achips', 'Active filters (a chip per filter that is on)'], ['tvs', 'TV picker']];
 const SORT_OPTS = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
 const FLABEL = { watched: 'Show', genre: 'Genre', decade: 'Decade', rating: 'Rating', sort: 'Sort', length: 'Length', view: 'View' };
 /** Library filter items: each can sit in the header / footer or in the Filters popup. */
@@ -223,12 +223,13 @@ const DEFAULT_HEADER = [
   { id: 'title', section: 'library', row: 1, align: 'left' }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view', 'filterbtn'].map((id) => ({ id, section: 'library', row: 1, align: 'right' })),
-  { id: 'tvs', section: 'library', row: 2, align: 'left' }];
+  { id: 'tvs', section: 'library', row: 2, align: 'left' }, { id: 'achips', section: 'library', row: 3, align: 'left', hidden: true }];
 const DEFAULT_HEADER_PHONE = [
   { id: 'title', section: 'library', row: 1, align: 'left', hidden: true }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view'].map((id) => ({ id, section: 'popover', row: 1, align: 'right' })),
-  { id: 'filterbtn', section: 'library', row: 1, align: 'right' }, { id: 'tvs', section: 'library', row: 1, align: 'right' }];
+  { id: 'filterbtn', section: 'library', row: 1, align: 'right' }, { id: 'tvs', section: 'library', row: 1, align: 'right' },
+  { id: 'achips', section: 'library', row: 2, align: 'left', hidden: true }];
 const ALIGNS = ['left', 'center', 'right'];
 const PLACES = ['library', 'player', 'footer', 'popover'];
 const HOME_BUILTIN = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['recent', 'Recently Added'], ['soon', 'Coming Soon']];
@@ -270,7 +271,6 @@ const DEFAULTS = {
   phone_tabs: 'tabs',
   swipe_tabs: false,
   hide_on_scroll: false,
-  filter_chips: false,
   scale: 100,
   after_play: 'nowplaying',
   phone_across: 3,
@@ -402,6 +402,18 @@ function migrateScreens(c) {
     c[`${sc}_tabs`] = 'tabs';
   }   // 2026.11.15.26: dropdowns → chip + menu
   delete c.slim_controls;
+  if ('filter_chips' in c) {   // 2026.11.16.44: "Show the active filters as chips" is the Active filters item (its eye)
+    if (c.filter_chips) {
+      const show = (list) => list.map((h) => (h.id === 'achips' ? (({ hidden, ...rest }) => (void hidden, rest))(h) : h));
+      c.header = show(headerLayout(c));
+      for (const [sc] of SCREENS) {
+        const mode = c[`${sc}_header`] ?? SCREEN_DEFAULTS[`${sc}_header`];
+        if (mode === 'one_row' && !Array.isArray(c[`header_${sc}`])) { c[`${sc}_header`] = 'own'; c[`header_${sc}`] = show(DEFAULT_HEADER_PHONE.map((h) => ({ ...h }))); }
+        else if (Array.isArray(c[`header_${sc}`])) c[`header_${sc}`] = show(headerLayout({ ...c, [`${sc}_header`]: 'own' }, sc));
+      }
+    }
+    delete c.filter_chips;
+  }
   for (const k of ['scale', 'library_view', 'max', 'tv_picker', 'filters_mode', 'now_playing', 'slim_position', 'phone_header_mode', 'header_phone', 'phone_filters',
     'phone_view', 'phone_now_playing', 'phone_slim_position', 'phone_hide_on_scroll', 'swipe_tabs', 'poster_width', 'panel_when']) delete c[k];
 }
@@ -1124,7 +1136,7 @@ const CARD_CSS = `
   width: max(34px, calc(44px / var(--plc-scale, 1))); height: max(34px, calc(44px / var(--plc-scale, 1))); }
 .plc.phone .plc-top .plc-chip, .plc.phone .plc-top .plc-select { padding-top: 0; padding-bottom: 0; }
 /* active-filter chips */
-.plc-achips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.plc-achips { display: flex; gap: 6px; flex-wrap: wrap; }
 .plc-achips .plc-chip { padding: 4px 10px; font-size: .8em; }
 .plc-achips ha-icon { --mdc-icon-size: 14px; }
 .plc-achips .plc-menuchip .chev { opacity: .7; }
@@ -1521,6 +1533,7 @@ class PlexCenterCard extends HTMLElement {
       rating: inLib ? this._fpiece('rating', styleOf.rating) : '',
       length: inLib ? this._fpiece('length') : '',
       filterbtn: popItems.length ? filterBtn : '',
+      achips: inLib ? this._chipsHtml() : '',
       surprise: !cfg(this._c, 'surprise') || !libs.length ? ''
         : style === 'icon' ? `<button class="plc-icon-btn" data-surprise title="${esc(label)}"><ha-icon icon="${esc(icon)}"></ha-icon></button>`
           : `<button class="plc-chip" data-surprise>${style === 'both' ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ''}${esc(label)}</button>`,
@@ -1711,7 +1724,7 @@ class PlexCenterCard extends HTMLElement {
   /** Active-filter chips (optional): one removable chip per filter in use. */
   _chipsHtml() {
     const v = this._v;
-    if (!cfg(this._c, 'filter_chips') || v.tab === 'home') return '';
+    if (v.tab === 'home') return '';
     const sortNames = { added: 'Recently added', released: 'Release date', year: 'Year', rating: 'Rating', viewed: 'Last watched' };
     const f = peek(`filters:${this._tv()?.id}:${this._libKey()}`) || {};
     const name = (list, val) => (list || []).find((o) => String(o.value) === String(val))?.title || val;
@@ -1751,7 +1764,6 @@ class PlexCenterCard extends HTMLElement {
     top.innerHTML = searchIcon && (this._v.searchOpen || this._v.query)
       ? `<div class="plc-hrow plc-sbar">${pieces.search}</div>`
       : this._headerHtml('library', pieces, playerShown);
-    top.insertAdjacentHTML('beforeend', this._chipsHtml());
     const cv = this._conf?.card_version;
     const notes = [
       this._cfgErr ? `<div class="plc-note err"><ha-icon icon="mdi:alert-circle-outline"></ha-icon><span>Part of this card's settings couldn't be read: ${esc(this._cfgErr)}. Open the editor and save again.</span></div>` : '',
@@ -3074,12 +3086,12 @@ class PlexCenterCardEditor extends HTMLElement {
     return `<p class="plce-hint">Each item goes in the <b>Header</b> (above Home and the libraries), the <b>Player header</b> (above the side panel on
         tablets; in the Header when there's no side panel) or the <b>Footer</b> (below the card; it can stick to the bottom of the screen, set per
         screen in Layout). Each place has up to three rows with left / middle / right; items in the same spot follow this list's order.</p>
-      ${owns.length ? `<div class="plce-row"><label class="lbl">Editing the layout for</label><select data-hdrfor>
-        <option value=""${ph ? '' : ' selected'}>The main layout</option>${owns.map(([sc, name]) => `<option value="${sc}"${ph === sc ? ' selected' : ''}>${esc(name)}</option>`).join('')}</select></div>` : ''}
+      ${owns.length ? `<div class="plce-row"><label class="lbl">Editing</label><select data-hdrfor>
+        <option value=""${ph ? '' : ' selected'}>The shared arrangement</option>${owns.map(([sc, name]) => `<option value="${sc}"${ph === sc ? ' selected' : ''}>${esc(name)} (custom)</option>`).join('')}</select></div>` : ''}
       <div class="plce-lockbar"><button class="plce-lock${locked ? '' : ' open'}" data-hlock><ha-icon icon="mdi:${locked ? 'lock' : 'lock-open-variant'}"></ha-icon>${locked ? 'Unlock to edit' : 'Editing: lock'}</button></div>
       ${locked ? `<div class="plce-hlist">${chipRows}</div>` : `<div class="plce-list">${rows}</div>`}
-      <p class="plce-hint">Which layout each screen uses, and how tabs, search, the TV picker and filters look, is set per screen in Layout.</p>
-      ${this._check('filter_chips', 'Show the active filters as removable chips under the header')}
+      <p class="plce-hint">This list is the <b>shared arrangement</b>, used by every screen set to <i>Shared</i> (Layout → each screen → Header &amp; footer
+        arrangement). A screen set to <i>Custom</i> gets its own list: pick it under <i>Editing</i>. How the page menu, search and TV picker look is set per screen in Layout.</p>
       ${this._slider('search_width', 'Search box width', 100, 800)}
       ${(ph ? this._config[`header_${ph}`] : this._config.header) ? '<button class="plce-add" data-hreset>Back to the default header</button>' : ''}`;
   }
@@ -3224,7 +3236,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._slider(k('across'), 'Posters across (Home rows, libraries, search)', 1, 12, '')}
         ${this._select(k('view'), 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}
         <div class="plce-group">Header</div>
-        ${this._select(k('header'), 'Header layout', [['main', 'The main layout (Header panel)'], ['one_row', 'One row: tabs on the left, buttons on the right'], ['own', 'Its own layout (edit it in the Header panel)']])}
+        ${this._select(k('header'), 'Header & footer arrangement', [['main', 'Shared: the arrangement in Header & footer'], ['one_row', 'Compact one row (built in): pages left, buttons right'], ['own', 'Custom for this screen (edit it in Header & footer)']])}
         ${this._select(k('tabs'), 'Page menu', [['tabs', 'Buttons'], ['chip', 'A chip with the page name that opens a menu'], ['button', 'An icon button that opens a menu']])}
         ${this._select(k('search'), 'Search', [['field', 'A search box'], ['icon', 'An icon that opens a search bar']])}
         ${this._select(k('tvs'), 'TV picker', [['chips', 'A button for each TV'], ['chip', 'A chip with the TV name that opens a menu'], ['button', 'An icon button that opens a menu'], ['hidden', 'Hidden (always the default TV)']])}
