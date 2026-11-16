@@ -937,7 +937,6 @@ const CARD_CSS = `
 .plc-calp-dots i { width: 6px; height: 6px; border-radius: 50%; }
 .plc-calp-sep { height: 4px; border-radius: 2px; margin: 12px 4px; background: var(--plc-bg2); }
 .plc-calp-list { display: flex; flex-direction: column; gap: 10px; }
-  background: color-mix(in srgb, var(--c) 8%, var(--plc-bg2)); color: inherit; font: inherit; cursor: pointer; }
 .plc-calp-ring { flex: none; margin-left: auto; width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--c); display: flex; align-items: center; justify-content: center;
   font-weight: 800; color: var(--c); }
 /* calendar */
