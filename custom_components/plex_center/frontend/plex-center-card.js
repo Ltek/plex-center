@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.56
+// Version: v2026.11.16.57
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.56';
+const BUILD_NUMBER = 'v2026.11.16.57';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -270,7 +270,7 @@ const ITEM_KINDS = [['watching', 'Watching now'], ['continue', 'Continue watchin
 /** The text lines of an item: [id, label, default size px, default weight]. */
 const LOOK_LINES = [['title', 'Title', 15, '700'], ['info', 'Episode / release info', 12, '600'], ['when', 'Air date and time', 12, '400'], ['meta', 'Network / studio · runtime', 11, '400'],
   ['extra', 'Line 4', 12, '400']];
-const LOOK_BASE = { image: 'poster', border: true, type_icon: false, time_corner: false, status: true, text_bg: 'gradient', text_bg_opacity: 90, text_bg_dir: 'bottom', text_bg_reach: 65, text_bg_blur: 0, fade_width: 62, fade_dist: 45,
+const LOOK_BASE = { image: 'poster', border: true, type_icon: false, time_corner: false, status: true, text_bg: 'gradient', text_bg_opacity: 90, text_bg_dir: 'bottom', text_bg_reach: 65, text_bg_start: 0, text_bg_blur: 0, box_dir: 'none', box_start: 50, fade_width: 62, fade_dist: 45, fade_start: 0,
   ...Object.fromEntries(LOOK_LINES.flatMap(([id, , px, w]) => [[`${id}_show`, true], [`${id}_px`, px], [`${id}_weight`, w], [`${id}_color`, '']])) };
 const LOOK_KEYS = Object.keys(LOOK_BASE);
 /** Defaults per kind: rows have no border unless asked for; the Calendar has its type-colour border. */
@@ -331,8 +331,9 @@ function cleanLooks(c) {
       if (k.endsWith('_color')) v = String(v).replace(/[;{}<>]/g, '');
       if (k === 'image' && !['poster', 'fanart', 'fade'].includes(v)) continue;
       if (k === 'text_bg' && !['gradient', 'box', 'none'].includes(v)) continue;
-      if (['text_bg_opacity', 'text_bg_reach', 'text_bg_blur', 'fade_width', 'fade_dist'].includes(k)) { v = Math.max(0, Math.min(100, Number(v))); if (!Number.isFinite(v) || v === base[k]) continue; }
+      if (['text_bg_opacity', 'text_bg_reach', 'text_bg_start', 'text_bg_blur', 'box_start', 'fade_width', 'fade_dist', 'fade_start'].includes(k)) { v = Math.max(0, Math.min(100, Number(v))); if (!Number.isFinite(v) || v === base[k]) continue; }
       if (k === 'text_bg_dir' && !GRAD_DIRS.some(([d]) => d === v)) continue;
+      if (k === 'box_dir' && v !== 'none' && !GRAD_DIRS.some(([d]) => d === v)) continue;
       keep[k] = v;
     }
     if (Object.keys(keep).length) out[lk] = keep;
@@ -343,16 +344,32 @@ function cleanLooks(c) {
 const GRAD_DIRS = [['bottom', 'Bottom to top'], ['top', 'Top to bottom'], ['left', 'Left to right'], ['right', 'Right to left'], ['center', 'Center out'], ['edges', 'Out to center']];
 /** The backdrop as a CSS background: dark at the chosen side, fading out over "reach" % of the image. */
 function fanShade(l) {
-  const a = Math.max(0, Math.min(100, Number(l.text_bg_opacity))) / 100, r = Math.max(5, Math.min(100, Number(l.text_bg_reach)));
+  const a = Math.max(0, Math.min(100, Number(l.text_bg_opacity))) / 100, st = Math.max(0, Math.min(95, Number(l.text_bg_start) || 0));
+  const r = Math.max(st + 5, Math.min(100, Number(l.text_bg_reach)));
   const c = (x) => `rgb(0 0 0 / ${Math.round(x * 1000) / 1000})`;
-  const lin = (to) => `linear-gradient(to ${to}, ${c(a)} 0%, ${c(a * 0.7)} ${Math.round(r * 0.45)}%, ${c(0)} ${r}%)`;
+  const mid = Math.round(st + (r - st) * 0.45);
+  const lin = (to) => `linear-gradient(to ${to}, ${c(a)} 0%, ${c(a)} ${st}%, ${c(a * 0.7)} ${mid}%, ${c(0)} ${r}%)`;
   switch (l.text_bg_dir) {
     case 'top': return lin('bottom');
     case 'left': return lin('right');
     case 'right': return lin('left');
-    case 'center': return `radial-gradient(ellipse at center, ${c(a)} 0%, ${c(a * 0.6)} ${Math.round(r * 0.5)}%, ${c(0)} ${r}%)`;
-    case 'edges': return `radial-gradient(ellipse at center, ${c(0)} ${100 - r}%, ${c(a * 0.6)} ${Math.round(100 - r * 0.5)}%, ${c(a)} 100%)`;
+    case 'center': return `radial-gradient(ellipse at center, ${c(a)} 0%, ${c(a)} ${st}%, ${c(a * 0.6)} ${mid}%, ${c(0)} ${r}%)`;
+    case 'edges': return `radial-gradient(ellipse at center, ${c(0)} ${100 - r}%, ${c(a * 0.6)} ${100 - mid}%, ${c(a)} ${100 - st}%, ${c(a)} 100%)`;
     default: return lin('top');
+  }
+}
+/** The box backdrop's fade (a mask): opaque from its dark side up to "start" %, then fading out. */
+function boxMask(l) {
+  const st = Math.max(0, Math.min(95, Number(l.box_start)));
+  const lin = (to) => `linear-gradient(to ${to}, #000 ${st}%, transparent 100%)`;
+  switch (l.box_dir) {
+    case 'bottom': return lin('top');
+    case 'top': return lin('bottom');
+    case 'left': return lin('right');
+    case 'right': return lin('left');
+    case 'center': return `radial-gradient(closest-side, #000 ${st}%, transparent 100%)`;
+    case 'edges': return `radial-gradient(closest-side, transparent ${100 - st}%, #000 100%)`;
+    default: return 'none';
   }
 }
 /** The values a card has set for a kind on the screen it shows (no defaults): rows only change what was set. */
@@ -367,8 +384,10 @@ function lookRowVars(own, s = {}) {
     if (own[`${id}_color`] && !s[scol]) v.push(`--plc-${css}-c:${clean(own[`${id}_color`])}`);
   }
   if (own.text_bg_opacity !== undefined) v.push(`--plc-fanbg-a:${Math.max(0, Math.min(100, Number(own.text_bg_opacity))) / 100}`);
-  if (['text_bg_opacity', 'text_bg_dir', 'text_bg_reach'].some((k) => own[k] !== undefined)) v.push(`--plc-fanbg:${fanShade({ ...LOOK_BASE, ...own })}`);
+  if (['text_bg_opacity', 'text_bg_dir', 'text_bg_reach', 'text_bg_start'].some((k) => own[k] !== undefined)) v.push(`--plc-fanbg:${fanShade({ ...LOOK_BASE, ...own })}`);
   if (own.text_bg_blur !== undefined) v.push(`--plc-fanbg-blur:${Number(own.text_bg_blur)}px`);
+  if (own.box_dir !== undefined || own.box_start !== undefined) v.push(`--plc-boxmask:${boxMask({ ...LOOK_BASE, ...own })}`);
+  if (own.fade_start !== undefined) v.push(`--plc-fade-s:${Number(own.fade_start)}%`);
   if (own.fade_width !== undefined) v.push(`--plc-fade-w:${Number(own.fade_width)}%`);
   if (own.fade_dist !== undefined) v.push(`--plc-fade-d:${Number(own.fade_dist)}%`);
   return v.join(';');
@@ -1066,13 +1085,15 @@ const CARD_CSS = `
 .plc-ci.img-fanart .plc-ci-fan { position: absolute; inset: 0; background: #222 center / cover no-repeat; }
 .plc-ci.img-fanart .plc-ci-fan::after { content: ''; position: absolute; inset: 0; background: var(--li-fanbg, linear-gradient(to top, rgb(0 0 0 / .9), rgb(0 0 0 / 0) 65%)); }
 .plc-ci.img-fanart.tbg-box .plc-ci-fan::after, .plc-ci.img-fanart.tbg-none .plc-ci-fan::after { display: none; }
-.plc-ci.img-fanart.tbg-box .plc-ci-txt { padding: 6px 8px; border-radius: 8px; background: rgb(0 0 0 / var(--li-fanbg-a, .9));
-  box-shadow: 0 0 var(--li-fanbg-blur, 0px) calc(var(--li-fanbg-blur, 0px) / 2) rgb(0 0 0 / var(--li-fanbg-a, .9)); }
+.plc-ci.img-fanart.tbg-box .plc-ci-txt { padding: 6px 8px; isolation: isolate; }
+.plc-ci.img-fanart.tbg-box .plc-ci-txt::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 8px; background: rgb(0 0 0 / var(--li-fanbg-a, .9));
+  filter: blur(var(--li-fanbg-blur, 0px)); -webkit-mask-image: var(--li-boxmask, none); mask-image: var(--li-boxmask, none); }
 .plc-ci.img-fanart .plc-ci-txt > span { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
 /* fanart – fade (the upcoming-media look): the backdrop on the right, fading in behind the text */
 .plc-ci.img-fade { background: var(--plc-li-bg, #0d0d0d); align-items: center; }
 .plc-ci.img-fade .plc-ci-fan { position: absolute; top: 0; right: 0; bottom: 0; width: var(--li-fade-w, 62%); background: center / cover no-repeat;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--li-fade-d, 45%)); mask-image: linear-gradient(to right, transparent, #000 var(--li-fade-d, 45%)); }
+  -webkit-mask-image: linear-gradient(to right, transparent var(--li-fade-s, 0%), #000 calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%)));
+  mask-image: linear-gradient(to right, transparent var(--li-fade-s, 0%), #000 calc(var(--li-fade-s, 0%) + var(--li-fade-d, 45%))); }
 .plc-ci.img-fade .plc-ci-txt { max-width: 62%; }
 /* calendar: phones */
 .plc-calp-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; }
@@ -1221,7 +1242,8 @@ const CARD_CSS = `
 .lk-hide-title .plc-t, .lk-hide-info .plc-s.l1, .lk-hide-when .plc-s.l2, .lk-hide-meta .plc-s.l3, .lk-hide-extra .plc-s.l4 { display: none; }
 .plc-poster.fade { background-color: #0d0d0d; }
 .plc-fadeimg { position: absolute; top: 0; right: 0; bottom: 0; width: var(--plc-fade-w, 62%); background: center / cover no-repeat; border-radius: inherit;
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--plc-fade-d, 45%)); mask-image: linear-gradient(to right, transparent, #000 var(--plc-fade-d, 45%)); }
+  -webkit-mask-image: linear-gradient(to right, transparent var(--plc-fade-s, 0%), #000 calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%)));
+  mask-image: linear-gradient(to right, transparent var(--plc-fade-s, 0%), #000 calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%))); }
 .plc-poster.fade .plc-fan-text { background: none; right: calc(var(--plc-fade-w, 62%) - 30%); top: 0; display: flex; flex-direction: column; justify-content: center; }
 .plc-sess.fan { background-size: cover; background-position: center; }
 .plc-sess.fan .plc-t, .plc-sess.fan .plc-s { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
@@ -1233,8 +1255,9 @@ const CARD_CSS = `
 .plc-fanshade { position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
   background: var(--plc-fanbg, linear-gradient(to top, rgb(0 0 0 / .9) 0%, rgb(0 0 0 / .63) 29%, rgb(0 0 0 / 0) 65%)); }
 .lk-tbg-box .plc-fanshade, .lk-tbg-none .plc-fanshade { display: none; }
-.lk-tbg-box .plc-fan-text { left: 8px; right: auto; bottom: 8px; max-width: calc(100% - 16px); padding: 8px 10px; border-radius: 8px; background: rgb(0 0 0 / var(--plc-fanbg-a, .9));
-  box-shadow: 0 0 var(--plc-fanbg-blur, 0px) calc(var(--plc-fanbg-blur, 0px) / 2) rgb(0 0 0 / var(--plc-fanbg-a, .9)); }
+.lk-tbg-box .plc-fan-text { left: 8px; right: auto; bottom: 8px; max-width: calc(100% - 16px); padding: 8px 10px; background: none; isolation: isolate; overflow: visible; }
+.lk-tbg-box .plc-fan-text::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: 8px; background: rgb(0 0 0 / var(--plc-fanbg-a, .9));
+  filter: blur(var(--plc-fanbg-blur, 0px)); -webkit-mask-image: var(--plc-boxmask, none); mask-image: var(--plc-boxmask, none); }
 .plc-fan-text .plc-t, .plc-fan-text .plc-s { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
 .plc-fan-text .plc-s { color: rgba(255,255,255,.75); }
 .plc-hero { position: relative; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 0; border-radius: calc(var(--plc-r) + 4px);
@@ -3577,9 +3600,10 @@ class PlexCenterCardEditor extends HTMLElement {
       ${chk('type_icon', 'Movie / TV icon in the lower-right corner')}${cal ? chk('time_corner', 'Air time in the lower-right corner (instead of the date line)') : ''}
       ${l.image === 'fanart' ? `${sel('text_bg', 'Text backdrop', [['gradient', 'Gradient'], ['box', 'A box only behind the text'], ['none', 'None']])}
         ${l.text_bg !== 'none' ? pct('text_bg_opacity', 'Backdrop opacity', 0, 100) : ''}
-        ${l.text_bg === 'gradient' ? `${sel('text_bg_dir', 'Gradient direction', GRAD_DIRS)}${pct('text_bg_reach', 'Gradient strength (how far it reaches)', 5, 100)}` : ''}
-        ${l.text_bg === 'box' ? pct('text_bg_blur', 'Edge blur', 0, 40, 'px') : ''}` : ''}
-      ${l.image === 'fade' ? `${pct('fade_dist', 'Fade distance (how long the fade is)', 0, 100)}${pct('fade_width', 'Image width', 30, 100)}` : ''}
+        ${l.text_bg === 'gradient' ? `${sel('text_bg_dir', 'Gradient direction', GRAD_DIRS)}${pct('text_bg_start', 'Fade starts at', 0, 95)}${pct('text_bg_reach', 'Gradient strength (how far it reaches)', 5, 100)}` : ''}
+        ${l.text_bg === 'box' ? `${pct('text_bg_blur', 'Edge blur', 0, 40, 'px')}${sel('box_dir', 'Box fade direction', [['none', 'No fade'], ...GRAD_DIRS])}
+          ${l.box_dir !== 'none' ? pct('box_start', 'Fade starts at', 0, 95) : ''}` : ''}` : ''}
+      ${l.image === 'fade' ? `${pct('fade_start', 'Fade starts at (from the left)', 0, 90)}${pct('fade_dist', 'Fade distance (how long the fade is)', 0, 100)}${pct('fade_width', 'Image width', 30, 100)}` : ''}
 `;
     const lines = LOOK_LINES.filter(([id]) => !(cal && id === 'extra')).map(([id, label]) => `<div class="plce-group">${esc(lineLabel(id, label))}</div>${chk(`${id}_show`, 'Show')}${l[`${id}_show`] ? `${sl(`${id}_px`, 'Size', 8, 40)}${sel(`${id}_weight`, 'Weight', weights)}
         ${this._colorControl(K(`${id}_color`), ['Colour', id === 'title' ? 'Theme text' : 'Theme secondary text', id === 'title' ? '#ffffff' : '#bbbbbb'])}` : ''}`).join('');
@@ -4414,7 +4438,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 
@@ -4580,7 +4604,7 @@ Object.assign(PlexCenterCard.prototype, {
     const img = l.image === 'poster'
       ? `<span class="plc-ci-poster"${ev.poster ? ` style="background-image:url('${cssUrl(ev.poster)}')"` : ''}>${ev.poster ? '' : `<ha-icon icon="${icon}"></ha-icon>`}${corner}</span>`
       : `<span class="plc-ci-fan"${(ev.fanart || ev.poster) ? ` style="background-image:url('${cssUrl(ev.fanart || ev.poster)}')"` : ''}></span>`;
-    return `<button class="plc-ci img-${l.image}${l.border ? ' bordered' : ''} tbg-${l.text_bg}${big ? ' big' : ''}${phone ? ' phone' : ''}" style="--c:${c};--li-fanbg-a:${Number(l.text_bg_opacity) / 100};--li-fanbg:${fanShade(l)};--li-fanbg-blur:${Number(l.text_bg_blur)}px;--li-fade-w:${Number(l.fade_width)}%;--li-fade-d:${Number(l.fade_dist)}%;${lookVars(l)}" data-calev="${n}">
+    return `<button class="plc-ci img-${l.image}${l.border ? ' bordered' : ''} tbg-${l.text_bg}${big ? ' big' : ''}${phone ? ' phone' : ''}" style="--c:${c};--li-fanbg-a:${Number(l.text_bg_opacity) / 100};--li-fanbg:${fanShade(l)};--li-fanbg-blur:${Number(l.text_bg_blur)}px;--li-fade-w:${Number(l.fade_width)}%;--li-fade-d:${Number(l.fade_dist)}%;--li-fade-s:${Number(l.fade_start)}%;--li-boxmask:${boxMask(l)};${lookVars(l)}" data-calev="${n}">
       ${img}<span class="plc-ci-txt">${text}</span>${l.image === 'poster' ? '' : `<span class="plc-ci-corner">${corner}</span>`}
       ${group && group.count > 1 ? `<span class="plc-calp-ring">${group.count}</span>` : ''}${marks}</button>`;
   },

@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.16.57
+
+**Fixed**
+- **Edge blur** on the Fanart box backdrop now blurs the box itself, so its edges dissolve completely (it only
+  added a soft glow around a sharp box before).
+
+**New** (Content Visuals)
+- Box backdrop: **Box fade direction** (No fade, Bottom to top, Top to bottom, Left to right, Right to left, Center
+  out, Out to center) and **Fade starts at** %.
+- Gradient backdrop: **Fade starts at** % (fully dark up to there, then fading out to the strength).
+- **Fanart fade**: **Fade starts at (from the left)** %, with the fade distance and image width.
+
 ## v2026.11.16.56
 
 **New** (Content Visuals, per section and screen)
