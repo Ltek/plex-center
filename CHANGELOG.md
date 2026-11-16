@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.16.37
+
+**Fixed**
+- **Middle items weren't centered** when a header row was too full to fit on one line (for example on a library
+  page, where All / Unwatched, sort and the filters join the row): the row wrapped as a whole and the middle group
+  ended up on the right. Header rows are now three columns, left and right of equal width with the middle exactly
+  in the center; items that don't fit wrap inside their own column. Phones (stacked groups), the one-row header and
+  the footer keep their layouts.
+
 ## v2026.11.16.36
 
 **New**

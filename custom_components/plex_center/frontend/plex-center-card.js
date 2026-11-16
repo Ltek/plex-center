@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.36
+// Version: v2026.11.16.37
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.36';
+const BUILD_NUMBER = 'v2026.11.16.37';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -993,8 +993,9 @@ const CARD_CSS = `
 .plc-main.searching > .plc-sec:not([data-sec="search"]), .plc-main.searching > .plc-cards { display: none; }
 .plc-viewall { margin-left: auto; border: none; background: none; color: var(--secondary-text-color); font-size: .9em; letter-spacing: .04em; }
 .plc-top { display: block; margin-bottom: 8px; }
-.plc-hrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.plc.phone .plc-hrow { flex-direction: column; align-items: stretch; gap: 8px; }
+/* a header / footer row: left and right columns of equal width, the middle exactly in the center; items wrap inside their own column */
+.plc-hrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr); align-items: center; gap: 10px; }
+.plc.phone .plc-hrow { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .plc.phone .plc-hl, .plc.phone .plc-hc, .plc.phone .plc-hr { flex: 1 1 auto; width: 100%; flex-wrap: nowrap; }
 .plc.phone .plc-hl:empty, .plc.phone .plc-hc:empty, .plc.phone .plc-hr:empty { display: none; }
 .plc.phone .plc-hr { justify-content: flex-start; }
@@ -1057,7 +1058,7 @@ const CARD_CSS = `
 .plc-recent ha-icon { --mdc-icon-size: 15px; }
 .plc-recent-clear { opacity: .7; }
 /* compact phone header: one row, tabs scroll, buttons on the right */
-.plc.onerow .plc-hrow { flex-direction: row; flex-wrap: nowrap; align-items: center; }
+.plc.onerow .plc-hrow { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; }
 .plc.onerow .plc-hl { flex: 1 1 auto; min-width: 0; width: auto; overflow: hidden; }
 .plc.onerow .plc-hc { flex: none; width: auto; }
 .plc.onerow .plc-hr { flex: none; width: auto; justify-content: flex-end; gap: 6px; }
@@ -1105,7 +1106,7 @@ const CARD_CSS = `
 .plc-footer { margin: 12px calc(-1 * var(--plc-pad, 14px)) calc(-1 * var(--plc-pad, 14px)); padding: 6px var(--plc-pad, 14px) calc(6px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--divider-color, #333); background: var(--card-background-color, var(--ha-card-background, #1c1c1c)); }
 .plc-footer.sticky { position: sticky; bottom: 0; z-index: 7; }
-.plc-footer .plc-hrow { flex-direction: row !important; flex-wrap: nowrap; align-items: center; }
+.plc-footer .plc-hrow { display: flex; flex-direction: row !important; flex-wrap: nowrap; align-items: center; }
 .plc-footer .plc-hl, .plc-footer .plc-hc, .plc-footer .plc-hr { width: auto !important; }
 .plc-footer .plc-hc { flex: 1 1 auto; justify-content: center; min-width: 0; }
 .plc-footer .plc-tabs { margin: 0; flex: 1 1 auto; justify-content: space-around; }
@@ -1126,9 +1127,9 @@ const CARD_CSS = `
 .plc-fgrid .plc-chips { margin: 0; }
 .plc-hrow + .plc-hrow { margin-top: 8px; }
 .plc-hl, .plc-hc, .plc-hr { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.plc-hl { flex: 1 1 auto; justify-content: flex-start; }
-.plc-hc { flex: 0 1 auto; justify-content: center; }
-.plc-hr { flex: 1 1 auto; justify-content: flex-end; }
+.plc-hl { justify-content: flex-start; }
+.plc-hc { justify-content: center; }
+.plc-hr { justify-content: flex-end; }
 .plc-hrow .plc-tabs { margin: 0; min-width: 0; }
 .plc-hrow .plc-search { flex: 0 1 var(--plc-search-w, 280px); width: var(--plc-search-w, 280px); max-width: 100%; min-width: 100px; }
 .plc-phead { padding: 2px 2px 0; }
