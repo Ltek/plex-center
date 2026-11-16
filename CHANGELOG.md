@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.16.40
+
+**Changed**
+- **The Filters button** looks like the TV picker chip (theme colors, name in bold, a chevron) instead of turning
+  the Accent color when filters are on; the count is a small neutral badge.
+
 ## v2026.11.16.39
 
 **Fixed**

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.39
+// Version: v2026.11.16.40
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.39';
+const BUILD_NUMBER = 'v2026.11.16.40';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1137,7 +1137,8 @@ const CARD_CSS = `
   transition: transform .25s ease, opacity .25s ease; padding-top: 4px; }
 .plc.stickyhdr.hdr-hidden .plc-top { transform: translateY(-110%); opacity: 0; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .plc.stickyhdr .plc-top { transition: none; } }
-.plc-fcount { display: inline-flex; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--plc-a); color: #fff; font-size: .75em; align-items: center; justify-content: center; }
+.plc-fcount { display: inline-flex; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: color-mix(in srgb, var(--primary-text-color) 16%, transparent);
+  color: var(--primary-text-color); font-size: .75em; font-weight: 700; align-items: center; justify-content: center; }
 .plc-fpanel-h { display: flex; align-items: center; gap: 8px; }
 .plc-sheet.fit { align-items: center; }
 .plc-sheet.fit .plc-sheet-in { width: auto; max-width: min(520px, calc(100% - 24px)); border-radius: 16px; }
@@ -1498,7 +1499,8 @@ class PlexCenterCard extends HTMLElement {
     }
     const activeOf = { watched: v.unwatched, genre: v.genre, decade: v.decade, rating: v.rating, length: v.short, sort: v.sort && v.sort !== 'title' };
     const active = popItems.filter((h) => activeOf[h.id]).length;
-    const filterBtn = `<button class="plc-chip plc-fbtn${active ? ' on' : ''}" data-fpop><ha-icon icon="mdi:filter-variant"></ha-icon>Filters${active ? ` <span class="plc-fcount">${active}</span>` : ''}</button>`;
+    const filterBtn = `<button class="plc-chip plc-menuchip plc-fbtn" data-fpop title="${active ? `${active} filter${active === 1 ? '' : 's'} on` : 'Filters'}"><ha-icon icon="mdi:filter-variant"></ha-icon><span class="plc-menuchip-n">Filters</span>${
+      active ? `<span class="plc-fcount">${active}</span>` : ''}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`;
     const styleOf = Object.fromEntries(headerLayout(this._c, this._c._screen).map((h) => [h.id, h.style]));
     return {
       title: title ? `<h1 class="plc-title">${esc(title)}</h1>` : '',
