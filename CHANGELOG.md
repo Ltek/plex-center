@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.16.60
+
+**New** (Layout → Auto Rotate, per section and screen)
+- **Scroll direction**: rows scroll **Left** or **Right** (Right starts at the end and moves back), columns **Up** or
+  **Down**.
+- **Continue watching banner: Slide** (new, next to Fade): the title slides out and the next one slides in,
+  **Left**, **Right**, **Up** or **Down**, with *Next title every* (default 5 s) and *Slide time*.
+
 ## v2026.11.16.59
 
 **Fixed**

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.59
+// Version: v2026.11.16.60
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.59';
+const BUILD_NUMBER = 'v2026.11.16.60';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -755,7 +755,7 @@ function layoutItems(c, key = 'main') {
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
 const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
-  l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
+  l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
   border_color: 'str', flag: 'bool' };
 /** A Home row's settings shared by every screen type: what the row is (its source). Everything else is per screen. */
@@ -823,7 +823,8 @@ function secStyle(c, id) {
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
     show: (() => { const n = Math.max(1, Number((s.show ?? s.max) || c.across || cfg(c, 'across')) || 6);
       return wide && !(s.show ?? s.max) ? Math.max(1, Math.round(n / 2)) : n; })(),
-    scroll: !!s.scroll, auto: s.auto || 'off', speed: Number(s.speed ?? (s.auto === 'scroll' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
+    scroll: !!s.scroll, auto: s.auto || 'off', scroll_dir: s.scroll_dir || ((s.layout || 'row') === 'list' ? 'up' : 'left'),
+    speed: Number(s.speed ?? (s.auto === 'scroll' && s.layout !== 'banner' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
     flag: s.flag ?? cfg(c, 'flag'), list_w: Number(s.list_w ?? 340), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
     get max() { return this.total; } };
@@ -1419,6 +1420,14 @@ const CARD_CSS = `
 .plc-sec-body.auto .plc-row, .plc-sec-body.auto .plc-list { scrollbar-width: none; }
 .plc-sec-body.auto .plc-row::-webkit-scrollbar, .plc-sec-body.auto .plc-list::-webkit-scrollbar { display: none; }
 .plc-fade { transition: opacity var(--plc-fade-ms, 1200ms) ease-in-out; }
+/* the banner sliding to the next title (out one way, the next one in from the other side) */
+.plc-sliding { overflow: hidden; }
+.plc-slide { transition: transform var(--plc-fade-ms, 1200ms) ease-in-out, opacity var(--plc-fade-ms, 1200ms) ease-in-out; }
+.plc-slide.to-left { transform: translateX(-100%); opacity: 0; } .plc-slide.from-left { transform: translateX(100%); opacity: 0; transition: none; }
+.plc-slide.to-right { transform: translateX(100%); opacity: 0; } .plc-slide.from-right { transform: translateX(-100%); opacity: 0; transition: none; }
+.plc-slide.to-up { transform: translateY(-100%); opacity: 0; } .plc-slide.from-up { transform: translateY(100%); opacity: 0; transition: none; }
+.plc-slide.to-down { transform: translateY(100%); opacity: 0; } .plc-slide.from-down { transform: translateY(-100%); opacity: 0; transition: none; }
+@media (prefers-reduced-motion: reduce) { .plc-slide { transition: none; } }
 .plc-fade.out { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .plc-fade { transition: none; } }
 .plc-main.searching > .plc-sec:not([data-sec="search"]), .plc-main.searching > .plc-cards { display: none; }
@@ -2437,7 +2446,7 @@ class PlexCenterCard extends HTMLElement {
     applyLook(sec, lk);
     sec.style.setProperty('--plc-fade-ms', `${Math.max(0, Number(st.fade_ms))}ms`);
     // one timer for the banner, kept across repaints (a repaint must not restart it); it reads the current list each time
-    const tsig = JSON.stringify([st.speed, st.fade_ms]);
+    const tsig = JSON.stringify([st.auto, st.scroll_dir, st.speed, st.fade_ms]);
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (st.auto !== 'off' && items.length > 1 && !reduce) {
       if (!this._anim.continueBanner || this._cwTimer !== tsig) {
@@ -2449,14 +2458,17 @@ class PlexCenterCard extends HTMLElement {
           if (!box || !box.isConnected || list.length < 2 || this._cwHold) return;   // paused only while the pointer is on its buttons
           const hero = box.querySelector('.plc-hero'), nxt = list[((this._v.hero || 0) + 1) % list.length];
           preloadImages(`url('${cssUrl(nxt?.art || nxt?.still || nxt?.poster || '')}')`);
-          hero?.classList.add('plc-fade', 'out');
+          const slide = st.auto === 'scroll', dir = st.scroll_dir || 'left';
+          if (slide) { box.classList.add('plc-sliding'); hero?.classList.add('plc-slide', `to-${dir}`); } else hero?.classList.add('plc-fade', 'out');
           setTimeout(() => {
             if (!box.isConnected) return;
             this._v.hero = ((this._v.hero || 0) + 1) % list.length; this._paintContinue(box, list, true);
             const nh = box.querySelector('.plc-hero');
-            if (nh) { nh.classList.add('plc-fade', 'out'); void nh.offsetWidth; nextFrame(() => nh.classList.remove('out')); }
+            if (!nh) return;
+            if (slide) { nh.classList.add('plc-slide', `from-${dir}`); void nh.offsetWidth; nextFrame(() => nh.classList.remove(`from-${dir}`)); setTimeout(() => box.classList.remove('plc-sliding'), ms + 50); }
+            else { nh.classList.add('plc-fade', 'out'); void nh.offsetWidth; nextFrame(() => nh.classList.remove('out')); }
           }, ms);
-        }, Math.max(2, Number(st.speed) || 5) * 1000 + 2 * ms);
+        }, Math.max(2, Number(st.s.speed ?? 5) || 5) * 1000 + 2 * ms);
       }
     } else { clearInterval(this._anim.continueBanner); delete this._anim.continueBanner; this._cwTimer = null; }
     const i = Math.min(this._v.hero || 0, items.length - 1), it = items[i];
@@ -2544,18 +2556,21 @@ class PlexCenterCard extends HTMLElement {
     body.addEventListener('pointerleave', () => { paused = false; });
     if (st.auto === 'scroll') {
       const step = 50, px = Math.max(1, st.speed) * step / 1000;
-      let acc = 0;
+      // Left / Up: the items move left / up (forward); Right / Down: they move right / down (from the end back)
+      const back = st.scroll_dir === 'right' || st.scroll_dir === 'down';
+      let acc = 0, started = false;
       this._anim[id] = setInterval(() => {
         const box = body.querySelector('.plc-row, .plc-list');
         if (!box || paused || !box.isConnected) return;
         const horiz = box.classList.contains('plc-row');
+        const end = horiz ? box.scrollWidth - box.clientWidth : box.scrollHeight - box.clientHeight;
+        const set = (v) => { if (horiz) box.scrollLeft = v; else box.scrollTop = v; };
+        if (!started) { started = true; if (back) { set(end); return; } }
         acc += px;
         const move = Math.floor(acc); acc -= move;
         if (!move) return;
-        const end = horiz ? box.scrollWidth - box.clientWidth : box.scrollHeight - box.clientHeight;
         const pos = horiz ? box.scrollLeft : box.scrollTop;
-        const next = pos >= end - 1 ? 0 : pos + move;
-        if (horiz) box.scrollLeft = next; else box.scrollTop = next;
+        set(back ? (pos <= 1 ? end : pos - move) : (pos >= end - 1 ? 0 : pos + move));
       }, step);
     } else {
       const pages = Math.ceil(items.length / st.show);
@@ -3870,11 +3885,18 @@ class PlexCenterCardEditor extends HTMLElement {
         ${id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner' ? '' : `${sl('show', 'Items to show', 0, 20, 0, '')}
         <p class="plce-hint">0 = the screen's Posters across (half for Fanart rows).</p>`}
         ${chk('scroll', 'Scroll to see more items', false)}
-        ${id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner'
-          ? sel('auto', 'Auto Rotate', [['', 'Off'], ['fade', 'Fade (fades to the next title)']])
-          : sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Scroll (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
-        ${st.auto === 'scroll' ? sl('speed', 'Scrolling speed', 5, 200, st.speed, ' px/s') : ''}
-        ${st.auto === 'fade' ? `${sl('speed', 'Next set every', 2, 60, st.speed, ' s')}${sl('fade_ms', 'Fade time', 0, 3000, st.fade_ms, ' ms')}` : ''}
+        ${(() => {
+          const lay = id === 'continue' ? (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) : (s.layout || 'row');
+          if (lay === 'banner') {
+            return `${sel('auto', 'Auto Rotate', [['', 'Off'], ['fade', 'Fade (fades to the next title)'], ['scroll', 'Slide (slides to the next title)']])}
+              ${st.auto === 'scroll' ? `${sel('scroll_dir', 'Direction', [['left', 'Left'], ['right', 'Right'], ['up', 'Up'], ['down', 'Down']])}
+                ${sl('speed', 'Next title every', 2, 60, s.speed ?? 5, ' s')}${sl('fade_ms', 'Slide time', 0, 3000, st.fade_ms, ' ms')}` : ''}
+              ${st.auto === 'fade' ? `${sl('speed', 'Next title every', 2, 60, s.speed ?? 5, ' s')}${sl('fade_ms', 'Fade time', 0, 3000, st.fade_ms, ' ms')}` : ''}`;
+          }
+          return `${sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Scroll (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
+            ${st.auto === 'scroll' ? `${sel('scroll_dir', 'Direction', lay === 'list' ? [['up', 'Up'], ['down', 'Down']] : [['left', 'Left'], ['right', 'Right']])}${sl('speed', 'Scrolling speed', 5, 200, st.speed, ' px/s')}` : ''}`;
+        })()}
+        ${st.auto === 'fade' && !(id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner') ? `${sl('speed', 'Next set every', 2, 60, st.speed, ' s')}${sl('fade_ms', 'Fade time', 0, 3000, st.fade_ms, ' ms')}` : ''}
         ${st.scroll || st.auto !== 'off' ? sl('total', 'Items to load', st.show, 100, st.total, '') : ''}
         ${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}`)}
       ${sub('lines', 'Text Lines', this._lookBody(id, 'lines'))}
