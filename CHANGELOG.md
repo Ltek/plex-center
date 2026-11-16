@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.16.56
+
+**New** (Content Visuals, per section and screen)
+- **Fanart** text backdrop:
+  - *Gradient*: **direction** (Bottom to top, Top to bottom, Left to right, Right to left, Center out, Out to
+    center) and **strength** (how far it reaches across the image), with the opacity. The gradient now covers the
+    whole image, not only the text area.
+  - *A box only behind the text*: **edge blur** (soft edges), with the opacity.
+- **Fanart fade** (renamed from *Fanart – fade*): **fade distance** (how long the fade is) and **image width**.
+- Also for the Calendar.
+
 ## v2026.11.16.55
 
 **New** (Continue watching)
