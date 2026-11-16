@@ -1,5 +1,20 @@
 # Changelog
 
+## v2026.11.16.64
+
+**New**
+- **Time between sections** (Home → Auto Rotate, with Stagger on; 1–15 s, default 3 s): sections that fade or
+  slide change one at a time, this long apart, in Home order. A section changes at most once per round (number of
+  sections × the gap, or its own cycle if longer); the editor shows the result, e.g. *3 sections: one changes every
+  3 s, so each changes every 9 s*.
+- **Compact icon picker** everywhere in the editor (surprise me, section header icons, page icons, TV icons): a
+  chip with the icon and its name that opens a small panel with a search box (any `mdi:` name, Enter to use it),
+  a grid of common icons and *Default*. Replaces Home Assistant's large icon field.
+
+**Changed**
+- **Home panel** in groups: *Add a section*, *Auto Rotate*, *Surprise me*, then **Sections** (screen chips and the
+  order / show / hide list) last.
+
 ## v2026.11.16.63
 
 **New**

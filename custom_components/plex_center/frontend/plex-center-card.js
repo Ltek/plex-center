@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.63
+// Version: v2026.11.16.64
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.63';
+const BUILD_NUMBER = 'v2026.11.16.64';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -454,6 +454,7 @@ const DEFAULTS = {
   slim_controls: 'toggle',
   watching_tvs: 'all',
   stagger_rotate: false,
+  stagger_gap: 3,
   calendar: true,
   calendar_view: 'month',
   week_start: 'mon',
@@ -2456,13 +2457,13 @@ class PlexCenterCard extends HTMLElement {
     applyLook(sec, lk);
     sec.style.setProperty('--plc-fade-ms', `${Math.max(0, Number(st.fade_ms))}ms`);
     // one timer for the banner, kept across repaints (a repaint must not restart it); it reads the current list each time
-    const tsig = JSON.stringify([st.auto, st.scroll_dir, st.speed, st.fade_ms]);
+    const tsig = JSON.stringify([st.auto, st.scroll_dir, st.speed, st.fade_ms, cfg(this._c, 'stagger_rotate'), cfg(this._c, 'stagger_gap'), this._stepSections()]);
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (st.auto !== 'off' && items.length > 1 && !reduce) {
       if (!this._anim.continueBanner || this._cwTimer !== tsig) {
         clearInterval(this._anim.continueBanner); clearTimeout(this._anim.continueBanner);
         this._cwTimer = tsig;
-        const ms = Math.max(0, Number(st.fade_ms)), period = Math.max(2, Number(st.s.speed ?? 5) || 5) * 1000 + 2 * ms;
+        const ms = Math.max(0, Number(st.fade_ms)), [off, period] = this._stepTiming('continue', Math.max(2, Number(st.s.speed ?? 5) || 5) * 1000 + 2 * ms);
         const step2 = () => {
           const box = this._root?.querySelector('[data-sec="continue"]'), list = this._lists.get('continue') || [];
           if (!box || !box.isConnected || list.length < 2 || this._cwHold) return;   // paused only while the pointer is on its buttons
@@ -2479,7 +2480,6 @@ class PlexCenterCard extends HTMLElement {
             else { nh.classList.add('plc-fade', 'out'); void nh.offsetWidth; nextFrame(() => nh.classList.remove('out')); }
           }, ms);
         };
-        const off = this._stagger('continue') * period;
         if (off) this._anim.continueBanner = setTimeout(() => { this._anim.continueBanner = setInterval(step2, period); }, off);
         else this._anim.continueBanner = setInterval(step2, period);
       }
@@ -2587,7 +2587,7 @@ class PlexCenterCard extends HTMLElement {
         set(back ? (pos <= 1 ? end : pos - move) : (pos >= end - 1 ? 0 : pos + move));
       }, step);
     } else {
-      const pages = Math.ceil(items.length / st.show), period = Math.max(2, st.speed) * 1000 + 2 * st.fade_ms;
+      const pages = Math.ceil(items.length / st.show), [off, period] = this._stepTiming(id, Math.max(2, st.speed) * 1000 + 2 * st.fade_ms);
       const tick = () => {
         if (paused || !body.isConnected) return;
         const box = body.querySelector('.plc-fade');
@@ -2602,7 +2602,6 @@ class PlexCenterCard extends HTMLElement {
           if (nb) { nb.classList.add('out'); void nb.offsetWidth; nextFrame(() => nb.classList.remove('out')); }
         }, st.fade_ms);
       };
-      const off = this._stagger(id) * period;
       if (off) this._anim[id] = setTimeout(() => { if (body.isConnected) this._anim[id] = setInterval(tick, period); }, off);
       else this._anim[id] = setInterval(tick, period);
     }
@@ -2614,6 +2613,29 @@ class PlexCenterCard extends HTMLElement {
     const ids = homeOrder(this._c).filter((x) => homeVisible(this._c, x) && secStyle(this._c, x).auto !== 'off');
     const i = ids.indexOf(id);
     return i <= 0 ? 0 : i / ids.length;
+  }
+  /** The sections that change in steps (fade, and the banner's slide), in Home order, with their own cycle (ms). */
+  _stepSections() {
+    const out = [];
+    for (const x of homeOrder(this._c)) {
+      if (!homeVisible(this._c, x)) continue;
+      const st = secStyle(this._c, x);
+      const banner = x === 'continue' && (st.s.layout || (this._phone ? 'row' : 'banner')) === 'banner';
+      if (st.auto === 'fade' || (banner && st.auto === 'scroll')) {
+        const sp = banner ? Number(st.s.speed ?? 5) || 5 : st.speed;
+        out.push([x, Math.max(2, sp) * 1000 + 2 * Math.max(0, Number(st.fade_ms))]);
+      }
+    }
+    return out;
+  }
+  /** When this section changes: [first delay, cycle] in ms. Staggered: one at a time, "Time between sections" apart. */
+  _stepTiming(id, own) {
+    if (!cfg(this._c, 'stagger_rotate')) return [0, own];
+    const list = this._stepSections(), i = list.findIndex(([x]) => x === id);
+    if (i < 0) return [0, own];
+    const gap = Math.max(0, Number(cfg(this._c, 'stagger_gap'))) * 1000;
+    const round = Math.max(gap * list.length, ...list.map(([, p]) => p));
+    return [i * gap, round];
   }
 
   async _renderExtraCards() {
@@ -3462,6 +3484,24 @@ const EDITOR_CSS = `
           border-radius: 12px; background: color-mix(in srgb, var(--accent-color, var(--ltek-c-accent)) 5%, transparent); }
         .plce-scrbox-h { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 6px; }
         .plce-scrbox-h b { color: var(--primary-text-color); }
+        plce-icon-pick { display: inline-block; position: relative; min-width: 0; }
+        .pip-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 5px 10px 5px 8px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 13px;
+          border: 1px solid var(--divider-color, #555); background: transparent; color: var(--primary-text-color); }
+        .pip-chip ha-icon { --mdc-icon-size: 20px; color: var(--accent-color, var(--ltek-c-accent)); }
+        .pip-chip.empty span { color: var(--secondary-text-color); }
+        .pip-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, monospace; font-size: 12px; }
+        .pip-chip .pip-chev { --mdc-icon-size: 16px; color: var(--secondary-text-color); }
+        .pip-pop { margin-top: 6px; padding: 8px; border-radius: 10px; border: 1px solid var(--divider-color, #444); background: var(--card-background-color, #1c1c1c); width: min(320px, 80vw); }
+        .pip-top { display: flex; gap: 6px; }
+        .pip-q { flex: 1 1 auto; min-width: 0; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--divider-color, #444); background: var(--secondary-background-color, #111);
+          color: var(--primary-text-color); font: 12px ui-monospace, monospace; }
+        .pip-clear { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--divider-color, #555); background: transparent; color: var(--primary-text-color); font: inherit; font-size: 12px; cursor: pointer; }
+        .pip-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-top: 8px; max-height: 180px; overflow-y: auto; }
+        .pip-i { aspect-ratio: 1; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--primary-text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .pip-i:hover { background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
+        .pip-i.on { border-color: var(--accent-color, var(--ltek-c-accent)); color: var(--accent-color, var(--ltek-c-accent)); }
+        .pip-i ha-icon { --mdc-icon-size: 20px; }
+        .pip-hint { margin-top: 6px; font-size: 11px; color: var(--secondary-text-color); }
         .plce-pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--success-color, #43a047); margin-left: 2px; }
         .plce-del:hover { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
         .plce-pg-sub { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--secondary-text-color); }
@@ -3636,7 +3676,7 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-group">TV picker</div>
       <p class="plce-hint">How the TV picker looks (a button for each TV, a chip or icon that opens a menu, or hidden) is set per screen in Layout.</p>
       ${this._select('tv_label', 'TV buttons show', [['name', 'Name'], ['icon', 'Icon only'], ['both', 'Icon and name']])}
-      ${this._c('tv_label') !== 'name' ? tvs.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.name)} icon</label><ha-icon-picker data-tvicon="${esc(t.id)}" value="${esc((this._config.tv_icons || {})[t.id] || '')}" placeholder="mdi:television"></ha-icon-picker></div>`).join('') : ''}
+      ${this._c('tv_label') !== 'name' ? tvs.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.name)} icon</label><plce-icon-pick data-tvicon="${esc(t.id)}" value="${esc((this._config.tv_icons || {})[t.id] || '')}" placeholder="mdi:television"></plce-icon-pick></div>`).join('') : ''}
       ${this._select('default_tv', 'Default TV', [['', 'First in the list'], ...tvs.map((t) => [t.id, t.name])])}
       ${this._c('lock') ? '' : this._select('client_choice', 'When playing', [['card', "Use the card's TV"], ['ask', 'Ask which TV each time']])}
       ${this._check('lock', 'Lock to the default TV (wall tablet: no picker, no TV choice)')}`;
@@ -3816,18 +3856,35 @@ class PlexCenterCardEditor extends HTMLElement {
         ${(this._config.home_extra || []).some((x) => x.id === id) ? `<button class="plce-del" data-xdel="${esc(id)}" title="Remove"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>` : '<span class="plce-slot"></span>'}</div>
 </div>`).join('');
     const soon = upcomingSensors(this._hass, this._conf);
-    return `<p class="plce-hint">Order and show / hide the sections of the Home tab. <b>Coming Soon</b> uses the upcoming-media sensors found:
-        ${soon.length ? soon.map((x) => `<code>${esc(x.id)}</code>`).join(', ') : 'none (install Radarr / Sonarr upcoming sensors)'}.</p>
-      ${this._scrChips('Order and show / hide on')}
-      <p class="plce-hint">Each screen type has its own order and visible sections. The pencil opens the section's own panel (its content, and its look per screen).</p>
-      <div class="plce-list">${list}</div>
-      <div class="plce-row"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>
-      ${this._check('stagger_rotate', 'Stagger auto-rotate: sections that scroll or fade don\'t all move at the same time')}
+    return `<div class="plce-group first">Add a section</div>
+      <div class="plce-row plce-wrap"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>
+      <div class="plce-group">Auto Rotate</div>
+      ${this._check('stagger_rotate', 'Stagger: sections that fade or slide change one at a time')}
+      ${this._c('stagger_rotate') ? `${this._slider('stagger_gap', 'Time between sections', 1, 15, ' s')}<p class="plce-hint">${esc(this._staggerNote())}</p>` : ''}
+      <div class="plce-group">Surprise me</div>
       ${this._check('surprise', 'Surprise me button')}
       ${this._c('surprise') ? `${this._select('surprise_style', 'Surprise me shows', [['icon', 'Icon only'], ['both', 'Icon and text'], ['text', 'Text only']])}
         ${this._c('surprise_style') !== 'icon' ? this._text('surprise_label', 'Text', DEFAULTS.surprise_label) : ''}
-        ${this._c('surprise_style') !== 'text' ? `<div class="plce-row"><label class="lbl">Icon</label><ha-icon-picker data-icon="surprise_icon" value="${esc(this._c('surprise_icon'))}"></ha-icon-picker></div>` : ''}` : ''}
-      <p class="plce-hint">Extra cards under the rows: <code>home_cards:</code> with any card configs, in YAML.</p>`;
+        ${this._c('surprise_style') !== 'text' ? `<div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-icon="surprise_icon" value="${esc(this._c('surprise_icon'))}"></plce-icon-pick></div>` : ''}` : ''}
+      <p class="plce-hint">Extra cards under the rows: <code>home_cards:</code> with any card configs, in YAML.</p>
+      <div class="plce-group">Sections</div>
+      <p class="plce-hint">Order and show / hide the sections of the Home tab, per screen type. The pencil opens the section's own panel.
+        <b>Coming Soon</b> uses ${soon.length ? soon.map((x) => `<code>${esc(x.id)}</code>`).join(', ') : 'Sonarr / Radarr through Plex Center'}.</p>
+      ${this._scrChips('')}
+      <div class="plce-list">${list}</div>`;
+  }
+  /** "3 sections: each changes every 9 s" for the screen being edited. */
+  _staggerNote() {
+    const c = { ...this._config, ...effectiveConfig(this._config, this._eds().startsWith('phone'), this._eds().endsWith('portrait')), _screen: this._eds() };
+    const list = [];
+    for (const x of homeOrder(c)) {
+      if (!homeVisible(c, x)) continue;
+      const st = secStyle(c, x), banner = x === 'continue' && (st.s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner';
+      if (st.auto === 'fade' || (banner && st.auto === 'scroll')) list.push(Math.max(2, banner ? Number(st.s.speed ?? 5) || 5 : st.speed) + 2 * Math.max(0, Number(st.fade_ms)) / 1000);
+    }
+    if (list.length < 2) return 'Scrolling rows start a moment apart and run at slightly different speeds.';
+    const gap = Number(this._c('stagger_gap')), round = Math.max(gap * list.length, ...list);
+    return `${list.length} sections that fade / slide: one changes every ${gap} s, so each changes every ${Math.round(round * 10) / 10} s. Scrolling rows start apart and run at slightly different speeds.`;
   }
 
   async _loadHubChoices(lib) {
@@ -3900,7 +3957,7 @@ class PlexCenterCardEditor extends HTMLElement {
     return `${part === 'all' ? `${source}${visual}` : ''}
       ${sub('head', 'Header', `${chk('show_count', 'Show the number of items', true)}
         ${chk('show_icon', 'Show the icon', st.collapsible || !!s.icon)}
-        <div class="plce-row"><label class="lbl">Icon</label><ha-icon-picker data-sid="${esc(id)}" data-sicon="icon" value="${esc(s.icon || '')}"></ha-icon-picker></div>
+        <div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-sid="${esc(id)}" data-sicon="icon" value="${esc(s.icon || '')}"></plce-icon-pick></div>
         ${sel('head_style', 'Title style', [['', st.collapsible ? 'Plain (bar default)' : 'Section style (caps, accent)'], ['caps', 'Section style (caps, accent)'], ['plain', 'Plain']])}
         ${chk('divider', 'Divider line under the header', st.collapsible)}
         ${st.divider ? col('divider_color', 'Divider color', '#2196f3', false, 'Section text color') : ''}
@@ -4181,7 +4238,7 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-row"><button class="plce-add" data-pmexport><ha-icon icon="mdi:export"></ha-icon>Export style</button>
         <button class="plce-add" data-pmimport><ha-icon icon="mdi:import"></ha-icon>Import style</button></div>
       ${groups.size ? '<button class="plce-add" data-pmreset>Back to the preset (keeps the page icons)</button>' : ''}
-      ${this._sub('pg-icons', 'Page icons', pages.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.title)}</label><ha-icon-picker data-pageicon="${esc(t.id)}" value="${esc((this._config.page_icons || {})[t.id] || '')}" placeholder="${esc(tabIcon(t))}"></ha-icon-picker></div>`).join('')
+      ${this._sub('pg-icons', 'Page icons', pages.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.title)}</label><plce-icon-pick data-pageicon="${esc(t.id)}" value="${esc((this._config.page_icons || {})[t.id] || '')}" placeholder="${esc(tabIcon(t))}"></plce-icon-pick></div>`).join('')
         || '<p class="plce-hint">The pages appear here once Plex Center is connected.</p>')}
       <div class="plce-pgs">${PAGE_GROUPS.map(([g, title]) => {
         const on = groups.has(g), id = `pg-${g}`;
@@ -4368,7 +4425,7 @@ class PlexCenterCardEditor extends HTMLElement {
       this._emit(); this._render();
     }));
     all('details.plce-pgd', (d) => d.addEventListener('toggle', () => { if (d.open) this._open.add(d.dataset.panel); else this._open.delete(d.dataset.panel); }));
-    all('ha-icon-picker[data-pageicon]', (el) => el.addEventListener('value-changed', (e) => {
+    all('plce-icon-pick[data-pageicon]', (el) => el.addEventListener('value-changed', (e) => {
       const icons = { ...(this._config.page_icons || {}) }, v = (e.detail?.value || '').trim();
       if (v) icons[el.dataset.pageicon] = v; else delete icons[el.dataset.pageicon];
       this._config.page_icons = icons; this._emit();
@@ -4483,17 +4540,17 @@ class PlexCenterCardEditor extends HTMLElement {
       else if (el.value === 'transparent') next = 'transparent';
       this._cmode[`${id}:${k}`] = el.value; setSec(id, k, next); this._render();
     }));
-    all('ha-icon-picker[data-sicon]', (el) => el.addEventListener('value-changed', (e) => setSec(el.dataset.sid, 'icon', (e.detail?.value || '').trim())));
+    all('plce-icon-pick[data-sicon]', (el) => el.addEventListener('value-changed', (e) => setSec(el.dataset.sid, 'icon', (e.detail?.value || '').trim())));
     all('[data-hreset]', (b) => b.addEventListener('click', () => {
       if (!window.confirm('Reset the Standard layout to its built-in defaults?')) return;
       delete this._config.header; this._emit(); this._render();
     }));
-    all('ha-icon-picker[data-tvicon]', (el) => el.addEventListener('value-changed', (e) => {
+    all('plce-icon-pick[data-tvicon]', (el) => el.addEventListener('value-changed', (e) => {
       const icons = { ...(this._config.tv_icons || {}) }, v = (e.detail?.value || '').trim();
       if (v) icons[el.dataset.tvicon] = v; else delete icons[el.dataset.tvicon];
       this._config.tv_icons = icons; this._emit();
     }));
-    all('ha-icon-picker[data-icon]', (el) => el.addEventListener('value-changed', (e) => this._set(el.dataset.icon, (e.detail?.value || '').trim())));
+    all('plce-icon-pick[data-icon]', (el) => el.addEventListener('value-changed', (e) => this._set(el.dataset.icon, (e.detail?.value || '').trim())));
     const checkedList = (attr, allValues) => {
       const on = [...this.querySelectorAll(`[${attr}]`)].filter((x) => x.checked).map((x) => x.getAttribute(attr));
       return on.length === allValues.length ? null : on;
@@ -4789,6 +4846,48 @@ Object.assign(PlexCenterCard.prototype, {
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);
 if (!customElements.get(EDITOR_TAG)) customElements.define(EDITOR_TAG, PlexCenterCardEditor);
+
+/** A compact icon picker for the editor: a chip with the icon and its name; it opens a small panel with a search box
+ * (any mdi: name) and common icons. Fires value-changed like ha-icon-picker. */
+const ICON_CHOICES = ['mdi:home', 'mdi:movie-open', 'mdi:movie-roll', 'mdi:filmstrip', 'mdi:television-classic', 'mdi:television', 'mdi:television-play', 'mdi:monitor',
+  'mdi:projector', 'mdi:cellphone', 'mdi:tablet', 'mdi:sofa', 'mdi:bed', 'mdi:baby-face-outline', 'mdi:human-child', 'mdi:teddy-bear', 'mdi:music', 'mdi:music-box',
+  'mdi:microphone-variant', 'mdi:podcast', 'mdi:camera', 'mdi:image-multiple', 'mdi:calendar-month', 'mdi:calendar-clock', 'mdi:new-box', 'mdi:star', 'mdi:heart',
+  'mdi:fire', 'mdi:trophy', 'mdi:drama-masks', 'mdi:ghost', 'mdi:rocket-launch', 'mdi:sword-cross', 'mdi:emoticon-happy-outline', 'mdi:earth', 'mdi:book-open-variant',
+  'mdi:auto-fix', 'mdi:dice-multiple', 'mdi:shuffle-variant', 'mdi:play-circle', 'mdi:folder-play', 'mdi:bookshelf', 'mdi:plex', 'mdi:youtube', 'mdi:account', 'mdi:account-group'];
+class PlexIconPick extends HTMLElement {
+  static get observedAttributes() { return ['value', 'placeholder']; }
+  get value() { return this.getAttribute('value') || ''; }
+  set value(v) { this.setAttribute('value', v || ''); }
+  connectedCallback() { this._draw(); }
+  attributeChangedCallback() { if (this.isConnected) this._draw(); }
+  _draw() {
+    const v = this.value, ph = this.getAttribute('placeholder') || 'mdi:';
+    const open = !!this._open;
+    const q = (this._q ?? '').toLowerCase();
+    const list = ICON_CHOICES.filter((x) => !q || x.includes(q)).slice(0, 48);
+    this.innerHTML = `<button type="button" class="pip-chip${v ? '' : ' empty'}"><ha-icon icon="${esc(v || ph)}"></ha-icon><span>${esc(v || `Default (${ph})`)}</span>
+        <ha-icon class="pip-chev" icon="mdi:chevron-${open ? 'up' : 'down'}"></ha-icon></button>
+      ${open ? `<div class="pip-pop"><div class="pip-top"><input class="pip-q" type="text" spellcheck="false" placeholder="Search or type mdi:name" value="${esc(this._q ?? v)}">
+          <button type="button" class="pip-clear" title="Back to the default">Default</button></div>
+        <div class="pip-grid">${list.map((x) => `<button type="button" class="pip-i${x === v ? ' on' : ''}" data-pi="${esc(x)}" title="${esc(x)}"><ha-icon icon="${esc(x)}"></ha-icon></button>`).join('')}</div>
+        <div class="pip-hint">Any Material Design icon works: type its name, e.g. <code>mdi:popcorn</code>, and press Enter.</div></div>` : ''}`;
+    this.querySelector('.pip-chip').onclick = () => { this._open = !this._open; this._q = undefined; this._draw(); if (this._open) this.querySelector('.pip-q')?.focus(); };
+    if (!open) return;
+    const input = this.querySelector('.pip-q');
+    input.oninput = () => { this._q = input.value; const pos = input.selectionStart; this._draw(); const ni = this.querySelector('.pip-q'); ni.focus(); ni.setSelectionRange(pos, pos); };
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') { const t = input.value.trim(); this._pick(t ? (t.includes(':') ? t : `mdi:${t}`) : ''); }
+      if (e.key === 'Escape') { this._open = false; this._draw(); }
+    };
+    this.querySelector('.pip-clear').onclick = () => this._pick('');
+    this.querySelectorAll('[data-pi]').forEach((b) => { b.onclick = () => this._pick(b.dataset.pi); });
+  }
+  _pick(v) {
+    this._open = false; this._q = undefined; this.value = v;
+    this.dispatchEvent(new CustomEvent('value-changed', { detail: { value: v }, bubbles: true, composed: true }));
+  }
+}
+if (!customElements.get('plce-icon-pick')) customElements.define('plce-icon-pick', PlexIconPick);
 if (typeof window !== 'undefined') {
   window.customCards = window.customCards || [];
   if (!window.customCards.some((c) => c.type === CARD_TAG)) {
