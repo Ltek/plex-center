@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.16.50
+
+**New**
+- **Appearance → Items**: a look for each kind of item **on each screen type**: Watching now, Continue watching,
+  Recently Added, Coming Soon, Plex rows, Library grid and Calendar (pick the kind and the screen; the screen in the
+  preview is marked). The same options as the Calendar's look: **Image style** (*Poster*, *Fanart* with a shade
+  behind the text, *Fanart – fade*, the upcoming-media look), show / size / weight / colour for each text line,
+  left border, movie / TV icon in the corner, the watched tick; resets for each and *Reset all*.
+  Only what you change applies; a Home section's own settings (its pencil) still win.
+- **Home per screen type**: *Order and show / hide on* picks the screen type; each has its own order and visible
+  sections. A section's content and style stay the same on every screen. Existing order / hidden sections are
+  copied to every screen type.
+
 ## v2026.11.16.49
 
 **After updating: restart Home Assistant** (the calendar command now marks what's in Plex and watched).
