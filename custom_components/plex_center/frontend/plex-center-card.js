@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.54
+// Version: v2026.11.16.55
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.54';
+const BUILD_NUMBER = 'v2026.11.16.55';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -715,7 +715,7 @@ function layoutItems(c, key = 'main') {
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
 const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
-  l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
+  l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
   border_color: 'str', flag: 'bool' };
 /** A Home row's settings shared by every screen type: what the row is (its source). Everything else is per screen. */
@@ -2373,13 +2373,21 @@ class PlexCenterCard extends HTMLElement {
   }
 
   _paintContinue(sec, items) {
-    const lk = lookOwn(this._c, 'continue');
-    applyLook(sec, lk);
-    if (this._phone) {
-      const fan = (lk.image ? lk.image !== 'poster' : cfg(this._c, 'image_style') === 'fanart');
-      sec.innerHTML = `<div class="plc-sec-h">Continue watching <span class="n">${items.length}</span></div>
-        <div class="plc-row${fan ? ' fanart' : ''}">${items.map((it, i) => this._tile(it, 'continue', i, { fanart: fan, fade: lk.image === 'fade' })).join('')}</div>`;
+    const lk = lookOwn(this._c, 'continue'), st = secStyle(this._c, 'continue');
+    const layout = st.s.layout || (this._phone ? 'row' : 'banner');
+    this._anim = this._anim || {};
+    clearInterval(this._anim.continueBanner); delete this._anim.continueBanner;
+    if (layout !== 'banner') {   // a row / column like the other sections (items to show, scroll, auto-rotate, image style)
+      this._lists.set('continue', items);
+      this._fill('continue', sec, 'Continue watching', items.length, items.slice(0, st.max), 'continue');
       return;
+    }
+    applyLook(sec, lk);
+    if (st.auto !== 'off' && items.length > 1 && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      this._anim.continueBanner = setInterval(() => {
+        if (!sec.isConnected || sec.matches(':hover')) return;
+        this._v.hero = ((this._v.hero || 0) + 1) % items.length; this._paintContinue(sec, items);
+      }, Math.max(2, Number(st.speed) || 8) * 1000);
     }
     const i = Math.min(this._v.hero || 0, items.length - 1), it = items[i];
     const sub = it.type === 'episode' ? `Season ${it.season}, Episode ${it.episode} · ${it.title}` : [it.year, it.duration ? fmtTime(it.duration) : ''].filter(Boolean).join(' · ');
@@ -2390,7 +2398,8 @@ class PlexCenterCard extends HTMLElement {
         <h2 class="plc-big">${esc(it.show || it.title)}</h2><div class="plc-meta">${esc(sub)}</div>
         ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div><div class="plc-meta">${esc(left)}</div>` : ''}
         <div class="plc-btns"><button class="plc-btn main" data-qplay="continue|${i}" data-direct><ha-icon icon="mdi:play"></ha-icon>Resume${it.offset ? ` ${fmtTime(it.offset)}` : ''}</button>
-          <button class="plc-btn" data-qrestart="continue|${i}"><ha-icon icon="mdi:restart"></ha-icon>Start over</button></div>
+          <button class="plc-btn" data-qrestart="continue|${i}"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>
+          <button class="plc-btn" data-cwmark="${i}" title="Mark as watched"><ha-icon icon="mdi:check"></ha-icon>Mark watched</button></div>
         <div class="plc-pager"><button class="plc-icon-btn" data-hero="-1" title="Previous"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
           ${i + 1} / ${items.length}<button class="plc-icon-btn" data-hero="1" title="Next"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div></div></div>`;
   }
@@ -2705,6 +2714,21 @@ Object.assign(PlexCenterCard.prototype, {
     if (cfg(this._c, 'after_play') === 'nowplaying') this._showPlaying(tv);
     try { await this._hass.callService('plex_center', 'play', { tv: tv.id, key: String(it.key), mode }); }
     catch (e) { this._toast(`Could not start: ${e?.message || e}`); }
+  },
+
+  /** Mark a title watched / unwatched for the TV's Plex user, after a confirmation. */
+  _markWatched(it, watched) {
+    const tv = this._tv();
+    if (!it?.key || !tv) return;
+    const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : (it.show || it.title);
+    if (!window.confirm(`Mark “${what}” as ${watched ? 'watched' : 'unwatched'} for ${tvLabel(tv)}?`)) return;
+    this._hass.callService('plex_center', 'mark', { tv: tv.id, key: String(it.key), watched }).then(() => {
+      for (const k of [...CACHE.keys()]) if (/^(items|hubs|item|phub|search):/.test(k) && k.includes(`:${tv.id}:`) || k === `hubs:${tv.id}`) CACHE.delete(k);
+      this._toast(watched ? 'Marked as watched' : 'Marked as unwatched');
+      if (this._v.detail) this._renderDetail();
+      this._v.hero = 0;
+      if (this._v.tab === 'home') this._renderMain();
+    }).catch((err) => this._toast(`Mark: ${err?.message || err}`));
   },
 
   /** After starting a title: close the popup / details and show Now playing for that TV (full screen on phones). */
@@ -3142,17 +3166,8 @@ Object.assign(PlexCenterCard.prototype, {
     if (t('[data-close]')) { this._v.detail = null; this._pickTv = null; this._root.querySelectorAll('.plc-tile.sel').forEach((n) => n.classList.remove('sel')); this._renderDetail(); return; }
     if ((el = t('[data-play]'))) { if (this._detailItem) this._play(this._detailItem, el.dataset.play); return; }
     if (t('[data-trailergo]')) { this._playTrailer(this._detailItem); return; }
-    if ((el = t('[data-mark]'))) {
-      const it = this._detailItem, tv = this._tv();
-      if (!it || !tv) return;
-      const watched = el.dataset.mark === '1';
-      this._hass.callService('plex_center', 'mark', { tv: tv.id, key: String(it.key), watched }).then(() => {
-        for (const k of [...CACHE.keys()]) if (/^(items|hubs|item|phub|search):/.test(k) && k.includes(`:${tv.id}:`) || k === `hubs:${tv.id}`) CACHE.delete(k);
-        this._toast(watched ? 'Marked as watched' : 'Marked as unwatched');
-        this._renderDetail(); if (this._v.tab === 'home') this._renderMain();
-      }).catch((err) => this._toast(`Mark: ${err?.message || err}`));
-      return;
-    }
+    if ((el = t('[data-cwmark]'))) { this._markWatched((this._lists.get('continue') || [])[Number(el.dataset.cwmark)], true); return; }
+    if ((el = t('[data-mark]'))) { this._markWatched(this._detailItem, el.dataset.mark === '1'); return; }
     if (t('[data-trailer]')) { if (this._detailItem?.trailer) this._trailer(this._detailItem.trailer); return; }
     if ((el = t('[data-np]'))) { const [a, v] = el.dataset.np.split(':'); this._control(a, v); return; }
     if (t('[data-npclose]')) { this._v.npFull = false; this._renderNP(true); return; }
@@ -3761,7 +3776,8 @@ class PlexCenterCardEditor extends HTMLElement {
         ${st.divider ? col('divider_color', 'Divider color', '#2196f3', false, 'Section text color') : ''}
         <label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsible"${s.collapsible ? ' checked' : ''}>Collapsible, with a header bar</label>
         ${s.collapsible ? `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsed"${s.collapsed ? ' checked' : ''}>Start collapsed</label>` : ''}`)}
-      ${sub('items', 'Layout', `${sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
+      ${sub('items', 'Layout', `${id === 'continue' ? sel('layout', 'Layout', [['', this._eds().startsWith('phone') ? 'Row (phones\' default)' : 'Banner, one at a time (tablets\' default)'], ['banner', 'Banner, one at a time'], ['row', 'Row'], ['list', 'Column']])
+          : sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
         ${sl('show', 'Items to show (0 = the screen\'s Posters across; half for Fanart rows)', 0, 20, 0, '')}
         ${chk('scroll', 'Scroll to see more items', false)}
         ${sel('auto', 'Auto Rotate', [['', 'Off'], ['scroll', 'Ticker (scrolls on its own)'], ['fade', 'Fade (fades to the next set)']])}
@@ -4074,7 +4090,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._panel('home', 'mdi:home-variant', 'Home', this._homeBody())}
       <div class="plce-gh">Sections</div>
       ${this._panel('sec-watching', 'mdi:account-eye', 'Watching now', this._watchBody())}
-      ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', this._profile(this._visualSubs('continue'), 'continue'))}
+      ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', this._profile(`${this._secStyleBody('continue', 'visual')}${this._secStyleBody('continue', 'rest')}`, 'row:continue'))}
       ${this._panel('sec-recent', 'mdi:new-box', 'Recently Added', this._secPanel('recent'))}
       ${this._panel('sec-soon', 'mdi:calendar-clock', 'Coming Soon', this._secPanel('soon'))}
       ${this._panel('sec-hub', 'mdi:plex', 'Plex rows', this._secPanel('hub'))}

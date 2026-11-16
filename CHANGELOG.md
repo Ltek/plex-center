@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.16.55
+
+**New** (Continue watching)
+- **Layout per screen**: *Banner, one at a time* (the tablets' default), *Row* (the phones' default) or *Column*.
+  Row and Column work like the other sections: items to show, scroll, auto-rotate (ticker or fade), header, and
+  Content Visuals (Poster / Fanart / Fanart – fade). The banner can auto-rotate too (the next title every N
+  seconds; it pauses while the pointer is on it).
+- **Mark watched** on the banner, after a confirmation. *Mark watched / unwatched* in a title's details asks first
+  too.
+
+**Changed**
+- Continue watching's panel has the same Screen Profile as the rows (Section Title, Header, Layout, Text Lines,
+  Content Visuals, Reset).
+
 ## v2026.11.16.54
 
 **Changed** (every section panel)
