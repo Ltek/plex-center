@@ -35,7 +35,7 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 @callback
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
-    for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters):
+    for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
@@ -129,7 +129,9 @@ async def ws_config(hass: HomeAssistant, connection, msg) -> None:
         card_version = (await hass.async_add_executor_job(card_file, Path(__file__).parent / "frontend" / "plex-center-card.js"))[2]
     except OSError:
         pass
-    connection.send_result(msg["id"], {"version": VERSION, "card_version": card_version, "entry_id": entry.entry_id, "server_id": conn.server_id, "tvs": tvs,
+    from .arr import arr_available  # noqa: PLC0415
+
+    connection.send_result(msg["id"], {"version": VERSION, "card_version": card_version, "arr": arr_available(hass), "entry_id": entry.entry_id, "server_id": conn.server_id, "tvs": tvs,
                                        "libraries": libraries, "integrations": sorted(found), "upcoming_sensors": upcoming})
 
 
@@ -173,6 +175,20 @@ async def ws_items(hass: HomeAssistant, connection, msg) -> None:
                 "more": len(items) >= msg["size"]}
 
     await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/calendar", vol.Required("start"): str, vol.Required("end"): str})
+@websocket_api.async_response
+async def ws_calendar(hass: HomeAssistant, connection, msg) -> None:
+    """Upcoming episodes and movie releases between start and end, from Home Assistant's Sonarr / Radarr."""
+    from .arr import async_calendar, parse_range  # noqa: PLC0415
+
+    try:
+        start, end = parse_range(msg["start"], msg["end"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_format", str(err))
+        return
+    connection.send_result(msg["id"], await async_calendar(hass, start, end))
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/letters", vol.Optional("entry_id"): str, vol.Optional("tv"): str,

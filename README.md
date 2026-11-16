@@ -16,6 +16,7 @@ One integration, with its Dashboard card included: no login, no tokens in the br
 | or the **[Android TV (ADB)](https://www.home-assistant.io/integrations/androidtv/)** integration | the same without PiPup (no exact seek) |
 | optional: Plex Web / Plex HTPC | played on directly through Plex's own remote control |
 | optional: **upcoming-media sensors** (Radarr / Sonarr) | the *Coming Soon* sections, found automatically |
+| optional: **[Sonarr](https://www.home-assistant.io/integrations/sonarr/)** / **[Radarr](https://www.home-assistant.io/integrations/radarr/)** integrations | the **Calendar** page (upcoming episodes; movies in cinemas, digital, Blu-ray). Plex Center reuses their address and API key; the key stays in Home Assistant |
 
 **PiPup setup:** on each TV, turn on media session access and allow clicks in Plex (ha-pipup's gear icon →
 *Advanced install*, or `install.sh --media --click com.plexapp.android <tv-ip>`).
@@ -38,7 +39,7 @@ type: custom:plex-center-card
 ```
 
 Everything else is in the card's editor: which TVs it offers, the TV picker (buttons, dropdown or hidden),
-libraries, Home rows, now-playing views (Watching now, side panel), layout and look.
+libraries, Home rows, the Calendar, now-playing views (Watching now, side panel), screens, controls layout and look.
 
 ## Actions
 

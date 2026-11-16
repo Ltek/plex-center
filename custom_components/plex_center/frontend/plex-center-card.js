@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.46
+// Version: v2026.11.16.47
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.46';
+const BUILD_NUMBER = 'v2026.11.16.47';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -302,6 +302,10 @@ const DEFAULTS = {
   slim_position: 'bottom',
   slim_controls: 'toggle',
   watching_tvs: 'all',
+  calendar: true,
+  calendar_view: 'month',
+  week_start: 'mon',
+  calendar_max: 4,
   show_title: true,
   watching_libraries: true,
   panel_when: 'always',
@@ -636,8 +640,8 @@ function plexAsUmc(it) {
 const PLEX_LINE_DEFAULTS = { title_default: '$title', line1_default: '$episode', line2_default: '$release', line3_default: '$number - $rating - $runtime', line4_default: '$genres' };
 
 /** Tabs in the user's order: [{id: 'home'} | library]. tab_order holds 'home' and library titles; new ones are appended. */
-function tabOrder(c, libs) {
-  const all = [{ id: 'home', title: 'Home' }, ...libs.map((l) => ({ ...l, id: l.title }))];
+function tabOrder(c, libs, calendar = false) {
+  const all = [{ id: 'home', title: 'Home' }, ...(calendar ? [{ id: 'calendar', key: 'calendar', title: 'Calendar', type: 'calendar' }] : []), ...libs.map((l) => ({ ...l, id: l.title }))];
   const want = (Array.isArray(c.tab_order) ? c.tab_order : []).filter((id) => all.some((t) => t.id === id));
   return [...want.map((id) => all.find((t) => t.id === id)), ...all.filter((t) => !want.includes(t.id))];
 }
@@ -680,7 +684,7 @@ function addRecent(q) {
   try { localStorage.setItem(RECENT_KEY, JSON.stringify([q, ...recentSearches().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 8))); } catch { /* */ }
 }
 
-const tabIcon = (t, c = {}) => (c.page_icons?.[t.id]) || (t.id === 'home' ? 'mdi:home' : t.type === 'movie' ? 'mdi:movie-open' : t.type === 'show' ? 'mdi:television-classic' : 'mdi:folder-play');
+const tabIcon = (t, c = {}) => (c.page_icons?.[t.id]) || (t.id === 'calendar' ? 'mdi:calendar-month' : t.id === 'home' ? 'mdi:home' : t.type === 'movie' ? 'mdi:movie-open' : t.type === 'show' ? 'mdi:television-classic' : 'mdi:folder-play');
 const isPortrait = () => (typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)').matches : true);
 /** The config the card renders with: the current screen's settings, under the names the renderer reads. */
 function screenOf(phone, portrait) { return `${phone ? 'phone' : 'tablet'}_${portrait ? 'portrait' : 'landscape'}`; }
@@ -837,6 +841,63 @@ const CARD_CSS = `
   color: var(--secondary-text-color); }
 .plc-tab.on { color: var(--primary-text-color); background: var(--plc-bg2); box-shadow: inset 0 -2px 0 var(--plc-a); }
 .plc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+/* calendar */
+.plc-cal-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
+.plc-cal-title { display: flex; align-items: center; gap: 10px; font-size: 1.35em; font-weight: 800; }
+.plc-cal-title ha-icon { --mdc-icon-size: 26px; color: var(--plc-a); }
+.plc-cal-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.plc-cal-views { display: inline-flex; border: 1px solid var(--divider-color, #444); border-radius: 999px; overflow: hidden; }
+.plc-cal-views button { border: none; background: none; color: var(--secondary-text-color); font: inherit; font-size: .85em; font-weight: 600; padding: 6px 12px; cursor: pointer; }
+.plc-cal-views button.on { background: color-mix(in srgb, var(--plc-a) 20%, transparent); color: var(--primary-text-color); }
+.plc-cal-filters { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.plc-cal-lbl { font-size: .7em; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--secondary-text-color); margin: 0 4px 0 8px; }
+.plc-cal-lbl:first-child { margin-left: 0; }
+.plc-cal-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--divider-color, #444); background: none;
+  color: var(--primary-text-color); font: inherit; font-size: .8em; cursor: pointer; }
+.plc-cal-pill.on { border-color: var(--plc-a); background: color-mix(in srgb, var(--plc-a) 14%, transparent); }
+.plc-cal-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.plc-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.plc-cal-dow { text-align: center; font-size: .7em; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--secondary-text-color); padding: 4px 0; }
+.plc-cal-cell { min-height: 104px; padding: 4px; border-radius: 8px; background: var(--plc-bg2); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.plc-cal-cell.out { opacity: .45; }
+.plc-cal-cell.today { box-shadow: inset 0 0 0 2px var(--plc-a); }
+.plc-cal-num { align-self: flex-end; border: none; background: none; color: var(--secondary-text-color); font: inherit; font-size: .8em; font-weight: 700; cursor: pointer; padding: 0 2px; }
+.plc-cal-cell.today .plc-cal-num { color: var(--plc-a); }
+.plc-cal-evs { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.plc-cal-block { display: block; width: 100%; text-align: left; border: none; border-left: 3px solid var(--c); border-radius: 4px; padding: 3px 5px; font: inherit; font-size: .72em;
+  font-weight: 600; color: var(--primary-text-color); background: color-mix(in srgb, var(--c) 26%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.plc-cal-block span { opacity: .75; font-weight: 500; }
+.plc-cal-block b, .plc-cal-card b { color: var(--c); }
+.plc-cal-block.has { background: color-mix(in srgb, var(--c) 12%, transparent); }
+.plc-cal-block:hover { filter: brightness(1.2); }
+.plc-cal-more { border: none; background: none; color: var(--secondary-text-color); font: inherit; font-size: .7em; text-align: left; cursor: pointer; padding: 0 4px; }
+.plc-cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.plc-cal-wcol { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 6px; border-radius: 10px; background: var(--plc-bg2); }
+.plc-cal-wcol.today { box-shadow: inset 0 0 0 2px var(--plc-a); }
+.plc-cal-whead { display: flex; align-items: baseline; gap: 6px; border: none; background: none; color: var(--secondary-text-color); font: inherit; cursor: pointer; padding: 0 2px 4px; }
+.plc-cal-whead b { font-size: 1.3em; color: var(--primary-text-color); }
+.plc-cal-wcol.today .plc-cal-whead b { color: var(--plc-a); }
+.plc-cal-empty { color: var(--secondary-text-color); text-align: center; opacity: .5; }
+.plc-cal-card { position: relative; display: flex; gap: 8px; align-items: flex-start; width: 100%; text-align: left; border: none; border-left: 3px solid var(--c); border-radius: 8px;
+  padding: 6px; background: color-mix(in srgb, var(--c) 10%, var(--card-background-color, #1c1c1c)); color: inherit; font: inherit; cursor: pointer; min-width: 0; }
+.plc-cal-card:hover { filter: brightness(1.12); }
+.plc-cal-poster { flex: none; width: 40px; aspect-ratio: 2 / 3; border-radius: 4px; background: #222 center / cover no-repeat; display: flex; align-items: center; justify-content: center; }
+.plc-cal-card.big .plc-cal-poster { width: 64px; }
+.plc-cal-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 18px; }
+.plc-cal-txt .plc-t { font-size: .88em; }
+.plc-cal-txt .plc-s { font-size: .76em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plc-cal-ok { position: absolute; top: 6px; right: 6px; --mdc-icon-size: 16px; color: #22c55e; }
+.plc-cal-daylist { display: flex; flex-direction: column; gap: 8px; }
+.plc-cal-daylist .plc-cal-card { padding: 10px; }
+.plc-cal-daylist .plc-cal-txt .plc-t { font-size: 1.05em; }
+.plc-cq { position: relative; }
+.plc-cq-art { height: 160px; background: center / cover no-repeat; border-radius: 16px 16px 0 0; }
+.plc-cq-art + .plc-detail-body .plc-cq-head { margin-top: -60px; }
+.plc-cq-head { display: flex; gap: 14px; align-items: flex-end; }
+.plc-cq-poster { flex: none; width: 92px; aspect-ratio: 2 / 3; border-radius: 8px; background: #222 center / cover no-repeat; box-shadow: 0 6px 18px rgba(0,0,0,.6); }
+.plc-cq .plc-eyebrow ha-icon { --mdc-icon-size: 14px; }
+.plc-cal-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.plc-cal-chip { padding: 2px 8px; border-radius: 999px; font-size: .75em; font-weight: 600; color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
 .plc-note { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: .88em;
   background: color-mix(in srgb, var(--plc-a) 14%, transparent); border-left: 3px solid var(--plc-a); }
 .plc-note.err { background: color-mix(in srgb, var(--error-color, #db4437) 14%, transparent); border-left-color: var(--error-color, #db4437); }
@@ -1436,7 +1497,7 @@ class PlexCenterCard extends HTMLElement {
       const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
       x0 = null;
       if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-      const ids = tabOrder(this._c, this._libraries()).map((t) => (t.id === 'home' ? 'home' : t.key));
+      const ids = tabOrder(this._c, this._libraries(), this._calOn()).map((t) => (t.id === 'home' ? 'home' : t.key));
       const i = Math.max(0, ids.findIndex((id) => id === this._v.tab || this._libraries().find((l) => l.key === id)?.title === this._v.tab));
       const next = ids[(i + (dx < 0 ? 1 : -1) + ids.length) % ids.length];
       Object.assign(this._v, { tab: next, detail: null, genre: '', decade: '', rating: '', short: false });
@@ -1537,15 +1598,15 @@ class PlexCenterCard extends HTMLElement {
     } else if (cur && mode !== 'hidden') picker = `<span class="plc-chip${cls} on" title="${esc(tvLabel(cur))}">${face(cur)}</span>`;
     const title = this._c.title === undefined ? DEFAULTS.title : this._c.title;
     const libs = this._libraries();
-    if (this._v.tab !== 'home' && this._conf && !libs.some((l) => l.key === this._v.tab || l.title === this._v.tab)) this._v.tab = 'home';
+    if (this._v.tab !== 'home' && this._conf && !(this._v.tab === 'calendar' && this._calOn()) && !libs.some((l) => l.key === this._v.tab || l.title === this._v.tab)) this._v.tab = 'home';
     const on = (l) => this._v.tab === l.key || this._v.tab === l.title;
-    const v = this._v, inLib = v.tab !== 'home';
+    const v = this._v, inLib = v.tab !== 'home' && v.tab !== 'calendar';
     const style = cfg(this._c, 'surprise_style'), icon = cfg(this._c, 'surprise_icon') || DEFAULTS.surprise_icon;
     const label = cfg(this._c, 'surprise_label') || DEFAULTS.surprise_label;
     const searchIcon = cfg(this._c, 'search_mode') === 'icon';
     const tabsMode = cfg(this._c, 'tabs_mode') || 'tabs';
     const popItems = inLib ? this._popItems() : [];
-    const ordered = tabOrder(this._c, libs);
+    const ordered = tabOrder(this._c, libs, this._calOn());
     const curTab = v.tab === 'home' ? { id: 'home', title: 'Home' } : ordered.find((t) => t.id !== 'home' && on(t)) || { id: 'home', title: 'Home' };
     const tabsHtml = tabsMode === 'bottom' ? ''
       : tabsMode === 'button' ? `<button class="plc-icon-btn plc-menubtn" data-tabmenu title="${esc(curTab.title)}"><ha-icon icon="${tabIcon(curTab, this._c)}"></ha-icon></button>`
@@ -1614,9 +1675,9 @@ class PlexCenterCard extends HTMLElement {
   /** Tabs menu: Home and each library. */
   _tabMenu(anchor) {
     const v = this._v, libs = this._libraries();
-    this._menu(anchor, 'Go to', tabOrder(this._c, libs).map((t) => {
+    this._menu(anchor, 'Go to', tabOrder(this._c, libs, this._calOn()).map((t) => {
       const id = t.id === 'home' ? 'home' : t.key, on = t.id === 'home' ? v.tab === 'home' : (v.tab === t.key || v.tab === t.title);
-      return { icon: tabIcon(t, this._c), label: t.title, sub: t.id === 'home' ? 'Continue watching, new and coming soon' : t.type === 'movie' ? 'Movies' : t.type === 'show' ? 'TV shows' : '', on, attr: `data-tab="${esc(id)}"` };
+      return { icon: tabIcon(t, this._c), label: t.title, sub: t.id === 'home' ? 'Continue watching, new and coming soon' : t.id === 'calendar' ? 'Upcoming episodes and movie releases' : t.type === 'movie' ? 'Movies' : t.type === 'show' ? 'TV shows' : '', on, attr: `data-tab="${esc(id)}"` };
     }));
   }
 
@@ -1765,7 +1826,7 @@ class PlexCenterCard extends HTMLElement {
   /** Active-filter chips (optional): one removable chip per filter in use. */
   _chipsHtml() {
     const v = this._v;
-    if (v.tab === 'home') return '';
+    if (v.tab === 'home' || v.tab === 'calendar') return '';
     const sortNames = { added: 'Recently added', released: 'Release date', year: 'Year', rating: 'Rating', viewed: 'Last watched' };
     const f = peek(`filters:${this._tv()?.id}:${this._libKey()}`) || {};
     const name = (list, val) => (list || []).find((o) => String(o.value) === String(val))?.title || val;
@@ -1857,7 +1918,7 @@ class PlexCenterCard extends HTMLElement {
     if (this._err) { main.innerHTML = `<div class="plc-msg err">${esc(this._err)}</div>`; return; }
     if (!this._conf) { main.innerHTML = '<div class="plc-msg">Loading…</div>'; return; }
     if (!this._tvs().length) { main.innerHTML = '<div class="plc-msg">No TVs yet: add them in Plex Center\'s options (Settings → Devices & services → Plex Center → Configure).</div>'; return; }
-    if (this._v.tab === 'home') this._renderHome(main); else this._renderLibrary(main);
+    if (this._v.tab === 'home') this._renderHome(main); else if (this._v.tab === 'calendar') this._renderCalendar(main); else this._renderLibrary(main);
     if (this._built) this._renderNP();
   }
 
@@ -2179,7 +2240,7 @@ Object.assign(PlexCenterCard.prototype, {
   /** The A–Z bar: only for an A → Z list without search or filters (the letter counts are for the whole library). */
   _jumpOn() {
     const v = this._v;
-    return !!cfg(this._c, 'jump_bar') && v.tab !== 'home' && v.sort === 'title' && !v.query && !v.unwatched && !v.genre && !v.decade && !v.rating && !v.short;
+    return !!cfg(this._c, 'jump_bar') && v.tab !== 'home' && v.tab !== 'calendar' && v.sort === 'title' && !v.query && !v.unwatched && !v.genre && !v.decade && !v.rating && !v.short;
   },
   async _paintJump(main, active = null) {
     const slot = main.querySelector('.plc-jump-slot');
@@ -2664,6 +2725,7 @@ Object.assign(PlexCenterCard.prototype, {
       else if (t('.plc-menu-i')) setTimeout(() => this._closeMenu());
     }
     if (t('[data-reload]')) { try { location.reload(); } catch { /* */ } return; }
+    if (this._v.tab === 'calendar' || t('.plc-cq')) { if (this._calClick(t)) return; }
     if ((el = t('[data-tabmenu]'))) { this._tabMenu(el); return; }
     if ((el = t('[data-fmenu]'))) { this._fMenu(el, el.dataset.fmenu); return; }
     if ((el = t('[data-fset]'))) {
@@ -3029,7 +3091,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['calendar', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; this._onScreen = () => { if (this._rendered) this._render(); }; }
@@ -3120,6 +3182,19 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._check('lock', 'Lock to the default TV (wall tablet: no picker, no TV choice)')}`;
   }
 
+  /** Sonarr / Radarr found and the Calendar page on: the page shows in the page lists. */
+  _calAvail() { return !!this._c('calendar') && Object.values(this._conf?.arr || {}).some(Boolean); }
+
+  _calendarBody() {
+    const arr = this._conf?.arr || {}, found = Object.entries(arr).filter(([, v]) => v).map(([k]) => k[0].toUpperCase() + k.slice(1));
+    return `<p class="plce-hint">Upcoming episodes (Sonarr) and movie releases (Radarr: in cinemas, digital, Blu-ray), read through Home Assistant's own Sonarr
+        and Radarr integrations. ${found.length ? `Found: <b>${esc(found.join(', '))}</b>.` : '<b>Neither is set up</b>: add Home Assistant\'s Sonarr or Radarr integration (Settings → Devices &amp; services).'}</p>
+      ${this._check('calendar', 'Show the Calendar page (in the page menu)')}
+      ${this._select('calendar_view', 'Opens in', [['month', 'Month'], ['week', 'Week'], ['day', 'Day']])}
+      ${this._select('week_start', 'Weeks start on', [['mon', 'Monday'], ['sun', 'Sunday']])}
+      ${this._slider('calendar_max', 'Entries per day in Month view (then “+N more”)', 1, 10, '')}`;
+  }
+
   /** Which controls layout the panel is editing: 'main' (Standard) or 'lay:<id>'. */
   _editKey() { const k = this._hdrFor; return k && k.startsWith('lay:') && this._config.layouts?.[k.slice(4)] ? k : 'main'; }
 
@@ -3180,7 +3255,7 @@ class PlexCenterCardEditor extends HTMLElement {
     return `<p class="plce-hint">Each TV shows what its Plex user is shared. Untick libraries this card should hide.</p>
       ${libs.length ? `<div class="plce-checks">${libs.map((l) => `<label class="plce-check"><input type="checkbox" data-lib="${esc(l.title)}"${!pick.length || pick.includes(l.title) ? ' checked' : ''}>${esc(l.title)}</label>`).join('')}</div>` : '<p class="plce-hint">Libraries appear once Plex Center has loaded.</p>'}
       <div class="plce-group">Page order</div>
-      <div class="plce-list">${tabOrder(this._config, libs.filter((l) => !pick.length || pick.includes(l.title))).map((t, i, all) => `<div class="plce-item"><div class="plce-item-h">
+      <div class="plce-list">${tabOrder(this._config, libs.filter((l) => !pick.length || pick.includes(l.title)), this._calAvail()).map((t, i, all) => `<div class="plce-item"><div class="plce-item-h">
         <ha-icon icon="${t.id === 'home' ? 'mdi:home-variant' : 'mdi:folder-play-outline'}"></ha-icon><span class="plce-name">${esc(t.title)}</span>
         <button class="plce-act" data-tup="${i}" title="Move left"${i ? '' : ' disabled'}><ha-icon icon="mdi:arrow-up"></ha-icon></button>
         <button class="plce-act" data-tdown="${i}" title="Move right"${i < all.length - 1 ? '' : ' disabled'}><ha-icon icon="mdi:arrow-down"></ha-icon></button></div></div>`).join('')}</div>
@@ -3491,7 +3566,7 @@ class PlexCenterCardEditor extends HTMLElement {
     };
     const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
     const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
-    const pages = tabOrder(this._config, libs);
+    const pages = tabOrder(this._config, libs, this._calAvail());
     const shown = SHOWN.screen, shownName = (SCREENS.find(([sc]) => sc === shown) || [])[1];
     const warn = shown && cfg(this._config, `${shown}_tabs`) !== 'tabs'
       ? `<p class="plce-hint plce-warn">The preview shows <b>${esc(shownName)}</b>, where the page menu is a ${cfg(this._config, `${shown}_tabs`) === 'button' ? 'icon button' : 'chip'}: these styles show
@@ -3554,6 +3629,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._panel('layout', 'mdi:responsive', 'Screens', this._layoutBody())}
       ${this._panel('header', 'mdi:page-layout-header-footer', 'Controls layout', this._headerBody())}
       ${this._panel('home', 'mdi:home-variant', 'Home', this._homeBody())}
+      ${this._panel('calendar', 'mdi:calendar-month', 'Calendar', this._calendarBody())}
       ${this._panel('np', 'mdi:play-box-outline', 'Now playing', this._npBody())}
       ${this._panel('style', 'mdi:palette', 'Appearance', this._styleBody())}
       <div class="plce-gh">Apps &amp; devices</div>
@@ -3704,7 +3780,7 @@ class PlexCenterCardEditor extends HTMLElement {
     const tabIds = () => { const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
       const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
       const pick = this._config.libraries || [];
-      return tabOrder(this._config, libs.filter((l) => !pick.length || pick.includes(l.title))).map((t) => t.id); };
+      return tabOrder(this._config, libs.filter((l) => !pick.length || pick.includes(l.title)), this._calAvail()).map((t) => t.id); };
     const moveTab = (i, d) => { const o = tabIds(); const j = i + d; if (j < 0 || j >= o.length) return; [o[i], o[j]] = [o[j], o[i]]; this._config.tab_order = o; this._emit(); this._render(); };
     all('[data-tup]', (b) => b.addEventListener('click', () => moveTab(Number(b.dataset.tup), -1)));
     all('[data-tdown]', (b) => b.addEventListener('click', () => moveTab(Number(b.dataset.tdown), 1)));
@@ -3808,6 +3884,171 @@ class PlexCenterCardEditor extends HTMLElement {
 
 PlexCenterCard._test = { layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
+
+
+// ---------------------------------------------------------------------------------------------------- calendar
+/** Release types: label, icon, colour. */
+const CAL_TYPES = { cinema: ['In cinemas', 'mdi:ticket-outline', '#ef4444'], digital: ['Digital', 'mdi:cloud-download-outline', '#a855f7'],
+  physical: ['Blu-ray', 'mdi:disc', '#22c55e'], episode: ['Episodes', 'mdi:television-classic', '#38bdf8'] };
+const CAL_STATUS = [['all', 'All', ''], ['monitored', 'Monitored', '#818cf8'], ['missing', 'Missing', '#f59e0b'], ['available', 'Available', '#22c55e']];
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const parseYmd = (s) => { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); };
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+/** The local day of an entry (movie releases are dates; episodes are times). */
+const evDay = (ev) => (ev.all_day ? String(ev.at).slice(0, 10) : ymd(new Date(ev.at)));
+const sxe = (ev) => (ev.kind === 'episode' && ev.season != null ? `S${String(ev.season).padStart(2, '0')}E${String(ev.episode).padStart(2, '0')}` : '');
+
+Object.assign(PlexCenterCard.prototype, {
+  /** The Calendar page shows when it's on and Home Assistant has Sonarr or Radarr. */
+  _calOn() { return !!cfg(this._c, 'calendar') && Object.values(this._conf?.arr || {}).some(Boolean); },
+
+  /** The days the current view covers: [first day, number of days]. */
+  _calRange() {
+    const v = this._v, view = v.calView || cfg(this._c, 'calendar_view'), at = v.calDate ? parseYmd(v.calDate) : new Date();
+    const ws = cfg(this._c, 'week_start') === 'sun' ? 0 : 1, back = (d) => (d.getDay() - ws + 7) % 7;
+    if (view === 'day') return [new Date(at.getFullYear(), at.getMonth(), at.getDate()), 1, view];
+    if (view === 'week') { const d = new Date(at.getFullYear(), at.getMonth(), at.getDate()); return [addDays(d, -back(d)), 7, view]; }
+    const first = new Date(at.getFullYear(), at.getMonth(), 1);
+    return [addDays(first, -back(first)), 42, 'month'];
+  },
+
+  async _renderCalendar(main) {
+    const v = this._v, [start, days, view] = this._calRange(), at = v.calDate ? parseYmd(v.calDate) : new Date();
+    const key = `cal:${ymd(start)}:${days}`;
+    const title = view === 'month' ? at.toLocaleDateString([], { month: 'long', year: 'numeric' })
+      : view === 'week' ? `${start.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${addDays(start, 6).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
+        : at.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    const types = new Set(v.calTypes || []), status = v.calStatus || 'all';
+    const pill = (attr, on, color, label) => `<button class="plc-cal-pill${on ? ' on' : ''}" ${attr}>${color ? `<span class="plc-cal-dot" style="background:${color}"></span>` : ''}${esc(label)}</button>`;
+    main.innerHTML = `<div class="plc-cal" data-view="${view}">
+      <div class="plc-cal-bar"><div class="plc-cal-title"><ha-icon icon="mdi:calendar-month"></ha-icon><span>${esc(title)}</span></div>
+        <div class="plc-cal-nav"><div class="plc-cal-views">${['month', 'week', 'day'].map((x) => `<button class="${x === view ? 'on' : ''}" data-calview="${x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}</div>
+          <button class="plc-chip" data-calnav="today">Today</button><button class="plc-icon-btn" data-calnav="-1" title="Back"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+          <button class="plc-icon-btn" data-calnav="1" title="Forward"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div></div>
+      <div class="plc-cal-filters"><span class="plc-cal-lbl">Show</span>${pill('data-caltype=""', !types.size, '', 'All')}${Object.entries(CAL_TYPES).map(([k, [n, , c]]) => pill(`data-caltype="${k}"`, types.has(k), c, n)).join('')}
+        <span class="plc-cal-lbl">Status</span>${CAL_STATUS.map(([k, n, c]) => pill(`data-calstatus="${k}"`, status === k, c, n)).join('')}</div>
+      <div class="plc-cal-note"></div><div class="plc-cal-body"><div class="plc-msg">Loading…</div></div></div>`;
+    let res;
+    try {
+      const end = addDays(start, days);
+      res = await cached(this._hass, key, 120000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: end.toISOString() }));
+    } catch (e) { main.querySelector('.plc-cal-body').innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; return; }
+    if (!main.isConnected || this._v.tab !== 'calendar') return;
+    const bad = Object.entries(res.sources || {}).filter(([, st]) => st === 'error').map(([a]) => a[0].toUpperCase() + a.slice(1));
+    main.querySelector('.plc-cal-note').innerHTML = bad.length ? `<div class="plc-note err"><ha-icon icon="mdi:alert-circle-outline"></ha-icon><span>${esc(bad.join(' and '))} couldn't be reached: its entries are missing.</span></div>` : '';
+    const today = ymd(new Date());
+    const keep = (ev) => (!types.size || types.has(ev.release)) && (status === 'all' || (status === 'monitored' && ev.monitored)
+      || (status === 'available' && ev.has_file) || (status === 'missing' && !ev.has_file && ev.monitored && evDay(ev) <= today));
+    const evs = (res.events || []).filter(keep);
+    this._calEvents = evs;
+    const byDay = new Map();
+    evs.forEach((ev, i) => { const d = evDay(ev); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(i); });
+    const body = main.querySelector('.plc-cal-body');
+    body.innerHTML = view === 'month' ? this._calMonth(start, at, byDay, today) : view === 'week' ? this._calWeek(start, byDay, today) : this._calDay(ymd(start), byDay);
+  },
+
+  _calTime(ev) { return ev.all_day ? '' : new Date(ev.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: cfg(this._c, 'clock') !== '24' }); },
+  _calColor(ev) { return (CAL_TYPES[ev.release] || CAL_TYPES.episode)[2]; },
+  _calBadge(ev) { return ev.premiere === 'series' ? 'Premiere' : ev.premiere === 'season' ? 'New season' : ev.finale ? 'Finale' : ''; },
+
+  _calMonth(start, at, byDay, today) {
+    const max = Math.max(1, Number(cfg(this._c, 'calendar_max')) || 4), month = at.getMonth();
+    const dows = Array.from({ length: 7 }, (_, i) => addDays(start, i).toLocaleDateString([], { weekday: 'short' }));
+    const cells = Array.from({ length: 42 }, (_, i) => {
+      const d = addDays(start, i), k = ymd(d), list = byDay.get(k) || [];
+      const blocks = list.slice(0, max).map((n) => {
+        const ev = this._calEvents[n], badge = this._calBadge(ev);
+        return `<button class="plc-cal-block${ev.has_file ? ' has' : ''}" style="--c:${this._calColor(ev)}" data-calev="${n}" title="${esc(`${ev.title} ${sxe(ev)}`)}">${badge ? `<b>${esc(badge)}</b> ` : ''}${esc(ev.title)}${sxe(ev) ? ` <span>${sxe(ev)}</span>` : ''}</button>`;
+      }).join('');
+      return `<div class="plc-cal-cell${d.getMonth() !== month ? ' out' : ''}${k === today ? ' today' : ''}"><button class="plc-cal-num" data-calday="${k}">${d.getDate()}</button>
+        <div class="plc-cal-evs">${blocks}${list.length > max ? `<button class="plc-cal-more" data-calday="${k}">+${list.length - max} more</button>` : ''}</div></div>`;
+    }).join('');
+    return `<div class="plc-cal-grid">${dows.map((n) => `<div class="plc-cal-dow">${esc(n)}</div>`).join('')}${cells}</div>`;
+  },
+
+  _calCard(n, big = false) {
+    const ev = this._calEvents[n], c = this._calColor(ev), badge = this._calBadge(ev), [label, icon] = CAL_TYPES[ev.release] || CAL_TYPES.episode;
+    const sub = ev.kind === 'episode' ? [sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : label;
+    return `<button class="plc-cal-card${big ? ' big' : ''}${ev.has_file ? ' has' : ''}" style="--c:${c}" data-calev="${n}">
+      <span class="plc-cal-poster"${ev.poster ? ` style="background-image:url('${cssUrl(ev.poster)}')"` : ''}>${ev.poster ? '' : `<ha-icon icon="${icon}"></ha-icon>`}</span>
+      <span class="plc-cal-txt"><span class="plc-t">${esc(ev.title)}</span><span class="plc-s">${badge ? `<b>${esc(badge)}</b> ` : ''}${esc(sub)}</span>
+        <span class="plc-s">${esc([this._calTime(ev) || (ev.kind === 'movie' ? label : ''), ev.network || ev.studio].filter(Boolean).join(' · '))}</span>
+        ${big && ev.overview ? `<span class="plc-lrow-sum">${esc(ev.overview)}</span>` : ''}</span>
+      ${ev.has_file ? '<ha-icon class="plc-cal-ok" icon="mdi:check-circle" title="Available"></ha-icon>' : ''}</button>`;
+  },
+
+  _calWeek(start, byDay, today) {
+    return `<div class="plc-cal-week">${Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(start, i), k = ymd(d), list = byDay.get(k) || [];
+      return `<div class="plc-cal-wcol${k === today ? ' today' : ''}"><button class="plc-cal-whead" data-calday="${k}"><span>${esc(d.toLocaleDateString([], { weekday: 'short' }))}</span><b>${d.getDate()}</b></button>
+        ${list.map((n) => this._calCard(n)).join('') || '<div class="plc-cal-empty">—</div>'}</div>`;
+    }).join('')}</div>`;
+  },
+
+  _calDay(k, byDay) {
+    const list = byDay.get(k) || [];
+    return list.length ? `<div class="plc-cal-daylist">${list.map((n) => this._calCard(n, true)).join('')}</div>` : '<div class="plc-msg">Nothing on this day.</div>';
+  },
+
+  /** Quick look: fanart, poster, what and when, status, overview, Trailer, and Play / Open when it is in Plex. */
+  async _calQuick(n) {
+    const ev = this._calEvents?.[n];
+    if (!ev) return;
+    const [label, icon] = CAL_TYPES[ev.release] || CAL_TYPES.episode, c = this._calColor(ev), badge = this._calBadge(ev);
+    const when = `${(ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}${this._calTime(ev) ? ` · ${this._calTime(ev)}` : ''}`;
+    const chips = [ev.has_file ? ['Available', '#22c55e'] : ev.monitored ? (evDay(ev) <= ymd(new Date()) ? ['Missing', '#f59e0b'] : ['Monitored', '#818cf8']) : ['Not monitored', '#9ca3af'],
+      badge && [badge, c]].filter(Boolean).map(([t, col]) => `<span class="plc-cal-chip" style="--c:${col}">${esc(t)}</span>`).join('');
+    const meta = [ev.year, ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : '', ev.certification, (ev.genres || []).join(', ')].filter(Boolean).join(' · ');
+    this._sheet(`<div class="plc-cq">${ev.fanart ? `<div class="plc-cq-art" style="background-image:url('${cssUrl(ev.fanart)}')"></div>` : ''}
+      <div class="plc-detail-body"><div class="plc-cq-head">${ev.poster ? `<div class="plc-cq-poster" style="background-image:url('${cssUrl(ev.poster)}')"></div>` : ''}
+        <div><div class="plc-eyebrow" style="color:${c}"><ha-icon icon="${icon}"></ha-icon> ${esc(label === 'Episodes' ? 'Episode' : label)} · ${esc(when)}</div>
+          <h2 class="plc-big">${esc(ev.title)}</h2>${ev.kind === 'episode' ? `<div class="plc-meta">${esc([sxe(ev), ev.episode_title].filter(Boolean).join(' · '))}</div>` : ''}
+          <div class="plc-cal-chips">${chips}</div></div></div>
+        ${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${ev.overview ? `<div>${esc(ev.overview)}</div>` : ''}
+        <div class="plc-btns"><span data-calplex></span><button class="plc-btn" data-caltrailer><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>
+          <button class="plc-btn" data-close-sheet>Close</button></div></div></div>`, null, false);
+    this._calQuickEv = ev;
+    try {   // is it in Plex? (same title, the right type, the year for movies)
+      const res = await ws(this._hass, 'search', { tv: this._tv()?.id, query: ev.title, limit: 10 });
+      const want = ev.kind === 'movie' ? 'movie' : 'show', low = (x) => String(x || '').toLowerCase();
+      const hit = (res || []).flatMap((g) => g.items || []).find((it) => it.type === want && low(it.title) === low(ev.title) && (want !== 'movie' || !ev.year || !it.year || Math.abs(it.year - ev.year) <= 1));
+      const slot = this._root.querySelector('.plc-cq [data-calplex]');
+      if (!hit || !slot) return;
+      this._calHit = hit;
+      const tgt = this._target();
+      slot.outerHTML = `<button class="plc-btn main" data-calplay><ha-icon icon="mdi:${tgt === 'local' ? 'open-in-new' : 'play'}"></ha-icon>${tgt === 'local' ? 'Open on this device'
+        : `${hit.type === 'show' ? 'Play next episode' : 'Play'} on ${esc(tvLabel(tgt))}`}</button>`;
+    } catch { /* not found: Trailer only */ }
+  },
+
+  _calClick(t) {
+    let el;
+    const v = this._v, rerender = () => this._renderCalendar(this._root.querySelector('.plc-main'));
+    if ((el = t('[data-calview]'))) { v.calView = el.dataset.calview; rerender(); return true; }
+    if ((el = t('[data-calnav]'))) {
+      const dir = el.dataset.calnav, view = v.calView || cfg(this._c, 'calendar_view'), at = v.calDate ? parseYmd(v.calDate) : new Date();
+      if (dir === 'today') v.calDate = null;
+      else if (view === 'month') v.calDate = ymd(new Date(at.getFullYear(), at.getMonth() + Number(dir), 1));
+      else v.calDate = ymd(addDays(at, Number(dir) * (view === 'week' ? 7 : 1)));
+      rerender(); return true;
+    }
+    if ((el = t('[data-caltype]'))) {
+      const k = el.dataset.caltype, s2 = new Set(v.calTypes || []);
+      if (!k) s2.clear(); else if (s2.has(k)) s2.delete(k); else s2.add(k);
+      v.calTypes = [...s2]; rerender(); return true;
+    }
+    if ((el = t('[data-calstatus]'))) { v.calStatus = el.dataset.calstatus; rerender(); return true; }
+    if ((el = t('[data-calday]'))) { v.calView = 'day'; v.calDate = el.dataset.calday; rerender(); return true; }
+    if ((el = t('[data-calev]'))) { this._calQuick(Number(el.dataset.calev)); return true; }
+    if (t('[data-caltrailer]')) {
+      const ev = this._calQuickEv;
+      if (ev) this._playTrailer({ title: ev.title, year: ev.year, trailer: ev.trailer ? `https://www.youtube.com/watch?v=${ev.trailer}` : null });
+      return true;
+    }
+    if (t('[data-calplay]')) { const it = this._calHit; this._closeSheet(true); if (it) this._play(it, it.type === 'show' ? 'next' : 'play'); return true; }
+    return false;
+  },
+});
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);
 if (!customElements.get(EDITOR_TAG)) customElements.define(EDITOR_TAG, PlexCenterCardEditor);

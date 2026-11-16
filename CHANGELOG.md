@@ -1,5 +1,29 @@
 # Changelog
 
+## v2026.11.16.47
+
+**After updating: restart Home Assistant** (the integration has a new command).
+
+**New**
+- **Calendar page** (in the page menu, after Home): upcoming episodes from Sonarr and movie releases from Radarr,
+  each release its own entry (**in cinemas**, **digital**, **Blu-ray**). Read through Home Assistant's own Sonarr
+  and Radarr integrations (their address and API key; the key never leaves Home Assistant); duplicates across
+  instances (e.g. 1080p and 4K Radarr) are shown once.
+  - **Month** (6 weeks, colour-coded entries, *New season* / *Premiere* / *Finale*, “+N more”), **Week** (a column
+    per day with poster cards) and **Day** (a list with posters and overviews); *Today* and back / forward.
+  - **Filters** with coloured dots: In cinemas, Digital, Blu-ray, Episodes; status: Monitored, Missing,
+    Available.
+  - **Quick look** on tap: fanart and poster, type, date and time, status, network / studio, runtime, genres,
+    overview; **Trailer** (Radarr's trailer, else a YouTube search) on the TV or this device; **Play** / **Play next
+    episode** when the title is in Plex.
+  - A note when Sonarr or Radarr can't be reached.
+  - Editor: *Calendar* panel: show the page, the view it opens in, first day of the week, entries per day.
+- Integration: `plex_center/calendar` websocket command; `plex_center/config` reports which of Sonarr / Radarr
+  are set up.
+
+The design and features follow Prismarr's calendar; the code is Plex Center's own (Prismarr is AGPL-3.0, Plex
+Center MIT: nothing was copied).
+
 ## v2026.11.16.46
 
 **Changed** (Controls layout panel)
