@@ -41,18 +41,80 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def _register_card(hass: HomeAssistant) -> None:
+    """Serve the bundled card and load it on every dashboard.
+
+    The card is a Dashboard resource (Settings → Dashboards → Resources), the way cards normally load, so HA has
+    it before a dashboard renders (an extra frontend module can arrive after the dashboard, most often in the
+    Companion App on a cold start: "Custom element doesn't exist"). Its URL changes with the build. Only when
+    resources can't be edited (dashboards in YAML mode, Lovelace not set up, an error) is it loaded as an extra
+    frontend module instead; never both, so it never loads twice.
+    """
     js = Path(__file__).parent / "frontend" / "plex-center-card.js"
     if not js.is_file():
         return
     try:
-        from homeassistant.components.frontend import add_extra_js_url  # noqa: PLC0415
+        bust = int(js.stat().st_mtime)
+    except OSError:
+        bust = 0
+    url = f"{CARD_URL}?v={VERSION}&m={bust}"
+    data = hass.data.setdefault(f"{DOMAIN}_card", {})
+    try:
+        from homeassistant.components import frontend  # noqa: PLC0415
 
         from .card_view import PlexCardView  # noqa: PLC0415
 
-        hass.http.register_view(PlexCardView(js))
-        add_extra_js_url(hass, f"{CARD_URL}?v={VERSION}")
+        if not data.get("view"):
+            hass.http.register_view(PlexCardView(js))
+            data["view"] = True
     except Exception as err:  # noqa: BLE001 - the integration still works without the bundled card
+        _LOGGER.warning("Plex Center card not served: %s", err)
+        return
+    try:
+        as_resource = await _register_resource(hass, url)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("Could not add the Plex Center card as a dashboard resource (%s); loading it as a frontend module", err)
+        as_resource = False
+    try:
+        if as_resource:
+            if data.get("url"):
+                frontend.remove_extra_js_url(hass, data["url"])
+                data["url"] = None
+            return
+        if data.get("url") != url:
+            if data.get("url"):
+                frontend.remove_extra_js_url(hass, data["url"])
+            frontend.add_extra_js_url(hass, url)
+            data["url"] = url
+    except Exception as err:  # noqa: BLE001 - no frontend (tests, safe mode): the integration still works
         _LOGGER.warning("Plex Center card not registered: %s", err)
+
+
+async def _register_resource(hass: HomeAssistant, url: str) -> bool:
+    """Add or update the card's Dashboard resource. False when resources can't be edited (YAML mode, no Lovelace)."""
+    try:
+        from homeassistant.components.lovelace.const import LOVELACE_DATA  # noqa: PLC0415
+        from homeassistant.components.lovelace.resources import ResourceStorageCollection  # noqa: PLC0415
+    except ImportError:
+        return False
+    ll = hass.data.get(LOVELACE_DATA)
+    res = getattr(ll, "resources", None)
+    if not isinstance(res, ResourceStorageCollection):
+        return False
+    if not res.loaded:
+        await res.async_load()
+        res.loaded = True
+    ours = [i for i in res.async_items() if str(i.get("url", "")).split("?", 1)[0] == CARD_URL]
+    if not ours:
+        await res.async_create_item({"res_type": "module", "url": url})
+        _LOGGER.info("Added the Plex Center card as a dashboard resource: %s", url)
+    else:
+        first, *extra = ours
+        if first.get("url") != url or first.get("type") != "module":
+            await res.async_update_item(first["id"], {"res_type": "module", "url": url})
+            _LOGGER.info("Updated the Plex Center card resource: %s", url)
+        for item in extra:
+            await res.async_delete_item(item["id"])
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PlexCenterConfigEntry) -> bool:

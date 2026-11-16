@@ -1,5 +1,20 @@
 # Changelog
 
+## v2026.11.16.43
+
+**After updating: restart Home Assistant, then close and reopen the Companion App.**
+
+**Fixed**
+- **The card often failed to load in the Android Companion App** ("Configuration error" / *Custom element doesn't
+  exist*) while it worked in a PC browser. The card was loaded only as an extra frontend module, which Home
+  Assistant fetches after the frontend starts, so a dashboard could render before the card was defined, most often
+  in the phone app on a cold start. The card is now a **Dashboard resource** (Settings → Dashboards → Resources,
+  type *JavaScript module*), the way cards normally load, at `/plex_center/plex-center-card.js?v=<version>&m=<file
+  time>`. Plex Center keeps that one entry up to date on every start (a new build updates its URL) and removes
+  duplicates of it. Only when resources can't be edited (dashboards in YAML mode, Lovelace not set up, or an
+  error) is the card still loaded as an extra frontend module; it is never loaded both ways.
+- `lovelace` is now in the manifest's `after_dependencies`, so the resources exist when the card is registered.
+
 ## v2026.11.16.42
 
 **Removed**
