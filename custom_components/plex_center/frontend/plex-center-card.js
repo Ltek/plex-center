@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.40
+// Version: v2026.11.16.41
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.40';
+const BUILD_NUMBER = 'v2026.11.16.41';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1558,7 +1558,20 @@ class PlexCenterCard extends HTMLElement {
   }
 
   /** The Plex session playing on a TV (matched by the TV's Plex user). */
-  _sessionFor(tv) { return (peek('sessions') || []).find((x) => x.user && tv?.user && x.user === tv.user) || null; }
+  /** Which of our TVs a Plex session is playing on: by the TV's Plex user, else the player's name, else what the TV is playing. */
+  _tvForSession(x) {
+    if (!x) return null;
+    const tvs = this._tvs(), low = (v) => String(v || '').trim().toLowerCase(), squash = (v) => low(v).replace(/[^a-z0-9]/g, '');
+    const byUser = tvs.filter((t) => t.user && x.user && low(t.user) === low(x.user));
+    if (byUser.length === 1) return byUser[0];
+    const player = squash(x.player);
+    const byPlayer = player && tvs.filter((t) => [t.name, t.id, t.pipup, t.adb, t.plex_client].some((n) => { const q = squash(n); return q.length >= 3 && (q.includes(player) || player.includes(q)); }));
+    if (byPlayer && byPlayer.length === 1) return byPlayer[0];
+    const title = low(x.show || x.title);
+    const byTitle = tvs.filter((t) => { const np = nowPlaying(this._hass, t); return np?.live && title && low(np.title) === title; });
+    return byTitle.length === 1 ? byTitle[0] : (byUser[0] || null);
+  }
+  _sessionFor(tv) { return tv ? (peek('sessions') || []).find((x) => this._tvForSession(x)?.id === tv.id) || null : null; }
 
   /** Move menu: the other TVs; picking one moves what's playing there. */
   _moveMenu(anchor) {
@@ -1596,7 +1609,7 @@ class PlexCenterCard extends HTMLElement {
     const cur = this._tv(), sessions = peek('sessions') || [];
     const icons = this._c.tv_icons || {};
     this._menu(anchor, 'Play on', this._tvs().map((t) => {
-      const s2 = sessions.find((x) => x.user && t.user && x.user === t.user);
+      const s2 = this._sessionFor(t);
       const sub = s2 ? `${s2.user} · ${s2.show || s2.title}` : realOn(this._hass, t) ? 'Playing' : (t.state ? t.state[0].toUpperCase() + t.state.slice(1) : '');
       const dotCls = realOn(this._hass, t) ? 'play' : (t.state && !['off', 'unavailable', 'standby'].includes(t.state) ? 'on' : '');
       return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub, on: t === cur, attr: `data-tvpick="${esc(t.id)}"`, dot: `<span class="plc-dot ${dotCls}"></span>` };
@@ -1937,7 +1950,7 @@ class PlexCenterCard extends HTMLElement {
     if (!sec) return;
     const s = peek('sessions') || [];
     if (!s.length) { sec.innerHTML = ''; return; }
-    const tvFor = (x) => this._tvs().find((t) => t.user && x.user && t.user === x.user);
+    const tvFor = (x) => this._tvForSession(x);
     sec.innerHTML = `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div><div class="plc-watch">${s.map((x) => {
       const tv = tvFor(x);
       return `
@@ -2448,7 +2461,7 @@ Object.assign(PlexCenterCard.prototype, {
   /** Up next for the episode playing on the card's TV: { cur, next, left } once the details are known; fetches them once. */
   _upNext(np = nowPlaying(this._hass, this._tv())) {
     if (!cfg(this._c, 'up_next') || !np?.live) return null;
-    const tv = np.tv, sess = (peek('sessions') || []).find((x) => x.user && tv.user && x.user === tv.user && x.type === 'episode');
+    const tv = np.tv, s1 = this._sessionFor(tv), sess = s1?.type === 'episode' ? s1 : null;
     if (!sess?.key) return null;
     const key = `item:${tv.id}:${sess.key}`, d = peek(key);
     if (!d) {
@@ -2499,7 +2512,7 @@ Object.assign(PlexCenterCard.prototype, {
     const others = this._tvs();
     const sessions = peek('sessions') || [];
     const who = (t) => {
-      const s = sessions.find((x) => x.user && t.user && x.user === t.user);
+      const s = this._sessionFor(t);
       if (s) return `${s.user} · ${s.show || s.title}`;
       return realOn(this._hass, t) ? 'playing' : (t.state || '');
     };

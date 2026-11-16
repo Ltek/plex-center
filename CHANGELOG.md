@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.16.41
+
+**Fixed**
+- **The slim bar still showed on Home next to Watching now** when the TV's Plex user in Plex Center differed from
+  the user in the Plex session (for example a Shield set to another user while *MediaRoom* watches on it). A
+  session is now matched to a TV by the Plex user, else by the player's name (e.g. *SHIELD* → Shield), else by what
+  that TV is playing. The same matching is used for the Watching now remote button, *Move to a different TV*,
+  Up next and the TV menus.
+
 ## v2026.11.16.40
 
 **Changed**
