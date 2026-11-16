@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.16.48
+
+**New**
+- **Calendar on phones** (like nzb360): a compact month (each day with up to three coloured dots and a
+  *New season* / *Premiere* / *Finale* label), the chosen day outlined, and that day's entries as cards below:
+  a colour bar, poster, title, what it is (`2x01 – 2x08` for a season dropped at once, with a count ring) and when.
+  Back / forward move a month; the filters sit behind a filter button. Tap a card for the quick look.
+- **Coming Soon from Sonarr / Radarr**: a Coming Soon section's *Source* can be **Plex Center: Sonarr / Radarr**
+  (each show's next episode and each movie's next release, the next 60 days, with *New season* flags, Radarr's
+  trailer and the release type). It is also used automatically when there are no upcoming-media sensors. With this,
+  the *Sonarr Upcoming Media* and *Radarr Upcoming Media* integrations are no longer needed.
+
 ## v2026.11.16.47
 
 **After updating: restart Home Assistant** (the integration has a new command).

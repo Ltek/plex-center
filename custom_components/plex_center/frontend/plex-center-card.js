@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.47
+// Version: v2026.11.16.48
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.47';
+const BUILD_NUMBER = 'v2026.11.16.48';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -841,6 +841,36 @@ const CARD_CSS = `
   color: var(--secondary-text-color); }
 .plc-tab.on { color: var(--primary-text-color); background: var(--plc-bg2); box-shadow: inset 0 -2px 0 var(--plc-a); }
 .plc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 10px; }
+/* calendar: phones */
+.plc-calp-head { display: flex; align-items: center; gap: 10px; margin: 4px 0 10px; }
+.plc-calp-head > ha-icon { --mdc-icon-size: 30px; color: var(--plc-a); }
+.plc-calp-ttl { display: flex; flex-direction: column; line-height: 1.15; }
+.plc-calp-ttl span { font-size: .8em; color: var(--plc-a); }
+.plc-calp-ttl b { font-size: 1.35em; }
+.plc-calp-legend { display: inline-flex; gap: 4px; }
+.plc-calp-legend i { width: 9px; height: 9px; border-radius: 50%; }
+.plc-calp-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.plc-calp-cell { position: relative; aspect-ratio: 1 / 1; min-width: 0; border: none; border-radius: 8px; background: var(--plc-bg2); color: inherit; font: inherit;
+  display: flex; flex-direction: column; align-items: stretch; padding: 3px 4px; cursor: pointer; text-align: left; overflow: hidden; }
+.plc-calp-cell.out { opacity: .45; }
+.plc-calp-cell.today { box-shadow: inset 0 0 0 1.5px var(--plc-a); }
+.plc-calp-cell.sel { background: color-mix(in srgb, var(--plc-a) 35%, var(--plc-bg2)); box-shadow: inset 0 0 0 2px var(--primary-text-color); }
+.plc-calp-num { align-self: flex-end; font-size: .8em; font-weight: 600; color: var(--secondary-text-color); }
+.plc-calp-cell.sel .plc-calp-num, .plc-calp-cell.today .plc-calp-num { color: var(--primary-text-color); font-weight: 800; }
+.plc-calp-lbl { font-size: .58em; font-weight: 700; line-height: 1.05; }
+.plc-calp-dots { margin-top: auto; display: flex; gap: 2px; justify-content: center; padding-bottom: 2px; }
+.plc-calp-dots i { width: 6px; height: 6px; border-radius: 50%; }
+.plc-calp-sep { height: 4px; border-radius: 2px; margin: 12px 4px; background: var(--plc-bg2); }
+.plc-calp-list { display: flex; flex-direction: column; gap: 10px; }
+.plc-calp-card { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: none; border-radius: 14px; text-align: left;
+  background: color-mix(in srgb, var(--c) 8%, var(--plc-bg2)); color: inherit; font: inherit; cursor: pointer; }
+.plc-calp-bar { flex: none; width: 4px; align-self: stretch; border-radius: 2px; background: var(--c); }
+.plc-calp-card .plc-cal-poster { width: 52px; }
+.plc-calp-card .plc-cal-txt .plc-t { font-size: 1em; }
+.plc-calp-card .plc-cal-txt .plc-s { font-size: .82em; white-space: normal; }
+.plc-calp-ring { flex: none; margin-left: auto; width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--c); display: flex; align-items: center; justify-content: center;
+  font-weight: 800; color: var(--c); }
+.plc-calp-card .plc-cal-ok { position: static; margin-left: auto; }
 /* calendar */
 .plc-cal-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 4px 0 10px; }
 .plc-cal-title { display: flex; align-items: center; gap: 10px; font-size: 1.35em; font-weight: 800; }
@@ -2041,6 +2071,8 @@ class PlexCenterCard extends HTMLElement {
       if (!sec) continue;
       const st = secStyle(this._c, id);
       const sensors = st.s.sensors?.length ? this._sensorKinds(st.s.sensors) : upcomingSensors(this._hass, this._conf);
+      const arrOk = Object.values(this._conf?.arr || {}).some(Boolean);
+      if (arrOk && (st.s.source === 'arr' || !sensors.length)) { this._paintUpcomingArr(id, sec, st); continue; }
       if (!sensors.length) { sec.remove(); continue; }
       const pool = this._sensorItems(sensors).sort((a, b) => String(a.airdate).localeCompare(String(b.airdate)));
       const mine = this._byKind(id, pool), items = mine.slice(0, st.max);
@@ -2048,6 +2080,34 @@ class PlexCenterCard extends HTMLElement {
       sig(sec, JSON.stringify([JSON.stringify(this._c.home_style?.[id] || {}), cfg(this._c, 'image_style'), this._v.secOpen?.[id], this._v.secKind?.[id],
         JSON.stringify(this._kinds(id)), items.map((x) => [x.title, x.poster, x.lines])]), () => { this._fill(id, sec, SEC_TYPE_TITLE.upcoming, mine.length, items, id); });
     }
+  }
+
+  /** Coming Soon from Sonarr / Radarr (through Plex Center): each show's next episode and each movie's next release. */
+  async _paintUpcomingArr(id, sec, st) {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    let res;
+    try { res = await cached(this._hass, `cal:soon:${ymd(start)}`, 300000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: addDays(start, 60).toISOString() })); }
+    catch { return; }
+    if (!sec.isConnected) return;
+    const now = Date.now(), seen = new Set(), pool = [];
+    for (const ev of res.events || []) {
+      if (!ev.all_day && new Date(ev.at).getTime() < now - 3 * 3600 * 1000) continue;   // already aired
+      const k = ev.kind === 'episode' ? `tv:${ev.tvdb || ev.title}` : `mv:${ev.tmdb || ev.title}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const day = (ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+      const time = this._calTime(ev), rel = (CAL_TYPES[ev.release] || CAL_TYPES.episode)[0];
+      const badge = this._calBadge(ev);
+      pool.push({ title: ev.title, poster: ev.poster || ev.fanart || '', art: ev.fanart || ev.poster || '', type: ev.kind === 'movie' ? 'movie' : 'episode',
+        trailer: ev.trailer ? `https://www.youtube.com/watch?v=${ev.trailer}` : null, airdate: ev.at, summary: ev.overview || '', year: ev.year,
+        umc: { summary: ev.overview || '' }, flag: !!badge,
+        lines: [ev.title, ev.kind === 'episode' ? [badge, sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : rel, [day, time].filter(Boolean).join(' · '),
+          [ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : ''].filter(Boolean).join(' · ')] });
+    }
+    const mine = this._byKind(id, pool), items = mine.slice(0, st.max);
+    this._lists.set(id, items);
+    sig(sec, JSON.stringify(['arr', JSON.stringify(this._c.home_style?.[id] || {}), cfg(this._c, 'image_style'), this._v.secOpen?.[id], this._v.secKind?.[id],
+      JSON.stringify(this._kinds(id)), items.map((x) => [x.title, x.poster, x.lines])]), () => { this._fill(id, sec, SEC_TYPE_TITLE.upcoming, mine.length, items, id); });
   }
 
   /** Search every library from Home: results grouped by library replace the sections while there's a query. */
@@ -3347,8 +3407,15 @@ class PlexCenterCardEditor extends HTMLElement {
       : st.type === 'recent'
       ? `<div class="plce-row"><label class="lbl">Source</label><select data-sid="${esc(id)}" data-sk="source"><option value="">Plex Center (each TV's Plex user, recommended)</option>${
         sensorsAll.map((x) => `<option value="${esc(x)}"${s.source === x ? ' selected' : ''}>${esc(fn(x))}</option>`).join('')}</select></div>`
-      : `<div class="plce-group first">Sensors</div><p class="plce-hint">None ticked = automatic (the Radarr / Sonarr upcoming sensors).</p>
+      : (() => {
+        const arrOk = Object.values(this._conf?.arr || {}).some(Boolean);
+        const src = arrOk ? `<div class="plce-row"><label class="lbl">Source</label><select data-sid="${esc(id)}" data-sk="source">
+          <option value="">Upcoming-media sensors (Sonarr / Radarr through Plex Center when there are none)</option>
+          <option value="arr"${s.source === 'arr' ? ' selected' : ''}>Plex Center: Sonarr / Radarr (recommended)</option></select></div>` : '';
+        if (s.source === 'arr') return `${src}<p class="plce-hint">Each show's next episode and each movie's next release, for the next 60 days.</p>`;
+        return `${src}<div class="plce-group first">Sensors</div><p class="plce-hint">None ticked = automatic (the Radarr / Sonarr upcoming sensors).</p>
         <div class="plce-tvlist">${sensorsAll.map((x) => `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-ssens="${esc(x)}"${(s.sensors || []).includes(x) ? ' checked' : ''}>${esc(fn(x))}</label>`).join('') || '<p class="plce-hint">No upcoming-media sensors found.</p>'}</div>`;
+      })();
     const sub = (k, t, body) => this._sub(`${k}:${id}`, t, body);
     return `${source}<div class="plce-row"><label class="lbl">Title</label><input type="text" data-sid="${esc(id)}" data-sk="title" value="${esc(s.title || '')}" placeholder="${esc(SEC_TYPE_TITLE[st.type] || '')}"></div>
       ${st.type === 'plexhub' ? '' : `${sel('kind', 'Show', [['', 'Movies and TV'], ['movie', 'Movies'], ['show', 'TV']])}
@@ -3896,6 +3963,18 @@ const parseYmd = (s) => { const [y, m, d] = String(s).split('-').map(Number); re
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 /** The local day of an entry (movie releases are dates; episodes are times). */
 const evDay = (ev) => (ev.all_day ? String(ev.at).slice(0, 10) : ymd(new Date(ev.at)));
+const nx = (ev) => (ev.season != null ? `${ev.season}x${String(ev.episode).padStart(2, '0')}` : '');
+/** One day's entries with a show's episodes on that day grouped: [{ n: first index, idx: [all], count }]. */
+function calGroups(idx, events) {
+  const out = [], seen = new Map();
+  for (const n of idx) {
+    const ev = events[n];
+    const k = ev.kind === 'episode' ? `tv:${ev.tvdb || ev.title}` : `n:${n}`;
+    if (seen.has(k)) { const g = out[seen.get(k)]; g.idx.push(n); g.count++; continue; }
+    seen.set(k, out.length); out.push({ n, idx: [n], count: 1 });
+  }
+  return out;
+}
 const sxe = (ev) => (ev.kind === 'episode' && ev.season != null ? `S${String(ev.season).padStart(2, '0')}E${String(ev.episode).padStart(2, '0')}` : '');
 
 Object.assign(PlexCenterCard.prototype, {
@@ -3913,6 +3992,7 @@ Object.assign(PlexCenterCard.prototype, {
   },
 
   async _renderCalendar(main) {
+    if (this._phone) { this._renderCalPhone(main); return; }
     const v = this._v, [start, days, view] = this._calRange(), at = v.calDate ? parseYmd(v.calDate) : new Date();
     const key = `cal:${ymd(start)}:${days}`;
     const title = view === 'month' ? at.toLocaleDateString([], { month: 'long', year: 'numeric' })
@@ -3945,6 +4025,63 @@ Object.assign(PlexCenterCard.prototype, {
     evs.forEach((ev, i) => { const d = evDay(ev); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(i); });
     const body = main.querySelector('.plc-cal-body');
     body.innerHTML = view === 'month' ? this._calMonth(start, at, byDay, today) : view === 'week' ? this._calWeek(start, byDay, today) : this._calDay(ymd(start), byDay);
+  },
+
+  /** Phones (like nzb360): a compact month with dots, and the chosen day's entries as cards below. */
+  async _renderCalPhone(main) {
+    const v = this._v, at = v.calDate ? parseYmd(v.calDate) : new Date();
+    const ws2 = cfg(this._c, 'week_start') === 'sun' ? 0 : 1, first = new Date(at.getFullYear(), at.getMonth(), 1);
+    const start = addDays(first, -((first.getDay() - ws2 + 7) % 7)), today = ymd(new Date());
+    const types = new Set(v.calTypes || []), status = v.calStatus || 'all';
+    const pill = (attr, on, color, label) => `<button class="plc-cal-pill${on ? ' on' : ''}" ${attr}>${color ? `<span class="plc-cal-dot" style="background:${color}"></span>` : ''}${esc(label)}</button>`;
+    main.innerHTML = `<div class="plc-cal plc-calp"><div class="plc-calp-head"><ha-icon icon="mdi:calendar-month"></ha-icon>
+        <div class="plc-calp-ttl"><span>Calendar</span><b>${esc(at.toLocaleDateString([], { month: 'long', year: 'numeric' }))}</b></div>
+        <span class="plc-calp-legend">${Object.values(CAL_TYPES).map(([, , c]) => `<i style="background:${c}"></i>`).join('')}</span><span class="plc-sp"></span>
+        <button class="plc-icon-btn" data-calfilt title="Filters"><ha-icon icon="mdi:filter-variant"></ha-icon></button>
+        <button class="plc-icon-btn" data-calnav="-1" title="Last month"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+        <button class="plc-icon-btn" data-calnav="1" title="Next month"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div>
+      ${v.calFilt ? `<div class="plc-cal-filters">${pill('data-caltype=""', !types.size, '', 'All')}${Object.entries(CAL_TYPES).map(([k, [n, , c]]) => pill(`data-caltype="${k}"`, types.has(k), c, n)).join('')}
+        ${CAL_STATUS.map(([k, n, c]) => pill(`data-calstatus="${k}"`, status === k, c, n)).join('')}</div>` : ''}
+      <div class="plc-cal-note"></div><div class="plc-calp-body"><div class="plc-msg">Loading…</div></div></div>`;
+    let res;
+    try { res = await cached(this._hass, `cal:${ymd(start)}:42`, 120000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: addDays(start, 42).toISOString() })); }
+    catch (e) { main.querySelector('.plc-calp-body').innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; return; }
+    if (!main.isConnected || this._v.tab !== 'calendar') return;
+    const bad = Object.entries(res.sources || {}).filter(([, st]) => st === 'error').map(([a]) => a[0].toUpperCase() + a.slice(1));
+    main.querySelector('.plc-cal-note').innerHTML = bad.length ? `<div class="plc-note err"><ha-icon icon="mdi:alert-circle-outline"></ha-icon><span>${esc(bad.join(' and '))} couldn't be reached.</span></div>` : '';
+    const keep = (ev) => (!types.size || types.has(ev.release)) && (status === 'all' || (status === 'monitored' && ev.monitored)
+      || (status === 'available' && ev.has_file) || (status === 'missing' && !ev.has_file && ev.monitored && evDay(ev) <= today));
+    this._calEvents = (res.events || []).filter(keep);
+    const byDay = new Map();
+    this._calEvents.forEach((ev, i) => { const d = evDay(ev); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(i); });
+    if (!v.calSel || parseYmd(v.calSel).getMonth() !== at.getMonth()) v.calSel = at.getMonth() === new Date().getMonth() && at.getFullYear() === new Date().getFullYear() ? today : ymd(first);
+    this._calPhoneByDay = byDay;
+    this._paintCalPhone(main, start, at, today);
+  },
+  _paintCalPhone(main, start, at, today) {
+    const byDay = this._calPhoneByDay, sel = this._v.calSel, month = at.getMonth();
+    const dows = Array.from({ length: 7 }, (_, i) => addDays(start, i).toLocaleDateString([], { weekday: 'short' }));
+    const cells = Array.from({ length: 42 }, (_, i) => {
+      const d = addDays(start, i), k = ymd(d), list = (byDay.get(k) || []).map((n) => this._calEvents[n]);
+      const label = list.find((ev) => ev.premiere) ? (list.find((ev) => ev.premiere === 'series') ? 'Premiere' : 'New season') : list.find((ev) => ev.finale) ? 'Finale' : '';
+      const labelEv = list.find((ev) => ev.premiere || ev.finale);
+      const dots = list.slice(0, 3).map((ev) => `<i style="background:${this._calColor(ev)}"></i>`).join('');
+      return `<button class="plc-calp-cell${d.getMonth() !== month ? ' out' : ''}${k === today ? ' today' : ''}${k === sel ? ' sel' : ''}" data-calsel="${k}">
+        <span class="plc-calp-num">${d.getDate()}</span>${label ? `<span class="plc-calp-lbl" style="color:${this._calColor(labelEv)}">${esc(label)}</span>` : ''}<span class="plc-calp-dots">${dots}</span></button>`;
+    }).join('');
+    const groups = calGroups(byDay.get(sel) || [], this._calEvents);
+    const cards = groups.map((g) => {
+      const ev = this._calEvents[g.n], last = this._calEvents[g.idx[g.idx.length - 1]], c = this._calColor(ev), badge = this._calBadge(ev);
+      const when = `${(ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}${this._calTime(ev) ? ` at ${this._calTime(ev)}` : ''}`;
+      const line2 = ev.kind === 'episode' ? (g.count > 1 ? `${nx(ev)} – ${nx(last)}` : [nx(ev), ev.episode_title].filter(Boolean).join(' • ')) : (CAL_TYPES[ev.release] || CAL_TYPES.episode)[0];
+      return `<button class="plc-calp-card" style="--c:${c}" data-calev="${g.n}"><span class="plc-calp-bar"></span>
+        <span class="plc-cal-poster"${ev.poster ? ` style="background-image:url('${cssUrl(ev.poster)}')"` : ''}></span>
+        <span class="plc-cal-txt"><span class="plc-t">${esc(ev.title)}${ev.year && ev.kind === 'episode' ? ` (${ev.year})` : ''}</span>
+          <span class="plc-s">${badge ? `<b>${esc(badge)}</b> ` : ''}${esc(line2)}</span><span class="plc-s">${esc(when)}</span></span>
+        ${g.count > 1 ? `<span class="plc-calp-ring">${g.count}</span>` : ev.has_file ? '<ha-icon class="plc-cal-ok" icon="mdi:check-circle"></ha-icon>' : ''}</button>`;
+    }).join('');
+    main.querySelector('.plc-calp-body').innerHTML = `<div class="plc-calp-grid">${dows.map((n) => `<div class="plc-cal-dow">${esc(n)}</div>`).join('')}${cells}</div>
+      <div class="plc-calp-sep"></div><div class="plc-calp-list">${cards || `<div class="plc-msg">Nothing on ${esc(parseYmd(sel).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }))}.</div>`}</div>`;
   },
 
   _calTime(ev) { return ev.all_day ? '' : new Date(ev.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: cfg(this._c, 'clock') !== '24' }); },
@@ -4024,11 +4161,19 @@ Object.assign(PlexCenterCard.prototype, {
   _calClick(t) {
     let el;
     const v = this._v, rerender = () => this._renderCalendar(this._root.querySelector('.plc-main'));
+    if ((el = t('[data-calsel]'))) {
+      v.calSel = el.dataset.calsel;
+      const main = this._root.querySelector('.plc-main'), at = v.calDate ? parseYmd(v.calDate) : new Date();
+      const ws2 = cfg(this._c, 'week_start') === 'sun' ? 0 : 1, first = new Date(at.getFullYear(), at.getMonth(), 1);
+      this._paintCalPhone(main, addDays(first, -((first.getDay() - ws2 + 7) % 7)), at, ymd(new Date()));
+      return true;
+    }
+    if (t('[data-calfilt]')) { v.calFilt = !v.calFilt; rerender(); return true; }
     if ((el = t('[data-calview]'))) { v.calView = el.dataset.calview; rerender(); return true; }
     if ((el = t('[data-calnav]'))) {
       const dir = el.dataset.calnav, view = v.calView || cfg(this._c, 'calendar_view'), at = v.calDate ? parseYmd(v.calDate) : new Date();
       if (dir === 'today') v.calDate = null;
-      else if (view === 'month') v.calDate = ymd(new Date(at.getFullYear(), at.getMonth() + Number(dir), 1));
+      else if (view === 'month' || this._phone) v.calDate = ymd(new Date(at.getFullYear(), at.getMonth() + Number(dir), 1));
       else v.calDate = ymd(addDays(at, Number(dir) * (view === 'week' ? 7 : 1)));
       rerender(); return true;
     }
