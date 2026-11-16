@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.16.46
+
+**Changed** (Controls layout panel)
+- An **In use** chip shows the layout the screen in the preview uses (Standard, Compact one row or ★ name).
+- **Opening the panel edits the layout in use** on the screen in the preview.
+- A small **Reset** chip next to *Editing* resets Standard to its built-in defaults (after a confirm); shown when
+  Standard has been changed.
+- Each item has an **icon for what it is** (page menu, search, genre, sort, TV picker, …) instead of the drag
+  lines.
+- **Colour-coded chips** in the locked list: the place (Header blue, Player header purple, Footer green, Filters
+  popup amber), then row, side and style in quieter styles.
+
 ## v2026.11.16.45
 
 **New**
