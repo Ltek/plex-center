@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.15.33
+// Version: v2026.11.16.34
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.15.33';
+const BUILD_NUMBER = 'v2026.11.16.34';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -89,6 +89,78 @@ function pageLook(c) {
   if (!out.page_show_icon && !out.page_show_label) out.page_show_label = true;
   return out;
 }
+/** Export: the page button style as text (page icons stay with the card: they name its own pages). */
+function exportPageStyle(c) {
+  const style = { page_style: PAGE_PRESETS[c.page_style] ? c.page_style : 'standard' };
+  if (Array.isArray(c.page_groups) && c.page_groups.length) style.page_groups = [...c.page_groups];
+  for (const k of PAGE_ALL) if (c[k] !== undefined) style[k] = c[k];
+  return { kind: 'plex-center/page-style', v: 1, style };
+}
+const HEX = (v) => (typeof v === 'string' && /^#[0-9a-f]{3,8}$/i.test(v.trim()) ? v.trim() : '');
+/** A Color Light Manager Button Style (flat, a { layers } stack, or the library envelope) → page style settings. */
+function fromClmButtonStyle(o) {
+  if (o && typeof o === 'object' && o.color_light_manager_button_styles !== undefined) {
+    const presets = Object.values(o.presets || {});
+    if (!presets.length) throw new Error('The Button Styles export has no styles in it.');
+    o = presets[0];
+  }
+  if (o && Array.isArray(o.layers)) o = Object.assign({}, ...o.layers.map((l) => l?.groups || {}));
+  else if (o && o.groups && typeof o.groups === 'object') o = o.groups;
+  const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  const out = { page_style: 'neon', page_show_icon: true, page_show_label: true, page_icon_pos: 'beside' };
+  const bg = o.button_style;
+  if (bg === 'transparent') { out.page_bg = 'transparent'; out.page_active_bg = 'transparent'; }
+  const bw = o.button_border_enabled ? Math.max(1, num(o.button_border_width, 1)) : 0;
+  out.page_border_width = bw;
+  if (bw && o.button_border_color_mode !== 'match' && HEX(o.button_border_color)) out.page_border_color = out.page_active_border_color = HEX(o.button_border_color);
+  const g = o.button_border_gradient || {};
+  out.page_grad = !!g.enabled;
+  if (g.enabled) {
+    const sd = g.sides || {}, on = ['top', 'bottom', 'left', 'right'].filter((x) => sd[x]);
+    out.page_grad_sides = on.length === 4 ? 'all' : on.join(',') === 'top,bottom' ? 'top_bottom' : on.includes('bottom') ? 'bottom' : on.includes('top') ? 'top' : 'top_bottom';
+    out.page_grad_width = Math.max(1, num(g.width, 1));
+    const mid = (g.stops || []).map((x) => x?.color).find((x) => x && x !== 'transparent');
+    if (HEX(mid)) out.page_grad_color = HEX(mid);   // "match" (the light's color) becomes the Accent
+  }
+  out.page_glow = !o.button_glow_enabled ? 'off' : o.button_glow_condition === 'always' ? 'always' : 'active';
+  if (o.button_glow_enabled) {
+    if (HEX(o.button_glow_color) && o.button_glow_color_mode !== 'match') out.page_glow_color = HEX(o.button_glow_color);
+    out.page_glow_blur = num(o.button_glow_blur, 14); out.page_glow_spread = num(o.button_glow_spread, 2);
+    out.page_glow_opacity = Math.round(Math.min(1, num(o.button_glow_opacity, 0.55) * num(o.button_glow_intensity, 1)) * 100);
+  }
+  out.page_shadow = !!o.button_shadow_enabled;
+  if (o.button_shadow_enabled) {
+    if (HEX(o.button_shadow_color)) out.page_shadow_color = HEX(o.button_shadow_color);
+    for (const k of ['x', 'y', 'blur', 'spread']) out[`page_shadow_${k}`] = num(o[`button_shadow_${k}`], PAGE_BASE[`page_shadow_${k}`]);
+    out.page_shadow_opacity = Math.round(Math.min(1, num(o.button_shadow_opacity, 0.35)) * 100);
+  }
+  if (num(o.button_font_size, 0) > 0) out.page_text_px = num(o.button_font_size, 14);
+  if (['400', '500', '600', '700', '800'].includes(String(o.button_name_weight))) out.page_weight = String(o.button_name_weight);
+  if (o.button_name_color_mode !== 'inherit' && HEX(o.button_name_color)) out.page_text_color = out.page_active_text_color = HEX(o.button_name_color);
+  if (num(o.button_icon_size, 0) > 0) out.page_icon_px = num(o.button_icon_size, 18);
+  if (o.button_icon_color_mode !== 'match' && HEX(o.button_icon_color)) out.page_icon_color = out.page_active_icon_color = HEX(o.button_icon_color);
+  if (o.button_border_radius !== undefined) out.page_radius = num(o.button_border_radius, 8);
+  if (num(o.button_height, 0) > 0) out.page_height = num(o.button_height, 36);
+  if (o.gap !== undefined) out.page_gap = num(o.gap, 6);
+  out.page_groups = PAGE_GROUPS.map(([gr]) => gr);
+  return out;
+}
+/** Import: our export, or a Color Light Manager Button Style. Returns the settings to apply (throws with a readable reason). */
+function importPageStyle(text) {
+  let o;
+  try { o = JSON.parse(String(text || '').trim()); } catch { throw new Error('That isn\'t valid JSON.'); }
+  if (!o || typeof o !== 'object') throw new Error('That isn\'t a style.');
+  let st;
+  if (o.kind === 'plex-center/page-style') st = { ...(o.style || {}) };
+  else if (Object.keys(o).some((k) => k.startsWith('button_')) || o.layers || o.groups || o.color_light_manager_button_styles !== undefined) st = fromClmButtonStyle(o);
+  else throw new Error('Not a Plex Center page style or a Color Light Manager Button Style.');
+  const out = {};
+  if (PAGE_PRESETS[st.page_style]) out.page_style = st.page_style;
+  if (Array.isArray(st.page_groups)) out.page_groups = st.page_groups.filter((g) => PAGE_GROUPS.some(([x]) => x === g));
+  for (const k of PAGE_ALL) if (st[k] !== undefined && st[k] !== '') out[k] = COLOR_DEFS[k] ? String(st[k]).replace(/[;{}<>]/g, '') : st[k];
+  return out;
+}
+
 /** Page buttons markup (the card and the editor's sample): items = [{ id, title, icon, on, attr }]. */
 function pageButtonsHtml(c, items) {
   const pl = pageLook(c), n = (k) => Number(pl[k]) || 0, pct = (k) => Math.max(0, Math.min(100, n(k)));
@@ -2661,6 +2733,16 @@ const EDITOR_CSS = `
         .plce-pgd > summary .chev { --mdc-icon-size: 22px; color: var(--accent-color, var(--ltek-c-accent)); transition: transform .15s; }
         .plce-pgd[open] > summary .chev { transform: rotate(90deg); }
         .plce-pg-body { padding-top: 8px; }
+        dialog.plce-dlg { border: none; border-radius: 14px; padding: 0; width: min(560px, 92vw); background: var(--card-background-color, #1c1c1c); color: var(--primary-text-color); }
+        .plce-dlg-in { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+        .plce-dlg-h { font-size: 16px; font-weight: 700; }
+        .plce-dlg-t { min-height: 220px; width: 100%; box-sizing: border-box; font: 12px/1.4 ui-monospace, monospace; padding: 8px; border-radius: 8px;
+          border: 1px solid var(--divider-color, #444); background: var(--secondary-background-color, #111); color: var(--primary-text-color); resize: vertical; }
+        .plce-dlg-msg { font-size: 12px; color: var(--secondary-text-color); min-height: 1em; }
+        .plce-dlg-msg.bad { color: var(--error-color, #db4437); }
+        .plce-dlg-b { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+        .plce-btn { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--divider-color, #555); background: transparent; color: var(--primary-text-color); font: inherit; cursor: pointer; }
+        .plce-btn.main { background: var(--accent-color, var(--ltek-c-accent)); border-color: transparent; color: var(--text-primary-color, #fff); }
         .plce-pg-sub { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--secondary-text-color); }
         .plce-chip ha-icon { --mdc-icon-size: 14px; }
         .plce-row { display: flex; align-items: center; gap: var(--ltek-sp-4); padding: var(--ltek-sp-1) 0; flex-wrap: wrap; justify-content: flex-start; }
@@ -3029,6 +3111,46 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._select('slim_controls', 'Remote buttons in the slim controls', [['toggle', 'Button to show / hide them'], ['shown', 'Always shown'], ['hidden', 'Hidden']])}`;
   }
 
+  /** Export / import dialog (design guide: native <dialog> in the top layer, a visible textarea, copy / paste with fallbacks). */
+  _styleDialog(mode) {
+    this.querySelector('dialog.plce-dlg')?.remove();
+    const exp = mode === 'export', text = exp ? JSON.stringify(exportPageStyle(this._config), null, 2) : '';
+    this.insertAdjacentHTML('beforeend', `<dialog class="plce-dlg"><style>dialog.plce-dlg::backdrop { background: rgba(0,0,0,.55); }</style>
+      <div class="plce-dlg-in"><div class="plce-dlg-h">${exp ? 'Export page button style' : 'Import page button style'}</div>
+      <p class="plce-hint">${exp ? 'Copy this text to use the same style on another Plex Center card. Page icons are not included.'
+        : 'Paste a Plex Center page style, or a <b>Color Light Manager Button Style</b> (its export): its background, borders, gradient, glow, shadow, text, icon and size become the page button settings. This replaces the current style; page icons stay.'}</p>
+      <textarea class="plce-dlg-t" spellcheck="false"${exp ? ' readonly' : ' placeholder="Paste the style here"'}>${esc(text)}</textarea><div class="plce-dlg-msg"></div>
+      <div class="plce-dlg-b">${exp ? '<button class="plce-btn" data-dcopy>Copy to clipboard</button>' : '<button class="plce-btn" data-dpaste>Paste from clipboard</button><button class="plce-btn main" data-dimport>Import</button>'}
+        <button class="plce-btn" data-dclose>Close</button></div></div></dialog>`);
+    const dlg = this.querySelector('dialog.plce-dlg'), ta = dlg.querySelector('textarea'), msg = (t, bad) => { const m = dlg.querySelector('.plce-dlg-msg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
+    const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); };
+    dlg.addEventListener('cancel', close);
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+    dlg.querySelector('[data-dclose]').addEventListener('click', close);
+    dlg.querySelector('[data-dcopy]')?.addEventListener('click', async (e) => {
+      ta.focus(); ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch { ok = false; }
+      if (!ok) { try { await navigator.clipboard.writeText(ta.value); ok = true; } catch { ok = false; } }
+      e.target.textContent = ok ? 'Copied ✓' : 'Press Ctrl/Cmd+C';
+    });
+    dlg.querySelector('[data-dpaste]')?.addEventListener('click', async () => {
+      try { ta.value = await navigator.clipboard.readText(); msg(''); } catch { ta.focus(); msg('Paste with Ctrl/Cmd+V.'); }
+    });
+    dlg.querySelector('[data-dimport]')?.addEventListener('click', () => {
+      let st;
+      try { st = importPageStyle(ta.value); } catch (err) { msg(err.message, true); return; }
+      for (const k of PAGE_ALL) delete this._config[k];
+      delete this._config.page_groups; delete this._config.page_style;
+      Object.assign(this._config, st);
+      this._open.add('ap-page');
+      this._emit(); this._render();
+      close();
+    });
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    if (exp) { ta.focus(); ta.select(); } else ta.focus();
+  }
+
   /** The sample page buttons at the top of Appearance → Page menu, drawn with the card's own styles. */
   _pageSample() {
     const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
@@ -3075,6 +3197,8 @@ class PlexCenterCardEditor extends HTMLElement {
       <p class="plce-hint">The page buttons (Page menu: Buttons, in the header or footer). Pick a preset; tick a group to set its own values, untick it to use the
         preset's. Colors left at <i>The preset</i> follow your theme and the Accent.</p>
       ${this._select('page_style', 'Preset', Object.entries(PAGE_PRESETS).map(([k, pr]) => [k, pr.name]))}
+      <div class="plce-row"><button class="plce-add" data-pmexport><ha-icon icon="mdi:export"></ha-icon>Export style</button>
+        <button class="plce-add" data-pmimport><ha-icon icon="mdi:import"></ha-icon>Import style</button></div>
       ${groups.size ? '<button class="plce-add" data-pmreset>Back to the preset (keeps the page icons)</button>' : ''}
       ${this._sub('pg-icons', 'Page icons', pages.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.title)}</label><ha-icon-picker data-pageicon="${esc(t.id)}" value="${esc((this._config.page_icons || {})[t.id] || '')}" placeholder="${esc(tabIcon(t))}"></ha-icon-picker></div>`).join('')
         || '<p class="plce-hint">The pages appear here once Plex Center is connected.</p>')}
@@ -3171,6 +3295,8 @@ class PlexCenterCardEditor extends HTMLElement {
       delete this._config.page_groups;
       this._emit(); this._render();
     }));
+    all('[data-pmexport]', (b) => b.addEventListener('click', () => this._styleDialog('export')));
+    all('[data-pmimport]', (b) => b.addEventListener('click', () => this._styleDialog('import')));
     all('[data-pgroup]', (el) => el.addEventListener('change', () => {
       const g = el.dataset.pgroup, on = new Set(this._config.page_groups || []);
       if (el.checked) { on.add(g); this._open.add(`pg-${g}`); }
@@ -3291,7 +3417,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);

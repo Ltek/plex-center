@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.16.34
+
+**New**
+- **Export style / Import style** in Appearance → Page menu. Export shows the page button style as text, with
+  *Copy to clipboard*, to use on another Plex Center card (page icons stay with each card). Import takes that text,
+  or **a Color Light Manager Button Style** (the Button Styles export: a single style, a layered style, or the
+  library file, of which the first style is used): its background, line and gradient borders, glow, drop shadow,
+  text, icon color and size become the page button settings, all groups ticked, starting from Neon. Colors set to
+  "match" (the light's color) become the Accent. Import replaces the current page style and keeps the page icons.
+
 ## v2026.11.15.33
 
 **New**
