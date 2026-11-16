@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.44
+// Version: v2026.11.16.45
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.44';
+const BUILD_NUMBER = 'v2026.11.16.45';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -298,6 +298,7 @@ const DEFAULTS = {
   slim_position: 'bottom',
   slim_controls: 'toggle',
   watching_tvs: 'all',
+  show_title: true,
   watching_libraries: true,
   panel_when: 'always',
   fit_screen: true,
@@ -396,7 +397,7 @@ function migrateScreens(c) {
   }
   for (const [sc] of SCREENS) {   // 2026.11.15.28: the bottom tab bar is the page menu in the footer
     if (c[`${sc}_tabs`] !== 'bottom') continue;
-    const list = headerLayout(c, sc).map((h) => (h.id === 'tabs' ? { ...h, section: 'footer', row: 1, align: 'center', hidden: undefined } : h));
+    const list = legacyScreenList(c, sc).map((h) => (h.id === 'tabs' ? { ...h, section: 'footer', row: 1, align: 'center', hidden: undefined } : h));
     c[`header_${sc}`] = list.map((h) => Object.fromEntries(Object.entries(h).filter(([, v]) => v !== undefined)));
     c[`${sc}_header`] = 'own';
     c[`${sc}_tabs`] = 'tabs';
@@ -409,10 +410,24 @@ function migrateScreens(c) {
       for (const [sc] of SCREENS) {
         const mode = c[`${sc}_header`] ?? SCREEN_DEFAULTS[`${sc}_header`];
         if (mode === 'one_row' && !Array.isArray(c[`header_${sc}`])) { c[`${sc}_header`] = 'own'; c[`header_${sc}`] = show(DEFAULT_HEADER_PHONE.map((h) => ({ ...h }))); }
-        else if (Array.isArray(c[`header_${sc}`])) c[`header_${sc}`] = show(headerLayout({ ...c, [`${sc}_header`]: 'own' }, sc));
+        else if (Array.isArray(c[`header_${sc}`])) c[`header_${sc}`] = show(legacyScreenList(c, sc));
       }
     }
     delete c.filter_chips;
+  }
+  for (const [sc, name] of SCREENS) {   // 2026.11.16.45: "Custom for this screen" lists become named, saved layouts
+    if (c[`${sc}_header`] !== 'own' && !Array.isArray(c[`header_${sc}`])) continue;
+    const compact = sc.startsWith('phone');
+    const items = Array.isArray(c[`header_${sc}`]) ? c[`header_${sc}`] : (compact ? DEFAULT_HEADER_PHONE : DEFAULT_HEADER).map((h) => ({ ...h }));
+    if (c[`${sc}_header`] === 'own') {
+      const layouts = { ...(c.layouts || {}) };
+      let id = sc;
+      for (let i = 2; layouts[id]; i++) id = `${sc}_${i}`;
+      layouts[id] = { name, base: compact ? 'compact' : 'standard', items };
+      c.layouts = layouts;
+      c[`${sc}_header`] = `lay:${id}`;
+    }
+    delete c[`header_${sc}`];
   }
   for (const k of ['scale', 'library_view', 'max', 'tv_picker', 'filters_mode', 'now_playing', 'slim_position', 'phone_header_mode', 'header_phone', 'phone_filters',
     'phone_view', 'phone_now_playing', 'phone_slim_position', 'phone_hide_on_scroll', 'swipe_tabs', 'poster_width', 'panel_when']) delete c[k];
@@ -466,11 +481,19 @@ function normalizeConfig(raw) {
     const h = headerLayout(c);
     if (JSON.stringify(h) === JSON.stringify(DEFAULT_HEADER)) delete c.header; else c.header = h;
   } else delete c.header;
+  if (c.layouts && typeof c.layouts === 'object') {
+    const out = {};
+    for (const [id, l] of Object.entries(c.layouts)) {
+      if (!/^[a-z0-9_-]{1,40}$/.test(id) || !l || typeof l !== 'object') continue;
+      const base = l.base === 'compact' ? 'compact' : 'standard';
+      out[id] = { name: String(l.name || id).slice(0, 60), base, items: layoutItems({ layouts: { [id]: { base, items: Array.isArray(l.items) ? l.items : [] } } }, `lay:${id}`) };
+    }
+    if (Object.keys(out).length) c.layouts = out; else delete c.layouts;
+  } else delete c.layouts;
   for (const [sc] of SCREENS) {
-    const k = `header_${sc}`;
-    if (!Array.isArray(c[k])) { delete c[k]; continue; }
-    const h = headerLayout({ ...c, [`${sc}_header`]: 'own' }, sc);
-    if (JSON.stringify(h) === JSON.stringify(sc.startsWith('phone') ? DEFAULT_HEADER_PHONE : DEFAULT_HEADER)) delete c[k]; else c[k] = h;
+    const v = c[`${sc}_header`];
+    if (typeof v === 'string' && v.startsWith('lay:') && !c.layouts?.[v.slice(4)]) delete c[`${sc}_header`];
+    else if (v !== undefined && !['main', 'one_row'].includes(v) && !(typeof v === 'string' && v.startsWith('lay:'))) delete c[`${sc}_header`];
   }
   { if (c.page_presets && typeof c.page_presets === 'object') {
       const out = {};
@@ -513,12 +536,26 @@ function normalizeConfig(raw) {
 const cfg = (c, k) => (c[k] !== undefined ? c[k] : DEFAULTS[k]);
 
 /** The header items in order, each { id, section, row, align, hidden? }; unknown ids dropped, missing ones added. */
-function headerLayout(c, screen = null) {
-  // Per screen: main = the card's header; one_row = tabs left, buttons right; own = header_<screen>.
-  const mode = screen ? cfg(c, `${screen}_header`) : 'main';
-  const own = mode === 'own', phoneish = String(screen || '').startsWith('phone');
-  const list = own ? c[`header_${screen}`] : mode === 'one_row' ? null : c.header;
-  const defs = mode === 'one_row' || (own && phoneish) ? DEFAULT_HEADER_PHONE : DEFAULT_HEADER;
+/** Old configs: the list a screen showed before saved layouts (its own header_<screen>, Compact, or the shared one). */
+function legacyScreenList(c, sc) {
+  const compact = sc.startsWith('phone');
+  if (Array.isArray(c[`header_${sc}`])) return layoutItems({ layouts: { t: { base: compact ? 'compact' : 'standard', items: c[`header_${sc}`] } } }, 'lay:t');
+  const mode = c[`${sc}_header`] ?? SCREEN_DEFAULTS[`${sc}_header`];
+  if (mode === 'own') return (compact ? DEFAULT_HEADER_PHONE : DEFAULT_HEADER).map((h) => ({ ...h }));
+  return layoutItems(c, mode === 'one_row' ? 'one_row' : 'main');
+}
+/** The controls layout a screen uses: 'main' (Standard), 'one_row' (Compact, built in) or 'lay:<id>' (a saved layout). */
+function layoutKeyFor(c, screen) {
+  const k = screen ? String(cfg(c, `${screen}_header`) || 'main') : 'main';
+  if (k.startsWith('lay:')) return c.layouts?.[k.slice(4)] ? k : 'main';
+  return k === 'one_row' ? 'one_row' : 'main';
+}
+function headerLayout(c, screen = null) { return layoutItems(c, layoutKeyFor(c, screen)); }
+/** The items of a controls layout, complete and in order (missing items added from its defaults). */
+function layoutItems(c, key = 'main') {
+  const saved = String(key).startsWith('lay:') ? c.layouts?.[String(key).slice(4)] : null;
+  const list = saved ? saved.items : key === 'one_row' ? null : c.header;
+  const defs = key === 'one_row' || saved?.base === 'compact' ? DEFAULT_HEADER_PHONE : DEFAULT_HEADER;
   const known = new Set(HEADER_ITEMS.map(([id]) => id));
   const seen = new Set();
   const out = [];
@@ -1524,7 +1561,7 @@ class PlexCenterCard extends HTMLElement {
       active ? `<span class="plc-fcount">${active}</span>` : ''}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`;
     const styleOf = Object.fromEntries(headerLayout(this._c, this._c._screen).map((h) => [h.id, h.style]));
     return {
-      title: title ? `<h1 class="plc-title">${esc(title)}</h1>` : '',
+      title: title && cfg(this._c, 'show_title') ? `<h1 class="plc-title">${esc(title)}</h1>` : '',
       tabs: tabsHtml,
       search: searchHtml,
       watched: inLib ? this._fpiece('watched', styleOf.watched) : '',
@@ -1757,7 +1794,8 @@ class PlexCenterCard extends HTMLElement {
     const playerShown = this._panelVisible();
     const hm = cfg(this._c, 'header_mode'), searchIcon = cfg(this._c, 'search_mode') === 'icon';
     const foot = this._headerHtml('footer', pieces, playerShown);
-    this._root.classList.toggle('onerow', hm === 'one_row' || (this._phone && hm === 'own'));
+    const lk = layoutKeyFor(this._raw || this._c, this._c._screen), lay = lk.startsWith('lay:') ? this._c.layouts?.[lk.slice(4)] : null;
+    this._root.classList.toggle('onerow', lk === 'one_row' || (this._phone && !!lay));
     this._root.classList.toggle('bnav', !!foot && !!cfg(this._c, 'footer_sticky'));
     this._root.classList.toggle('stickyhdr', !!cfg(this._c, 'hide_on_scroll'));
     const top = this._root.querySelector('.plc-top');
@@ -2895,6 +2933,7 @@ const EDITOR_CSS = `
         .plce-btn { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--divider-color, #555); background: transparent; color: var(--primary-text-color); font: inherit; cursor: pointer; }
         .plce-btn.main { background: var(--accent-color, var(--ltek-c-accent)); border-color: transparent; color: var(--text-primary-color, #fff); }
         .plce-dlg-name { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--divider-color, #444); background: var(--secondary-background-color, #111); color: var(--primary-text-color); font: inherit; }
+        .plce-wrap { flex-wrap: wrap; gap: 6px; }
         .plce-del:hover { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
         .plce-pg-sub { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--secondary-text-color); }
         .plce-chip ha-icon { --mdc-icon-size: 14px; }
@@ -3063,10 +3102,14 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._check('lock', 'Lock to the default TV (wall tablet: no picker, no TV choice)')}`;
   }
 
+  /** Which controls layout the panel is editing: 'main' (Standard) or 'lay:<id>'. */
+  _editKey() { const k = this._hdrFor; return k && k.startsWith('lay:') && this._config.layouts?.[k.slice(4)] ? k : 'main'; }
+
   _headerBody() {
-    const owns = SCREENS.filter(([sc]) => this._c(`${sc}_header`) === 'own');
-    const ph = owns.some(([sc]) => sc === this._hdrFor) ? this._hdrFor : null;
-    const items = headerLayout(this._config, ph), names = new Map(HEADER_ITEMS);
+    const key = this._editKey(), saved = Object.entries(this._config.layouts || {});
+    const items = layoutItems(this._config, key), names = new Map(HEADER_ITEMS);
+    const users = SCREENS.filter(([sc]) => layoutKeyFor(this._config, sc) === key).map(([, n]) => n);
+    const cur = key.startsWith('lay:') ? this._config.layouts[key.slice(4)] : null;
     const sel = (i, k, opts, cur) => `<select data-hi="${i}" data-hk="${k}">${opts.map(([v, n]) => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
     const placeName = { library: 'Header', player: 'Player header', footer: 'Footer', popover: 'Filters popup' }, alignName = { left: 'Left', center: 'Middle', right: 'Right' };
     const styleName = (h) => { const st = ITEM_STYLES[h.id]; return st && h.style ? (st.find(([v]) => v === h.style) || [, ''])[1] : ''; };
@@ -3083,17 +3126,25 @@ class PlexCenterCardEditor extends HTMLElement {
       ${h.hidden ? '' : `<div class="plce-row">${sel(i, 'section', [['library', 'Header'], ['player', 'Player header'], ['footer', 'Footer'], ...(FILTER_IDS.has(h.id) ? [['popover', 'Filters popup']] : [])], h.section)}
         ${h.section === 'popover' ? '' : `${sel(i, 'row', [[1, 'Row 1'], [2, 'Row 2'], [3, 'Row 3']], h.row)}${sel(i, 'align', [['left', 'Left'], ['center', 'Middle'], ['right', 'Right']], h.align)}`}
         ${ITEM_STYLES[h.id] ? sel(i, 'style', ITEM_STYLES[h.id], h.style || ITEM_STYLES[h.id][0][0]) : ''}</div>`}</div>`).join('');
-    return `<p class="plce-hint">Each item goes in the <b>Header</b> (above Home and the libraries), the <b>Player header</b> (above the side panel on
-        tablets; in the Header when there's no side panel) or the <b>Footer</b> (below the card; it can stick to the bottom of the screen, set per
-        screen in Layout). Each place has up to three rows with left / middle / right; items in the same spot follow this list's order.</p>
-      ${owns.length ? `<div class="plce-row"><label class="lbl">Editing</label><select data-hdrfor>
-        <option value=""${ph ? '' : ' selected'}>The shared arrangement</option>${owns.map(([sc, name]) => `<option value="${sc}"${ph === sc ? ' selected' : ''}>${esc(name)} (custom)</option>`).join('')}</select></div>` : ''}
+    return `${this._text('title', 'Title', 'Plex')}${this._check('show_title', 'Show the title (in every layout)')}
+      <p class="plce-hint">Each item goes in the <b>Header</b> (above Home and the libraries), the <b>Player header</b> (above the side panel on
+        tablets; in the Header when there's no side panel), the <b>Footer</b> (below the card; it can stick to the bottom of the screen, set per screen
+        in Screens) or, for filters, the <b>Filters popup</b>. Each place has up to three rows with left / middle / right; items in the same spot follow
+        this list's order.</p>
+      <div class="plce-row"><label class="lbl">Editing</label><select data-hdrfor>
+        <option value="main"${key === 'main' ? ' selected' : ''}>Standard</option>${saved.map(([id, l]) => `<option value="lay:${esc(id)}"${key === `lay:${id}` ? ' selected' : ''}>★ ${esc(l.name)}</option>`).join('')}</select></div>
+      <p class="plce-hint">${users.length ? `Used by: ${users.map(esc).join(', ')}.` : 'No screen uses this layout yet: pick it in Screens → a screen → Controls layout to use.'}
+        <i>Compact one row</i> is built in and can't be edited; save it as a new layout to change it.</p>
+      <div class="plce-row plce-wrap"><button class="plce-add" data-laysave><ha-icon icon="mdi:content-save-plus-outline"></ha-icon>Save as new layout</button>
+        <button class="plce-add" data-laycompact><ha-icon icon="mdi:content-copy"></ha-icon>Copy Compact one row</button>
+        ${cur ? `<button class="plce-add" data-layrename><ha-icon icon="mdi:rename-outline"></ha-icon>Rename</button>
+        <button class="plce-add plce-del" data-laydelete><ha-icon icon="mdi:trash-can-outline"></ha-icon>Delete</button>` : ''}
+        <button class="plce-add" data-layexport><ha-icon icon="mdi:export"></ha-icon>Export</button><button class="plce-add" data-layimport><ha-icon icon="mdi:import"></ha-icon>Import</button></div>
       <div class="plce-lockbar"><button class="plce-lock${locked ? '' : ' open'}" data-hlock><ha-icon icon="mdi:${locked ? 'lock' : 'lock-open-variant'}"></ha-icon>${locked ? 'Unlock to edit' : 'Editing: lock'}</button></div>
       ${locked ? `<div class="plce-hlist">${chipRows}</div>` : `<div class="plce-list">${rows}</div>`}
-      <p class="plce-hint">This list is the <b>shared arrangement</b>, used by every screen set to <i>Shared</i> (Layout → each screen → Header &amp; footer
-        arrangement). A screen set to <i>Custom</i> gets its own list: pick it under <i>Editing</i>. How the page menu, search and TV picker look is set per screen in Layout.</p>
+      <p class="plce-hint">How the page menu, search and TV picker look is set per screen in Screens.</p>
       ${this._slider('search_width', 'Search box width', 100, 800)}
-      ${(ph ? this._config[`header_${ph}`] : this._config.header) ? '<button class="plce-add" data-hreset>Back to the default header</button>' : ''}`;
+      ${key === 'main' && this._config.header ? '<button class="plce-add" data-hreset>Back to the default Standard layout</button>' : ''}`;
   }
 
   _libraryBody() {
@@ -3236,11 +3287,12 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._slider(k('across'), 'Posters across (Home rows, libraries, search)', 1, 12, '')}
         ${this._select(k('view'), 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}
         <div class="plce-group">Header</div>
-        ${this._select(k('header'), 'Header & footer arrangement', [['main', 'Shared: the arrangement in Header & footer'], ['one_row', 'Compact one row (built in): pages left, buttons right'], ['own', 'Custom for this screen (edit it in Header & footer)']])}
+        ${this._select(k('header'), 'Controls layout to use', [['main', 'Standard (edit it in Controls layout)'], ['one_row', 'Compact one row (built in: pages left, buttons right)'],
+          ...Object.entries(this._config.layouts || {}).map(([id, l]) => [`lay:${id}`, `★ ${l.name}`])])}
         ${this._select(k('tabs'), 'Page menu', [['tabs', 'Buttons'], ['chip', 'A chip with the page name that opens a menu'], ['button', 'An icon button that opens a menu']])}
         ${this._select(k('search'), 'Search', [['field', 'A search box'], ['icon', 'An icon that opens a search bar']])}
         ${this._select(k('tvs'), 'TV picker', [['chips', 'A button for each TV'], ['chip', 'A chip with the TV name that opens a menu'], ['button', 'An icon button that opens a menu'], ['hidden', 'Hidden (always the default TV)']])}
-        ${this._select(k('filters'), 'Library filters', [['layout', 'As placed in Header & footer'], ['popover', 'All in the Filters popup (with a Filters button)']])}
+        ${this._select(k('filters'), 'Library filters', [['layout', 'As placed in the controls layout'], ['popover', 'All in the Filters popup (with a Filters button)']])}
         ${this._check(k('hide'), 'Hide the header while scrolling down (comes back when scrolling up)')}
         ${this._check(k('footer_sticky'), 'The footer sticks to the bottom of the screen')}
         ${this._check(k('swipe'), 'Swipe left / right on the content to change tab')}
@@ -3248,10 +3300,9 @@ class PlexCenterCardEditor extends HTMLElement {
         ${phone ? '<p class="plce-hint">Phones: tap a Watching now card to open the controls.</p>'
           : this._select(k('now_playing'), 'Side panel', [['panel', 'Show it while something plays'], ['off', 'Off (tap a Watching now card for the controls)']])}`);
     };
-    return `${this._select('layout', 'Layout', [['auto', 'Automatic'], ['tablet', 'Tablet'], ['phone', 'Phone']])}
-      <p class="plce-hint">Automatic uses the phone layout when the card is narrower than ${PHONE_MAX_W}px. Portrait or landscape follows the screen.
-        Each screen below has its own settings; the card uses the one that matches. A Home section can set its own number of items in its Items settings.</p>
-      ${this._text('title', 'Title', 'Plex')}
+    return `${this._select('layout', 'Device type', [['auto', `Automatic (phone when the card is narrower than ${PHONE_MAX_W}px)`], ['tablet', 'Always tablet / computer'], ['phone', 'Always phone']])}
+      <p class="plce-hint">Portrait or landscape follows the screen. Each screen type below has its own settings; the card uses the one that matches.
+        A Home section can set its own number of items in its Items settings.</p>
       ${SCREENS.map(([sc, name]) => screen(sc, name)).join('')}
       <p class="plce-hint">Phones always get 44 px touch targets.</p>`;
   }
@@ -3265,6 +3316,57 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-group">Side panel</div>
         ${this._check('fit_screen', 'Fit the card to the screen height: the player stays put, the library scrolls')}
         ${this._c('fit_screen') ? `${this._slider('screen_offset', 'Space above / below the card', 0, 300)}<p class="plce-hint">Room for the dashboard header and margins. Raise it if the card runs past the bottom of the screen.</p>` : ''}`;
+  }
+
+  /** A small dialog asking for a name; onSave(name, useNow). useScreen: offer "use it on the screen in the preview". */
+  _nameDialog(title, hint, initial, onSave, useScreen = null) {
+    this.querySelector('dialog.plce-dlg')?.remove();
+    const scName = useScreen ? (SCREENS.find(([sc]) => sc === useScreen) || [])[1] : '';
+    this.insertAdjacentHTML('beforeend', `<dialog class="plce-dlg"><style>dialog.plce-dlg::backdrop { background: rgba(0,0,0,.55); }</style><div class="plce-dlg-in">
+      <div class="plce-dlg-h">${esc(title)}</div>${hint ? `<p class="plce-hint">${esc(hint)}</p>` : ''}
+      <input class="plce-dlg-name" type="text" maxlength="60" value="${esc(initial)}" placeholder="Name">
+      ${scName ? `<label class="plce-check"><input type="checkbox" data-dusenow checked>Use it on ${esc(scName)} (the screen in the preview)</label>` : ''}
+      <div class="plce-dlg-msg"></div><div class="plce-dlg-b"><button class="plce-btn main" data-dsave>Save</button><button class="plce-btn" data-dclose>Cancel</button></div></div></dialog>`);
+    const dlg = this.querySelector('dialog.plce-dlg'), name = dlg.querySelector('input.plce-dlg-name');
+    const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); };
+    dlg.addEventListener('cancel', close); dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+    dlg.querySelector('[data-dclose]').addEventListener('click', close);
+    const save = () => {
+      const n = name.value.trim();
+      if (!n) { dlg.querySelector('.plce-dlg-msg').textContent = 'Give it a name.'; return; }
+      const useNow = !!dlg.querySelector('[data-dusenow]')?.checked;
+      close(); onSave(n, useNow);
+    };
+    dlg.querySelector('[data-dsave]').addEventListener('click', save);
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    name.focus(); name.select?.();
+  }
+
+  /** Text export / import (design guide: native dialog, visible textarea, copy / paste with fallbacks). onImport(text) may throw. */
+  _textDialog(title, hint, text, onImport = null) {
+    this.querySelector('dialog.plce-dlg')?.remove();
+    const imp = !!onImport;
+    this.insertAdjacentHTML('beforeend', `<dialog class="plce-dlg"><style>dialog.plce-dlg::backdrop { background: rgba(0,0,0,.55); }</style>
+      <div class="plce-dlg-in"><div class="plce-dlg-h">${esc(title)}</div><p class="plce-hint">${esc(hint)}</p>
+      <textarea class="plce-dlg-t" spellcheck="false"${imp ? ' placeholder="Paste it here"' : ' readonly'}>${esc(text)}</textarea><div class="plce-dlg-msg"></div>
+      <div class="plce-dlg-b">${imp ? '<button class="plce-btn" data-dpaste>Paste from clipboard</button><button class="plce-btn main" data-dimport>Import</button>' : '<button class="plce-btn" data-dcopy>Copy to clipboard</button>'}
+        <button class="plce-btn" data-dclose>Close</button></div></div></dialog>`);
+    const dlg = this.querySelector('dialog.plce-dlg'), ta = dlg.querySelector('textarea'), msg = (t, bad) => { const m = dlg.querySelector('.plce-dlg-msg'); m.textContent = t; m.classList.toggle('bad', !!bad); };
+    const close = () => { try { dlg.close(); } catch { /* */ } dlg.remove(); };
+    dlg.addEventListener('cancel', close); dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+    dlg.querySelector('[data-dclose]').addEventListener('click', close);
+    dlg.querySelector('[data-dcopy]')?.addEventListener('click', async (e) => {
+      ta.focus(); ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch { ok = false; }
+      if (!ok) { try { await navigator.clipboard.writeText(ta.value); ok = true; } catch { ok = false; } }
+      e.target.textContent = ok ? 'Copied ✓' : 'Press Ctrl/Cmd+C';
+    });
+    dlg.querySelector('[data-dpaste]')?.addEventListener('click', async () => { try { ta.value = await navigator.clipboard.readText(); msg(''); } catch { ta.focus(); msg('Paste with Ctrl/Cmd+V.'); } });
+    dlg.querySelector('[data-dimport]')?.addEventListener('click', () => { try { onImport(ta.value); close(); } catch (err) { msg(err.message, true); } });
+    if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+    ta.focus(); if (!imp) ta.select();
   }
 
   /** Save the current look as a preset of this card (asks for a name). */
@@ -3367,7 +3469,7 @@ class PlexCenterCardEditor extends HTMLElement {
     const shown = SHOWN.screen, shownName = (SCREENS.find(([sc]) => sc === shown) || [])[1];
     const warn = shown && cfg(this._config, `${shown}_tabs`) !== 'tabs'
       ? `<p class="plce-hint plce-warn">The preview shows <b>${esc(shownName)}</b>, where the page menu is a ${cfg(this._config, `${shown}_tabs`) === 'button' ? 'icon button' : 'chip'}: these styles show
-        where a screen's <i>Page menu</i> is <b>Buttons</b> (Layout → ${esc(shownName)}).</p>` : '';
+        where a screen's <i>Page menu</i> is <b>Buttons</b> (Screens → ${esc(shownName)}).</p>` : '';
     const saved = Object.entries(this._config.page_presets || {}), cur = savedPreset(this._config);
     const presetOpts = [...Object.entries(PAGE_PRESETS).map(([k, pr]) => [k, pr.name]), ...saved.map(([id, sp]) => [`custom:${id}`, `★ ${sp.name}`])];
     return `${warn}
@@ -3423,8 +3525,8 @@ class PlexCenterCardEditor extends HTMLElement {
     if (!this._hass) { this.innerHTML = ''; return; }
     this.innerHTML = `<style>${EDITOR_CSS}</style><div class="plce">
       <div class="plce-gh first">Card</div>
-      ${this._panel('layout', 'mdi:responsive', 'Layout', this._layoutBody())}
-      ${this._panel('header', 'mdi:page-layout-header-footer', 'Header & footer', this._headerBody())}
+      ${this._panel('layout', 'mdi:responsive', 'Screens', this._layoutBody())}
+      ${this._panel('header', 'mdi:page-layout-header-footer', 'Controls layout', this._headerBody())}
       ${this._panel('home', 'mdi:home-variant', 'Home', this._homeBody())}
       ${this._panel('np', 'mdi:play-box-outline', 'Now playing', this._npBody())}
       ${this._panel('style', 'mdi:palette', 'Appearance', this._styleBody())}
@@ -3466,10 +3568,62 @@ class PlexCenterCardEditor extends HTMLElement {
       el.addEventListener('change', () => { this._set(k, Number(el.value)); this._render(); });
     });
     all('[data-reset]', (b) => b.addEventListener('click', () => { this._set(b.dataset.reset, ''); this._render(); }));
-    const hdrFor = () => (this._hdrFor && this._c(`${this._hdrFor}_header`) === 'own' ? this._hdrFor : null);
-    const hl = () => headerLayout(this._config, hdrFor());
-    const putH = (list) => { if (hdrFor()) this._config[`header_${hdrFor()}`] = list; else this._config.header = list; this._emit(); this._render(); };
-    all('[data-hdrfor]', (el) => el.addEventListener('change', () => { this._hdrFor = el.value || null; this._render(); }));
+    const hl = () => layoutItems(this._config, this._editKey());
+    const putH = (list) => {
+      const k = this._editKey();
+      if (k === 'main') this._config.header = list;
+      else this._config.layouts = { ...this._config.layouts, [k.slice(4)]: { ...this._config.layouts[k.slice(4)], items: list } };
+      this._emit(); this._render();
+    };
+    all('[data-hdrfor]', (el) => el.addEventListener('change', () => { this._hdrFor = el.value === 'main' ? null : el.value; this._render(); }));
+    const newLayout = (name, base, items) => {
+      const layouts = { ...(this._config.layouts || {}) };
+      let id = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'layout';
+      for (let i = 2; layouts[id]; i++) id = `${id.replace(/_\d+$/, '')}_${i}`;
+      layouts[id] = { name, base, items: items.map((h) => ({ ...h })) };
+      this._config.layouts = layouts;
+      return id;
+    };
+    all('[data-laysave]', (b) => b.addEventListener('click', () => {
+      const k = this._editKey(), cur = k === 'main' ? null : this._config.layouts[k.slice(4)];
+      this._nameDialog('Save as a new layout', 'Saves the list you are editing under a name. Pick it for any screen in Screens → Controls layout to use.',
+        cur ? `${cur.name} copy` : '', (name, useNow) => {
+          const id = newLayout(name, cur?.base || 'standard', hl());
+          if (useNow && SHOWN.screen) this._config[`${SHOWN.screen}_header`] = `lay:${id}`;
+          this._hdrFor = `lay:${id}`; this._emit(); this._render();
+        }, SHOWN.screen);
+    }));
+    all('[data-laycompact]', (b) => b.addEventListener('click', () => {
+      this._nameDialog('Copy Compact one row', 'Saves the built-in compact layout as a new layout you can change.', 'Compact copy', (name, useNow) => {
+        const id = newLayout(name, 'compact', layoutItems(this._config, 'one_row'));
+        if (useNow && SHOWN.screen) this._config[`${SHOWN.screen}_header`] = `lay:${id}`;
+        this._hdrFor = `lay:${id}`; this._emit(); this._render();
+      }, SHOWN.screen);
+    }));
+    all('[data-layrename]', (b) => b.addEventListener('click', () => {
+      const id = this._editKey().slice(4), l = this._config.layouts[id];
+      this._nameDialog('Rename layout', '', l.name, (name) => { this._config.layouts = { ...this._config.layouts, [id]: { ...l, name } }; this._emit(); this._render(); });
+    }));
+    all('[data-laydelete]', (b) => b.addEventListener('click', () => {
+      const id = this._editKey().slice(4), l = this._config.layouts[id];
+      if (!window.confirm(`Delete the layout “${l.name}”? Screens using it go back to Standard.`)) return;
+      const layouts = { ...this._config.layouts }; delete layouts[id]; this._config.layouts = layouts;
+      for (const [sc] of SCREENS) if (this._config[`${sc}_header`] === `lay:${id}`) delete this._config[`${sc}_header`];
+      this._hdrFor = null; this._emit(); this._render();
+    }));
+    all('[data-layexport]', (b) => b.addEventListener('click', () => {
+      const k = this._editKey(), l = k === 'main' ? { name: 'Standard', base: 'standard' } : this._config.layouts[k.slice(4)];
+      this._textDialog('Export controls layout', 'Copy this text to use the same layout on another Plex Center card.',
+        JSON.stringify({ kind: 'plex-center/controls-layout', v: 1, name: l.name, base: l.base, items: hl() }, null, 2));
+    }));
+    all('[data-layimport]', (b) => b.addEventListener('click', () => {
+      this._textDialog('Import controls layout', 'Paste a Plex Center controls layout. It is added as a new saved layout (nothing is replaced).', '', (text) => {
+        let o; try { o = JSON.parse(text); } catch { throw new Error('That isn\'t valid JSON.'); }
+        if (o?.kind !== 'plex-center/controls-layout' || !Array.isArray(o.items)) throw new Error('Not a Plex Center controls layout.');
+        const id = newLayout(String(o.name || 'Imported').slice(0, 60), o.base === 'compact' ? 'compact' : 'standard', o.items);
+        this._hdrFor = `lay:${id}`; this._emit(); this._render();
+      });
+    }));
     all('[data-pmreset]', (b) => b.addEventListener('click', () => {
       for (const k of PAGE_ALL) delete this._config[k];
       delete this._config.page_groups;
@@ -3581,7 +3735,7 @@ class PlexCenterCardEditor extends HTMLElement {
       this._cmode[`${id}:${k}`] = el.value; setSec(id, k, next); this._render();
     }));
     all('ha-icon-picker[data-sicon]', (el) => el.addEventListener('value-changed', (e) => setSec(el.dataset.sid, 'icon', (e.detail?.value || '').trim())));
-    all('[data-hreset]', (b) => b.addEventListener('click', () => { if (hdrFor()) delete this._config[`header_${hdrFor()}`]; else delete this._config.header; this._emit(); this._render(); }));
+    all('[data-hreset]', (b) => b.addEventListener('click', () => { delete this._config.header; this._emit(); this._render(); }));
     all('ha-icon-picker[data-tvicon]', (el) => el.addEventListener('value-changed', (e) => {
       const icons = { ...(this._config.tv_icons || {}) }, v = (e.detail?.value || '').trim();
       if (v) icons[el.dataset.tvicon] = v; else delete icons[el.dataset.tvicon];
@@ -3619,7 +3773,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, PlexCenterCard);

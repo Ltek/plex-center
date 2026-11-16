@@ -1,5 +1,23 @@
 # Changelog
 
+## v2026.11.16.45
+
+**New**
+- **Saved controls layouts.** In *Controls layout*: *Save as new layout* stores the list you're editing under a
+  name (and can use it right away on the screen in the preview); *Copy Compact one row* starts one from the
+  built-in compact layout; *Rename*, *Delete* (screens using it go back to Standard), *Export* and *Import* (adds a
+  new layout, never replaces one). *Editing* picks which layout the list edits and says which screens use it.
+  Each screen picks its layout in *Screens → Controls layout to use*: **Standard**, **Compact one row** or any
+  saved layout (★). Several screens can share one.
+- **Show the title** (in every layout), next to the Title, now in Controls layout.
+
+**Changed**
+- Renamed for clarity: the *Layout* panel is **Screens**; its *Layout* setting is **Device type** (*Automatic
+  (phone when the card is narrower than 600 px)*, *Always tablet / computer*, *Always phone*); *Header & footer* is
+  **Controls layout**; *Header & footer arrangement* is **Controls layout to use**, and *Shared* is **Standard**.
+- A screen's "Custom for this screen" list becomes a saved layout named after the screen (for example
+  *Phone: portrait*), used by that screen: nothing changes on the dashboard.
+
 ## v2026.11.16.44
 
 **New**
