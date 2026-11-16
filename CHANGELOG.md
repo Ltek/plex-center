@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.16.35
+
+**Fixed**
+- **The page buttons' glow and drop shadow were cut off** at the edges of the page bar: the bar scrolls sideways,
+  and a scrolling box clips anything drawn outside it. The bar now keeps room inside for the glow / shadow (as
+  much as they reach, up to 24 px) and pulls back out by the same amount, so the buttons stay where they were. The
+  one-row header no longer clips it either.
+
 ## v2026.11.16.34
 
 **New**

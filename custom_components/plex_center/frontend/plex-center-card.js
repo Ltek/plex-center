@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.34
+// Version: v2026.11.16.35
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.34';
+const BUILD_NUMBER = 'v2026.11.16.35';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -176,7 +176,11 @@ function pageButtonsHtml(c, items) {
     grad = `--pm-gi:${img('var(--pmu-gc, var(--plc-a))')};--pm-gia:${img('var(--pmu-agc, var(--pmu-gc, var(--plc-a)))')};--pm-gp:${sides.join(', ')};`
       + `--pm-gs:${sides.map((sd) => (sd === 'left' || sd === 'right' ? `${w}px 100%` : `100% ${w}px`)).join(', ')};`;
   }
-  const vars = `--pm-fs:${n('page_text_px')}px;--pm-is:${n('page_icon_px')}px;--pm-r:${n('page_radius')}px;--pm-h:${n('page_height')}px;--pm-gap:${n('page_gap')}px;`
+  // The bar scrolls sideways, and a scrolling box clips what's drawn outside it: give the glow / shadow room inside.
+  const reach = Math.max(pl.page_glow !== 'off' ? n('page_glow_blur') + n('page_glow_spread') : 0,
+    pl.page_shadow ? n('page_shadow_blur') + Math.max(0, n('page_shadow_spread')) + Math.max(Math.abs(n('page_shadow_x')), Math.abs(n('page_shadow_y'))) : 0);
+  const pad = Math.min(24, Math.ceil(reach));
+  const vars = `--pm-pad:${pad}px;--pm-fs:${n('page_text_px')}px;--pm-is:${n('page_icon_px')}px;--pm-r:${n('page_radius')}px;--pm-h:${n('page_height')}px;--pm-gap:${n('page_gap')}px;`
     + `--pm-bw:${n('page_border_width')}px;--pm-fw:${esc(String(pl.page_weight))};--pm-bs:${bs};--pm-bsa:${bsa};${grad}`;
   const cls = `plc-tabs pm pm-${pl.style}${pl.page_icon_pos === 'above' ? ' pm-above' : ''}`;
   return `<div class="${cls}" role="tablist" style="${vars}">${items.map((t) => `<button class="plc-tab${t.on ? ' on' : ''}" ${t.attr || ''} title="${esc(t.title)}">${
@@ -733,7 +737,10 @@ const CARD_CSS = `
 .plc-note span { flex: 1 1 auto; min-width: 0; }
 .plc-note ha-icon { flex: none; --mdc-icon-size: 20px; }
 /* page menu styles: one layout; colors per preset (--pm-*), user colors on top (--pmu-*); shadow, glow and gradient lines computed per card */
-.plc-tabs.pm { gap: var(--pm-gap, 4px); align-items: stretch; }
+.plc-tabs.pm { gap: var(--pm-gap, 4px); align-items: stretch; padding: var(--pm-pad, 0px);
+  margin: calc(10px - var(--pm-pad, 0px)) calc(-1 * var(--pm-pad, 0px)) calc(8px - var(--pm-pad, 0px)); }
+.plc-footer .plc-tabs.pm, .plce-sample-row .plc-tabs.pm { margin: calc(-1 * var(--pm-pad, 0px)); }
+.plc.onerow .plc-hl:has(.plc-tabs.pm) { overflow: visible; }
 .plc-tabs.pm .plc-tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--pm-h, 36px); padding: 0 12px;
   border-radius: var(--pm-r, 8px); font-size: var(--pm-fs, 14px); font-weight: var(--pm-fw, 600); line-height: 1.1; box-sizing: border-box;
   color: var(--pmu-c, var(--pm-c)); background-color: var(--pmu-bg, var(--pm-bg)); border: var(--pm-bw, 0) solid var(--pmu-bc, var(--pm-bc, transparent));
