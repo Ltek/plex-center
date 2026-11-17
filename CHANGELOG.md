@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.17.68
+
+**Changed**
+- **Text Lines: *Hidden* is a checkbox** next to each field instead of a choice in the line list. A hidden field
+  keeps its line and order (shown, disabled), so un-hiding puts it back where it was. Fields hidden by default
+  (Year, Day, Date, Time, Studio on rows) have a place to come back to. Earlier "Hidden" choices are kept.
+
 ## v2026.11.17.67
 
 **Fixed**

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.67
+// Version: v2026.11.17.68
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.67';
+const BUILD_NUMBER = 'v2026.11.17.68';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -347,8 +347,8 @@ const FIELD_SETS = {
   cal: [['title', 'Title', 1, 1], ['badge', 'New season / Premiere / Finale', 2, 1], ['episode', 'Episode (S01E02)', 2, 2], ['eptitle', 'Episode title', 2, 3],
     ['release', 'Release type (movies)', 2, 4], ['date', 'Air date', 3, 1], ['time', 'Time', 3, 2], ['network', 'Network / studio', 4, 1], ['runtime', 'Runtime', 4, 2]],
   row: [['title', 'Title', 1, 1], ['eptitle', 'Episode title', 2, 1], ['release', 'Release / added (day, date and time)', 3, 1], ['number', 'Episode (S01E02)', 4, 1],
-    ['rating', 'Rating', 4, 2], ['runtime', 'Runtime', 4, 3], ['genres', 'Genres', 5, 1], ['year', 'Year', 0, 1], ['day', 'Day', 0, 2], ['date', 'Date', 0, 3],
-    ['time', 'Time', 0, 4], ['studio', 'Studio / network', 0, 5]],
+    ['rating', 'Rating', 4, 2], ['runtime', 'Runtime', 4, 3], ['genres', 'Genres', 5, 1], ['year', 'Year', 2, 2, true], ['day', 'Day', 3, 2, true], ['date', 'Date', 3, 3, true],
+    ['time', 'Time', 3, 4, true], ['studio', 'Studio / network', 4, 4, true]],
   watch: [['title', 'Title', 1, 1], ['number', 'Episode (S1 · E2)', 2, 1], ['eptitle', 'Episode title', 2, 2], ['year', 'Year (movies)', 2, 3],
     ['viewer', 'Who and where (user · player)', 3, 1], ['state', 'Paused', 3, 2]],
 };
@@ -358,10 +358,13 @@ const LINE_IDS = ['title', 'info', 'when', 'meta', 'extra'];
 /** The fields of a kind on a screen: id → { line, pos, px?, weight?, color? } (the defaults with what the card sets on top). */
 function fieldLayout(kind, own = {}) {
   const set = own.fields && typeof own.fields === 'object' ? own.fields : null, out = {};
-  for (const [id, , line, pos] of FIELD_SETS[fieldFamily(kind)]) {
+  for (const [id, , line, pos, hid] of FIELD_SETS[fieldFamily(kind)]) {
     const o = set?.[id] || {};
-    const hidden = !set && line && own[`${LINE_IDS[line - 1]}_show`] === false;
-    out[id] = { line: o.line !== undefined ? o.line : (hidden ? 0 : line), pos: o.pos !== undefined ? o.pos : pos };
+    const oldHide = !set && own[`${LINE_IDS[line - 1]}_show`] === false;
+    // line 0 was "hidden" before the checkbox: keep the default line, hide it
+    const ln = o.line !== undefined && Number(o.line) > 0 ? Number(o.line) : line;
+    const hidden = o.hidden !== undefined ? !!o.hidden : (o.line !== undefined && Number(o.line) === 0) ? true : (set ? false : (!!hid || oldHide));
+    out[id] = { line: ln, pos: o.pos !== undefined ? o.pos : pos, hidden };
     for (const k of ['px', 'weight', 'color']) if (o[k] !== undefined && o[k] !== '') out[id][k] = o[k];
   }
   return out;
@@ -372,7 +375,7 @@ function cleanFields(kind, f) {
   for (const [id] of FIELD_SETS[fieldFamily(kind)]) {
     const o = f[id];
     if (!o || typeof o !== 'object') continue;
-    const r = { line: Math.max(0, Math.min(5, Math.round(Number(o.line) || 0))), pos: Math.max(1, Math.min(9, Math.round(Number(o.pos) || 1))) };
+    const r = { line: Math.max(1, Math.min(5, Math.round(Number(o.line) || 1))), pos: Math.max(1, Math.min(9, Math.round(Number(o.pos) || 1))), hidden: !!o.hidden || Number(o.line) === 0 };
     if (Number.isFinite(Number(o.px)) && o.px !== '' && o.px != null) r.px = Math.max(8, Math.min(40, Number(o.px)));
     if (['400', '500', '600', '700', '800'].includes(String(o.weight))) r.weight = String(o.weight);
     if (o.color) r.color = String(o.color).replace(/[;{}<>"]/g, '');
@@ -385,7 +388,7 @@ function fieldLines(kind, own, vals) {
   const lay = fieldLayout(kind, own), lines = {};
   for (const [id] of FIELD_SETS[fieldFamily(kind)]) {
     const f = lay[id], v = vals[id];
-    if (!f.line || v == null || v === '') continue;
+    if (f.hidden || v == null || v === '') continue;
     const st = [f.px ? `font-size:${Number(f.px)}px` : '', f.weight ? `font-weight:${f.weight}` : '', f.color ? `color:${f.color}` : ''].filter(Boolean).join(';');
     (lines[f.line] ||= []).push([f.pos, `<span class="plc-fv" data-f="${id}"${st ? ` style="${st}"` : ''}>${esc(v)}</span>`]);
   }
@@ -3578,6 +3581,8 @@ const EDITOR_CSS = `
         .pip-i ha-icon { --mdc-icon-size: 20px; }
         .pip-hint { margin-top: 6px; font-size: 11px; color: var(--secondary-text-color); }
         .plce-addrow { margin: 0 0 6px; }
+        .plce-hide { margin-left: auto; font-size: 12px; }
+        .plce-item.off select:disabled { opacity: .5; }
         .plce-pick.src { max-width: 100%; }
         .plce-src-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
         .plce-srcbox { margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--divider-color, #444); }
@@ -4163,19 +4168,20 @@ class PlexCenterCardEditor extends HTMLElement {
   _fieldsBody(kind) {
     const screen = this._eds(), own = this._config.looks?.[`${kind}:${screen}`] || {}, lay = fieldLayout(kind, own), fam = FIELD_SETS[fieldFamily(kind)];
     const K = (id, prop) => `look:${kind}:${screen}:fields.${id}.${prop}`, locked = this._fLock?.[kind] !== false, ord = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
-    const sorted = [...fam].sort((a, b) => ((lay[a[0]].line || 9) - (lay[b[0]].line || 9)) || (lay[a[0]].pos - lay[b[0]].pos));
-    const chips = sorted.map(([id, label]) => `<div class="plce-hchips${lay[id].line ? '' : ' off'}"><span class="plce-name">${esc(label)}</span>${lay[id].line
-      ? `<span class="plce-chip pl-library">Line ${lay[id].line}</span><span class="plce-chip row">${ord[lay[id].pos - 1] || lay[id].pos}</span>${
-        lay[id].px ? `<span class="plce-chip al">${lay[id].px}px</span>` : ''}` : '<span class="plce-chip off"><ha-icon icon="mdi:eye-off"></ha-icon>Hidden</span>'}</div>`).join('');
+    const sorted = [...fam].sort((a, b) => (lay[a[0]].hidden - lay[b[0]].hidden) || (lay[a[0]].line - lay[b[0]].line) || (lay[a[0]].pos - lay[b[0]].pos));
+    const chips = sorted.map(([id, label]) => `<div class="plce-hchips${lay[id].hidden ? ' off' : ''}"><span class="plce-name">${esc(label)}</span>
+      <span class="plce-chip pl-library">Line ${lay[id].line}</span><span class="plce-chip row">${ord[lay[id].pos - 1] || lay[id].pos}</span>${
+      lay[id].px ? `<span class="plce-chip al">${lay[id].px}px</span>` : ''}${lay[id].hidden ? '<span class="plce-chip off"><ha-icon icon="mdi:eye-off"></ha-icon>Hidden</span>' : ''}</div>`).join('');
     const weights = [['', 'Line default'], ['400', 'Regular'], ['500', 'Medium'], ['600', 'Semi-bold'], ['700', 'Bold'], ['800', 'Extra bold']];
     const opt = (cur, list) => list.map(([v, n]) => `<option value="${v}"${String(cur ?? '') === String(v) ? ' selected' : ''}>${n}</option>`).join('');
-    const rows = sorted.map(([id, label]) => `<div class="plce-item${lay[id].line ? '' : ' off'}"><div class="plce-item-h"><span class="plce-name">${esc(label)}</span></div>
-      <div class="plce-row plce-wrap"><select data-fld="${esc(K(id, 'line'))}">${opt(lay[id].line, [[0, 'Hidden'], [1, 'Line 1'], [2, 'Line 2'], [3, 'Line 3'], [4, 'Line 4'], [5, 'Line 5']])}</select>
-        ${lay[id].line ? `<select data-fld="${esc(K(id, 'pos'))}">${opt(lay[id].pos, ord.map((n, i) => [i + 1, n]))}</select>
-        <select data-fld="${esc(K(id, 'weight'))}">${opt(lay[id].weight, weights)}</select>` : ''}</div>
-      ${lay[id].line ? `<div class="plce-row plce-nowrap"><label class="lbl">Size</label><input type="range" data-fldr="${esc(K(id, 'px'))}" min="8" max="40" step="1" value="${Number(lay[id].px || (lay[id].line === 1 ? 15 : 12))}">
+    const rows = sorted.map(([id, label]) => { const off = lay[id].hidden, dis = off ? ' disabled' : ''; return `<div class="plce-item${off ? ' off' : ''}"><div class="plce-item-h"><span class="plce-name">${esc(label)}</span>
+        <label class="plce-check plce-hide"><input type="checkbox" data-fldhide="${esc(K(id, 'hidden'))}"${off ? ' checked' : ''}>Hidden</label></div>
+      <div class="plce-row plce-wrap"><select data-fld="${esc(K(id, 'line'))}"${dis}>${opt(lay[id].line, [[1, 'Line 1'], [2, 'Line 2'], [3, 'Line 3'], [4, 'Line 4'], [5, 'Line 5']])}</select>
+        <select data-fld="${esc(K(id, 'pos'))}"${dis}>${opt(lay[id].pos, ord.map((n, i) => [i + 1, n]))}</select>
+        <select data-fld="${esc(K(id, 'weight'))}"${dis}>${opt(lay[id].weight, weights)}</select></div>
+      ${!off ? `<div class="plce-row plce-nowrap"><label class="lbl">Size</label><input type="range" data-fldr="${esc(K(id, 'px'))}" min="8" max="40" step="1" value="${Number(lay[id].px || (lay[id].line === 1 ? 15 : 12))}">
         <span class="plce-val" data-fldv="${esc(K(id, 'px'))}">${lay[id].px ? `${lay[id].px}px` : 'line'}</span>${lay[id].px ? `<button class="plce-reset" data-fldclr="${esc(K(id, 'px'))}" title="Line size"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>
-        ${this._colorControl(K(id, 'color'), ['Colour', 'Line colour', '#bbbbbb'])}` : ''}</div>`).join('');
+        ${this._colorControl(K(id, 'color'), ['Colour', 'Line colour', '#bbbbbb'])}` : ''}</div>`; }).join('');
     const tpl = fieldFamily(kind) === 'row' && !own.fields;
     return `${tpl ? '<p class="plce-hint">This row shows its current lines (Appearance → Row text) until you change one of these.</p>' : ''}
       <div class="plce-lockbar"><button class="plce-lock${locked ? '' : ' open'}" data-flock="${esc(kind)}"><ha-icon icon="mdi:${locked ? 'lock' : 'lock-open-variant'}"></ha-icon>${locked ? 'Unlock to edit' : 'Editing: lock'}</button>
@@ -4576,6 +4582,7 @@ class PlexCenterCardEditor extends HTMLElement {
     all('[data-edscreen]', (b) => b.addEventListener('click', () => { this._edScreen = b.dataset.edscreen; this._render(); }));
     all('[data-flock]', (b) => b.addEventListener('click', () => { const k = b.dataset.flock; this._fLock = { ...(this._fLock || {}), [k]: this._fLock?.[k] === false }; this._render(); }));
     all('[data-fld]', (el) => el.addEventListener('change', () => { const prop = el.dataset.fld.split('.').pop(); this._setK(el.dataset.fld, prop === 'weight' ? el.value : Number(el.value)); this._render(); }));
+    all('[data-fldhide]', (el) => el.addEventListener('change', () => { this._setK(el.dataset.fldhide, el.checked); this._render(); }));
     all('[data-fldr]', (el) => {
       el.addEventListener('input', () => { const v = this.querySelector(`[data-fldv="${CSS.escape(el.dataset.fldr)}"]`); if (v) v.textContent = `${el.value}px`; });
       el.addEventListener('change', () => { this._setK(el.dataset.fldr, Number(el.value)); this._render(); });
