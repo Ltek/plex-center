@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.71
+// Version: v2026.11.17.72
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.71';
+const BUILD_NUMBER = 'v2026.11.17.72';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1215,6 +1215,13 @@ const CARD_CSS = `
 .plc-calp-lbl { font-size: .58em; font-weight: 700; line-height: 1.05; }
 .plc-calp-dots { margin-top: auto; display: flex; gap: 2px; justify-content: center; padding-bottom: 2px; }
 .plc-calp-dots i { width: 6px; height: 6px; border-radius: 50%; }
+.plc-calp-views { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.plc-calp-strip .plc-calp-cell { aspect-ratio: auto; min-height: 64px; align-items: center; text-align: center; }
+.plc-calp-strip .plc-calp-num { align-self: center; font-size: 1.05em; }
+.plc-calp-wd { display: block; font-size: 11px; opacity: .7; text-transform: uppercase; }
+.plc-calp-dayh { display: block; width: 100%; text-align: left; border: none; background: none; color: var(--secondary-text-color); font: inherit;
+  font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 8px 2px 0; cursor: pointer; }
+.plc-calp-dayh.today { color: var(--plc-a); }
 .plc-calp-sep { height: 4px; border-radius: 2px; margin: 12px 4px; background: var(--plc-bg2); }
 .plc-calp-list { display: flex; flex-direction: column; gap: 10px; }
 .plc-calp-ring { flex: none; margin-left: auto; width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--c); display: flex; align-items: center; justify-content: center;
@@ -4965,21 +4972,26 @@ Object.assign(PlexCenterCard.prototype, {
   /** Phones (like nzb360): a compact month with dots, and the chosen day's entries as cards below. */
   async _renderCalPhone(main) {
     const v = this._v, at = v.calDate ? parseYmd(v.calDate) : new Date();
-    const ws2 = cfg(this._c, 'week_start') === 'sun' ? 0 : 1, first = new Date(at.getFullYear(), at.getMonth(), 1);
-    const start = addDays(first, -((first.getDay() - ws2 + 7) % 7)), today = ymd(new Date());
+    const first = new Date(at.getFullYear(), at.getMonth(), 1), [start, days, view] = this._calRange(), today = ymd(new Date());
+    const title = view === 'month' ? at.toLocaleDateString([], { month: 'long', year: 'numeric' })
+      : view === 'week' ? `${start.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${addDays(start, 6).toLocaleDateString([], { month: 'short', day: 'numeric' })}`
+        : at.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+    const step = { month: ['Last month', 'Next month'], week: ['Last week', 'Next week'], day: ['Previous day', 'Next day'] }[view];
     const types = new Set(v.calTypes || []), status = v.calStatus || 'all';
     const pill = (attr, on, color, label) => `<button class="plc-cal-pill${on ? ' on' : ''}" ${attr}>${color ? `<span class="plc-cal-dot" style="background:${color}"></span>` : ''}${esc(label)}</button>`;
     main.innerHTML = `<div class="plc-cal plc-calp"><div class="plc-calp-head"><ha-icon icon="mdi:calendar-month"></ha-icon>
-        <div class="plc-calp-ttl"><span>Calendar</span><b>${esc(at.toLocaleDateString([], { month: 'long', year: 'numeric' }))}</b></div>
+        <div class="plc-calp-ttl"><span>Calendar</span><b>${esc(title)}</b></div>
         <span class="plc-calp-legend">${Object.values(CAL_TYPES).map(([, , c]) => `<i style="background:${c}"></i>`).join('')}</span><span class="plc-sp"></span>
         <button class="plc-icon-btn" data-calfilt title="Filters"><ha-icon icon="mdi:filter-variant"></ha-icon></button>
-        <button class="plc-icon-btn" data-calnav="-1" title="Last month"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
-        <button class="plc-icon-btn" data-calnav="1" title="Next month"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div>
+        <button class="plc-icon-btn" data-calnav="-1" title="${step[0]}"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+        <button class="plc-icon-btn" data-calnav="1" title="${step[1]}"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div>
+      <div class="plc-calp-views"><div class="plc-cal-views">${['month', 'week', 'day'].map((x) => `<button class="${x === view ? 'on' : ''}" data-calview="${x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}</div>
+        <span class="plc-sp"></span><button class="plc-chip" data-calnav="today">Today</button></div>
       ${v.calFilt ? `<div class="plc-cal-filters">${pill('data-caltype=""', !types.size, '', 'All')}${Object.entries(CAL_TYPES).map(([k, [n, , c]]) => pill(`data-caltype="${k}"`, types.has(k), c, n)).join('')}
         ${CAL_STATUS.map(([k, n, c]) => pill(`data-calstatus="${k}"`, status === k, c, n)).join('')}</div>` : ''}
       <div class="plc-cal-note"></div><div class="plc-calp-body"><div class="plc-msg">Loading…</div></div></div>`;
     let res;
-    try { res = await cached(this._hass, `cal:${ymd(start)}:42:${this._tv()?.id || ''}`, 120000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: addDays(start, 42).toISOString(), tv: this._tv()?.id })); }
+    try { res = await cached(this._hass, `cal:${ymd(start)}:${days}:${this._tv()?.id || ''}`, 120000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: addDays(start, days).toISOString(), tv: this._tv()?.id })); }
     catch (e) { main.querySelector('.plc-calp-body').innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; return; }
     if (!main.isConnected || this._v.tab !== 'calendar') return;
     const bad = Object.entries(res.sources || {}).filter(([, st]) => st === 'error').map(([a]) => a[0].toUpperCase() + a.slice(1));
@@ -4989,9 +5001,30 @@ Object.assign(PlexCenterCard.prototype, {
     this._calEvents = (res.events || []).filter(keep);
     const byDay = new Map();
     this._calEvents.forEach((ev, i) => { const d = evDay(ev); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(i); });
-    if (!v.calSel || parseYmd(v.calSel).getMonth() !== at.getMonth()) v.calSel = at.getMonth() === new Date().getMonth() && at.getFullYear() === new Date().getFullYear() ? today : ymd(first);
     this._calPhoneByDay = byDay;
+    if (view !== 'month') { this._paintCalPhoneDays(main, view, at, today); return; }
+    if (!v.calSel || parseYmd(v.calSel).getMonth() !== at.getMonth()) v.calSel = at.getMonth() === new Date().getMonth() && at.getFullYear() === new Date().getFullYear() ? today : ymd(first);
     this._paintCalPhone(main, start, at, today);
+  },
+  /** Phone Week / Day: a strip of the week's days (tap one for its Day), then the entries (Week: every day, Day: that day). */
+  _paintCalPhoneDays(main, view, at, today) {
+    const byDay = this._calPhoneByDay, ws2 = cfg(this._c, 'week_start') === 'sun' ? 0 : 1;
+    const d0 = new Date(at.getFullYear(), at.getMonth(), at.getDate()), wk = addDays(d0, -((d0.getDay() - ws2 + 7) % 7)), sel = view === 'day' ? ymd(d0) : '';
+    const strip = Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(wk, i), k = ymd(d), list = (byDay.get(k) || []).map((n) => this._calEvents[n]);
+      return `<button class="plc-calp-cell${k === today ? ' today' : ''}${k === sel ? ' sel' : ''}" data-calday="${k}"><span class="plc-calp-wd">${esc(d.toLocaleDateString([], { weekday: 'short' }))}</span>
+        <span class="plc-calp-num">${d.getDate()}</span><span class="plc-calp-dots">${list.slice(0, 3).map((ev) => `<i style="background:${this._calColor(ev)}"></i>`).join('')}</span></button>`;
+    }).join('');
+    const dayList = (k) => calGroups(byDay.get(k) || [], this._calEvents).map((g) => this._calItem(g.n, { phone: true, group: g })).join('');
+    let list;
+    if (view === 'day') list = dayList(sel) || `<div class="plc-msg">Nothing on ${esc(d0.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }))}.</div>`;
+    else {
+      list = Array.from({ length: 7 }, (_, i) => {
+        const d = addDays(wk, i), k = ymd(d), cards = dayList(k);
+        return cards ? `<button class="plc-calp-dayh${k === today ? ' today' : ''}" data-calday="${k}">${esc(d.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' }))}${k === today ? ' · Today' : ''}</button>${cards}` : '';
+      }).join('') || '<div class="plc-msg">Nothing this week.</div>';
+    }
+    main.querySelector('.plc-calp-body').innerHTML = `<div class="plc-calp-grid plc-calp-strip">${strip}</div><div class="plc-calp-sep"></div><div class="plc-calp-list">${list}</div>`;
   },
   _paintCalPhone(main, start, at, today) {
     const byDay = this._calPhoneByDay, sel = this._v.calSel, month = at.getMonth();
@@ -5126,7 +5159,7 @@ Object.assign(PlexCenterCard.prototype, {
     if ((el = t('[data-calnav]'))) {
       const dir = el.dataset.calnav, view = v.calView || cfg(this._c, 'calendar_view'), at = v.calDate ? parseYmd(v.calDate) : new Date();
       if (dir === 'today') v.calDate = null;
-      else if (view === 'month' || this._phone) v.calDate = ymd(new Date(at.getFullYear(), at.getMonth() + Number(dir), 1));
+      else if (view === 'month') v.calDate = ymd(new Date(at.getFullYear(), at.getMonth() + Number(dir), 1));
       else v.calDate = ymd(addDays(at, Number(dir) * (view === 'week' ? 7 : 1)));
       rerender(); return true;
     }

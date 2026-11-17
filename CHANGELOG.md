@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.17.72
+
+**New**
+- **Calendar on phones: Month / Week / Day** buttons and a *Today* chip under the header.
+  - *Month* is the compact month with the chosen day's entries below (as before).
+  - *Week* shows a strip of the week's 7 days, then every day's entries under its own heading.
+  - *Day* shows the same strip with that day picked, then its entries.
+  - Tapping a day in the strip or a day heading opens that Day; the arrows step a month, a week or a day.
+  - The phone calendar now opens in the *Opens in* view from the Calendar settings (Month by default).
+
 ## v2026.11.17.71
 
 **New**
