@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.17.76
+
+**Changed**
+- **Now playing no longer opens by itself** when the page loads and the selected TV is playing. It opens when you
+  tap a Watching now card or start a title. To have it open by itself, turn on Now playing → Side panel →
+  *Open by itself when the selected TV is playing* (off by default).
+- **Watching now's chevron** sits right next to the header text and takes its size, weight and colour.
+  Watching now → Header → *Chevron*: *Left of the header text* or *Right of the text* (default).
+
 ## v2026.11.17.75
 
 **Fixed**
