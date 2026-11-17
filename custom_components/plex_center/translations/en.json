@@ -29,6 +29,7 @@
           "pipup": "PiPup player",
           "adb": "Android TV (ADB) player",
           "plex_client": "Plex player of this TV",
+          "remote": "Android TV Remote player of this TV",
           "route": "Play with"
         },
         "data_description": {
@@ -37,6 +38,7 @@
           "pipup": "The PiPup integration's media player for this TV. Recommended: it opens the title and presses Play, and gives exact seek. Needs PiPup app 0.32+ with clicks allowed for Plex.",
           "adb": "The Android TV (ADB) integration's media player. Used to play when there is no PiPup (no exact seek), and for the TV's screenshot when nothing plays.",
           "plex_client": "The Plex integration's player for this TV's Plex app. Gives the poster and episode while something plays. Plex Web and Plex HTPC can also be played on directly through it.",
+          "remote": "Optional. The Android TV Remote integration's player: Plex Center reads the TV's power from it and turns the TV on and off with its Power key (never a deep sleep).",
           "route": "Automatic: Plex remote control when the player accepts it (Plex Web, HTPC), else PiPup when its clicks allow Plex, else ADB. Pick one only if Automatic chooses wrongly."
         }
       },
@@ -146,6 +148,16 @@
         "url": {
           "name": "YouTube link",
           "description": "Or a YouTube trailer link."
+        }
+      }
+    },
+    "resume": {
+      "name": "Resume",
+      "description": "Turn a Plex Center TV on and carry on with what was playing when it was turned off. Plex titles start at Plex's saved position; other apps are opened and sent Play (best effort).",
+      "fields": {
+        "tv": {
+          "name": "TV",
+          "description": "Name or id of the TV."
         }
       }
     }

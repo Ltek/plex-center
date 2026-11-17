@@ -69,3 +69,26 @@ def test_real_playback():
     assert real_playback(S("playing", 5391))
     assert real_playback(S("paused"))
     assert not real_playback(S("idle", 5391))
+
+
+def test_fill_remotes_by_name(hass):
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.plex_center.tvs import fill_remotes, tv_on, tv_playing
+
+    reg = er.async_get(hass)
+    reg.async_get_or_create("media_player", "androidtv_remote", "lr-remote", suggested_object_id="androidtv_livingroom")
+    tvs = [{"id": "living_room_tv", "name": "Living Room TV", "pipup": "media_player.living_room_tv"},
+           {"id": "shield", "name": "Shield", "adb": "media_player.theater_shield", "remote": "media_player.x"}]
+    out = fill_remotes(hass, tvs)
+    assert out[0]["remote"] == "media_player.androidtv_livingroom" and out[1]["remote"] == "media_player.x"
+    assert fill_remotes(hass, out) is None
+    # power comes from the TV's own players, never the Plex player
+    tv = {**out[0], "plex_client": "media_player.plex"}
+    hass.states.async_set("media_player.living_room_tv", "off", {})
+    hass.states.async_set("media_player.androidtv_livingroom", "off", {})
+    hass.states.async_set("media_player.plex", "paused", {"media_duration": 2626})
+    assert tv_on(hass, tv) is False and tv_playing(hass, tv) is False
+    hass.states.async_set("media_player.androidtv_livingroom", "on", {})
+    assert tv_on(hass, tv) is True
+    assert tv_on(hass, {"plex_client": "media_player.plex"}) is None

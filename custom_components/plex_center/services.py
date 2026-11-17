@@ -13,7 +13,7 @@ import homeassistant.helpers.config_validation as cv
 from .const import DOMAIN, TV_ID, TV_NAME, TV_USER
 from .media import item_dict
 from .media import app_link
-from .play import control, start, trailer
+from .play import control, open_app, start, trailer
 
 PLAY_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
                           vol.Optional("title"): cv.string, vol.Optional("mode", default="play"): vol.In(["play", "restart", "next"])})
@@ -21,6 +21,7 @@ MARK_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Required("key"): vo
                           vol.Required("watched"): cv.boolean})
 TRAILER_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
                              vol.Optional("url"): cv.string})
+RESUME_SCHEMA = vol.Schema({vol.Required("tv"): cv.string})
 CONTROL_SCHEMA = vol.Schema({vol.Required("tv"): cv.string,
                              vol.Required("action"): vol.In(["play", "pause", "play_pause", "stop", "home", "seek", "skip",
                                                              "volume_up", "volume_down", "mute", "power_on", "power_off"]),
@@ -93,6 +94,22 @@ def async_register(hass: HomeAssistant) -> None:
             else:
                 item.markUnplayed()
         await entry.runtime_data.conn.async_call(tv.get(TV_USER), run)
+        if call.data["watched"] and entry.runtime_data.resumes:
+            entry.runtime_data.resumes.forget_key(call.data["key"])
+
+    async def resume(call: ServiceCall) -> None:
+        """Turn the TV on and carry on with what was playing when it was turned off."""
+        entry, tv = find_tv(hass, call.data["tv"])
+        res = entry.runtime_data.resumes
+        rec = res.get(tv[TV_ID]) if res else None
+        if not rec:
+            raise HomeAssistantError(f"Nothing to resume on {tv[TV_NAME]}")
+        if rec["kind"] == "plex":
+            item = await _resolve(hass, entry, tv, rec["key"], None, "play")
+            await start(hass, tv, item, "play")      # Plex starts it at its saved position
+        else:
+            await open_app(hass, tv, rec)
+        res.forget(tv[TV_ID])
 
     async def play_trailer(call: ServiceCall) -> None:
         entry, tv = find_tv(hass, call.data["tv"])
@@ -116,3 +133,4 @@ def async_register(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, "play_trailer", play_trailer, schema=TRAILER_SCHEMA)
     hass.services.async_register(DOMAIN, "play", play, schema=PLAY_SCHEMA)
     hass.services.async_register(DOMAIN, "control", ctl, schema=CONTROL_SCHEMA)
+    hass.services.async_register(DOMAIN, "resume", resume, schema=RESUME_SCHEMA)

@@ -10,9 +10,9 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import BTN_RESTART, BTN_WATCH, PLEX_PKG, TV_ADB, TV_NAME, TV_PIPUP, TV_PLEX, TV_USER
+from .const import BTN_RESTART, BTN_WATCH, PLEX_PKG, TV_ADB, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_USER
 from .media import SAFE_LINK
-from .tvs import real_playback, route_for
+from .tvs import route_for, tv_on, tv_playing
 
 _LOGGER = logging.getLogger(__name__)
 _BUSY: set[str] = set()
@@ -26,11 +26,97 @@ def _tap(button: str) -> str:
 
 
 def _playing(hass: HomeAssistant, tv: dict[str, Any]) -> bool:
-    return any(real_playback(hass.states.get(e)) for e in (tv.get(TV_PIPUP), tv.get(TV_PLEX), tv.get(TV_ADB)) if e)
+    """Something really plays: the TV is on and a player says so (a stale paused Plex session doesn't count)."""
+    return tv_playing(hass, tv)
+
+
+def _has(hass: HomeAssistant, entity_id: str | None) -> bool:
+    return bool(entity_id and hass.states.get(entity_id))
+
+
+def _name(tv: dict[str, Any]) -> str:
+    return tv.get(TV_NAME) or "This TV"
 
 
 async def _svc(hass: HomeAssistant, domain: str, service: str, data: dict[str, Any], entity_id: str) -> None:
     await hass.services.async_call(domain, service, {**data, "entity_id": entity_id}, blocking=True)
+
+
+# ------------------------------------------------------------------------------------------- power
+
+async def power_on(hass: HomeAssistant, tv: dict[str, Any]) -> None:
+    """Turn the TV on: PiPup, then Android TV Remote, then ADB's wake key."""
+    pip, rem, adb = tv.get(TV_PIPUP), tv.get(TV_REMOTE), tv.get(TV_ADB)
+    if _has(hass, pip):
+        await _svc(hass, "media_player", "turn_on", {}, pip)
+    elif _has(hass, rem):
+        await _svc(hass, "media_player", "turn_on", {}, rem)
+    elif _has(hass, adb):
+        await _svc(hass, "androidtv", "adb_command", {"command": "input keyevent KEYCODE_WAKEUP"}, adb)
+    else:
+        raise HomeAssistantError(f"{_name(tv)} has no player that can turn it on")
+
+
+async def power_off(hass: HomeAssistant, tv: dict[str, Any]) -> None:
+    """Turn the TV off the way its remote does (standby), so it can be woken again from Home Assistant.
+
+    Only ADB's sleep key or the Android TV Remote's Power key. Never media_player.turn_off on PiPup, Cast or
+    Plex: on TCL Google TVs PiPup's turn off is a deep sleep that nothing but the remote wakes from.
+    """
+    adb, rem = tv.get(TV_ADB), tv.get(TV_REMOTE)
+    if _has(hass, adb):
+        await _svc(hass, "androidtv", "adb_command", {"command": "input keyevent KEYCODE_SLEEP"}, adb)
+    elif _has(hass, rem):
+        await _svc(hass, "media_player", "turn_off", {}, rem)
+    else:
+        raise HomeAssistantError(f"{_name(tv)} can only be turned off with its remote (Plex Center needs its ADB or Android TV Remote player)")
+
+
+def can_power_off(tv: dict[str, Any]) -> bool:
+    return bool(tv.get(TV_ADB) or tv.get(TV_REMOTE))
+
+
+async def wake(hass: HomeAssistant, tv: dict[str, Any], tries: int = 40) -> bool:
+    """Make the TV ready for a title: on, screensaver closed, no 'not responding' box. True if it was off."""
+    was_off = tv_on(hass, tv) is False
+    if was_off:
+        await power_on(hass, tv)
+        for _ in range(tries):          # up to ~20 s for its players to say on
+            await asyncio.sleep(0.5)
+            if tv_on(hass, tv):
+                break
+        await asyncio.sleep(2)
+    if not was_off and _playing(hass, tv):
+        return was_off
+    pip, adb = tv.get(TV_PIPUP), tv.get(TV_ADB)
+    if _has(hass, adb):   # wake key closes the screensaver without pressing anything; then close system boxes
+        await _svc(hass, "androidtv", "adb_command",
+                   {"command": "input keyevent KEYCODE_WAKEUP; am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS"}, adb)
+    elif _has(hass, pip):  # PiPup's turn on also closes the screensaver
+        await _svc(hass, "media_player", "turn_on", {}, pip)
+    return was_off
+
+
+async def open_app(hass: HomeAssistant, tv: dict[str, Any], rec: dict[str, Any]) -> None:
+    """Best effort for another app (HBO Max, Netflix ...): wake the TV, open the app, press Play.
+
+    These apps can't be told which title to play; if the TV closed the app, it opens on its home screen."""
+    pkg = str(rec.get("app_id") or "")
+    if not re.match(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)+$", pkg):
+        raise HomeAssistantError(f"Plex Center doesn't know how to open {rec.get('app') or 'that app'} on {_name(tv)}")
+    pip, adb = tv.get(TV_PIPUP), tv.get(TV_ADB)
+    await wake(hass, tv)
+    if _has(hass, pip):
+        await _svc(hass, "pipup", "launch_app", {"package": pkg}, pip)
+    elif _has(hass, adb):
+        await _svc(hass, "androidtv", "adb_command", {"command": f"monkey -p {pkg} -c android.intent.category.LAUNCHER 1"}, adb)
+    else:
+        raise HomeAssistantError(f"{_name(tv)} needs PiPup or ADB to open {rec.get('app') or 'that app'}")
+    await asyncio.sleep(8)
+    try:
+        await _svc(hass, "media_player", "media_play", {}, pip if _has(hass, pip) else adb)
+    except HomeAssistantError:
+        pass
 
 
 async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], mode: str = "play") -> str:
@@ -55,26 +141,47 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
                                                             "media_content_id": "plex://" + json.dumps(payload)}, tv[TV_PLEX])
         elif route in ("pipup", "open"):
             pip = tv[TV_PIPUP]
-            if _playing(hass, tv):
+            was_off = await wake(hass, tv)
+            if not was_off and _playing(hass, tv):   # the TV closed its apps in standby: nothing to leave
                 await _svc(hass, "pipup", "send_key", {"key": "back"}, pip)
                 await asyncio.sleep(1.5)
             data = {"package": PLEX_PKG, "uri": link}
             if route == "open":
                 await _svc(hass, "pipup", "launch_app", data, pip)
             else:
+                async def launch(button: str) -> None:
+                    await _svc(hass, "pipup", "launch_app", {**data, "click": button, "method": "ok", "wait": 45}, pip)
+
+                async def launch_retry(button: str) -> None:
+                    try:
+                        await launch(button)
+                    except HomeAssistantError as err:
+                        if "not on screen" not in str(err):
+                            raise
+                        # Plex opened behind the screensaver (or was slow to start): Home closes it, then once more
+                        await _svc(hass, "pipup", "send_key", {"key": "home"}, pip)
+                        await asyncio.sleep(2)
+                        try:
+                            await launch(button)
+                        except HomeAssistantError as err2:
+                            if "not on screen" in str(err2):
+                                raise HomeAssistantError(f"Plex didn't open on {_name(tv)}. Try again.") from err2
+                            raise
+
                 try:
-                    await _svc(hass, "pipup", "launch_app", {**data, "click": BTN_RESTART if mode == "restart" else BTN_WATCH,
-                                                             "method": "ok", "wait": 25}, pip)
+                    await launch_retry(BTN_RESTART if mode == "restart" else BTN_WATCH)
                 except HomeAssistantError as err:
                     # Never started: no Restart button on the page; Watch starts from the beginning anyway.
-                    if mode == "restart" and ("404" in str(err) or "not found" in str(err).lower()):
-                        await _svc(hass, "pipup", "launch_app", {**data, "click": BTN_WATCH, "method": "ok", "wait": 25}, pip)
+                    if mode == "restart" and "not on screen" not in str(err) and "didn't open" not in str(err) \
+                            and ("404" in str(err) or "not found" in str(err).lower()):
+                        await launch_retry(BTN_WATCH)
                     else:
                         raise
         else:  # adb
             adb = tv[TV_ADB]
             cmd = lambda c: _svc(hass, "androidtv", "adb_command", {"command": c}, adb)  # noqa: E731
-            if _playing(hass, tv):
+            was_off = await wake(hass, tv)
+            if not was_off and _playing(hass, tv):
                 await cmd("input keyevent KEYCODE_BACK")
                 await asyncio.sleep(1.5)
             await cmd(f"input keyevent KEYCODE_WAKEUP; am start -a android.intent.action.VIEW -d '{link}' {PLEX_PKG}")
@@ -95,20 +202,26 @@ VOLUME_ACTIONS = {"volume_up", "volume_down", "mute", "power_on", "power_off"}
 
 
 async def _volume_power(hass: HomeAssistant, tv: dict[str, Any], route: str, action: str) -> None:
-    """Volume and power: through the player that controls the TV (PiPup, ADB or the Plex client)."""
+    """Volume through the player that controls the TV (PiPup, ADB or the Plex client); power through power_on / power_off."""
+    if action == "power_on":
+        await power_on(hass, tv)
+        return
+    if action == "power_off":
+        await power_off(hass, tv)
+        return
     pip, adb = tv.get(TV_PIPUP), tv.get(TV_ADB)
     ent = pip if pip and hass.states.get(pip) else adb if adb and hass.states.get(adb) else tv.get(TV_PLEX)
     if not ent:
-        raise HomeAssistantError("No player to change the volume or power with")
-    if ent == adb and action in ("volume_up", "volume_down", "mute", "power_on", "power_off"):
-        key = {"volume_up": "VOLUME_UP", "volume_down": "VOLUME_DOWN", "mute": "VOLUME_MUTE", "power_on": "WAKEUP", "power_off": "SLEEP"}[action]
+        raise HomeAssistantError("No player to change the volume with")
+    if ent == adb:
+        key = {"volume_up": "VOLUME_UP", "volume_down": "VOLUME_DOWN", "mute": "VOLUME_MUTE"}[action]
         await _svc(hass, "androidtv", "adb_command", {"command": f"input keyevent KEYCODE_{key}"}, ent)
         return
     if action == "mute":
         st = hass.states.get(ent)
         await _svc(hass, "media_player", "volume_mute", {"is_volume_muted": not bool(st and st.attributes.get("is_volume_muted"))}, ent)
     else:
-        await _svc(hass, "media_player", {"volume_up": "volume_up", "volume_down": "volume_down", "power_on": "turn_on", "power_off": "turn_off"}[action], {}, ent)
+        await _svc(hass, "media_player", {"volume_up": "volume_up", "volume_down": "volume_down"}[action], {}, ent)
 
 
 

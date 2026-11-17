@@ -25,6 +25,7 @@ class PlexCenterData:
 
     conn: PlexConnections
     tvs: list[dict[str, Any]] = field(default_factory=list)
+    resumes: Any = None          # resume.Resumes: what was playing when each TV was turned off
 
 
 type PlexCenterConfigEntry = ConfigEntry[PlexCenterData]
@@ -119,8 +120,19 @@ async def _register_resource(hass: HomeAssistant, url: str) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: PlexCenterConfigEntry) -> bool:
     """Set up one Plex server."""
+    from .resume import Resumes  # noqa: PLC0415
+    from .tvs import fill_remotes  # noqa: PLC0415
+
+    if (filled := fill_remotes(hass, list(entry.options.get(CONF_TVS, [])))) is not None:
+        hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_TVS: filled})
+
     entry.runtime_data = PlexCenterData(conn=PlexConnections(hass, entry.data[CONF_SERVER_ID]),
                                         tvs=list(entry.options.get(CONF_TVS, [])))
+    resumes = Resumes(hass, entry.entry_id)
+    await resumes.async_load()
+    resumes.track(entry.runtime_data.tvs)
+    entry.runtime_data.resumes = resumes
+    entry.async_on_unload(resumes.stop)
     entry.async_on_unload(entry.add_update_listener(_options_updated))
     return True
 
@@ -128,6 +140,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PlexCenterConfigEntry) -
 async def _options_updated(hass: HomeAssistant, entry: PlexCenterConfigEntry) -> None:
     entry.runtime_data.tvs = list(entry.options.get(CONF_TVS, []))
     entry.runtime_data.conn.forget()
+    if entry.runtime_data.resumes:
+        entry.runtime_data.resumes.track(entry.runtime_data.tvs)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PlexCenterConfigEntry) -> bool:

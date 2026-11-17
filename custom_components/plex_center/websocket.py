@@ -19,9 +19,9 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 
-from .const import DOMAIN, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_ROUTE, TV_USER, VERSION
+from .const import DOMAIN, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER, VERSION
 from .media import details, image_url, item_dict
-from .tvs import real_playback, route_for
+from .tvs import real_playback, route_for, tv_on
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,7 +35,8 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 @callback
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
-    for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar):
+    for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar,
+               ws_resumes, ws_resume_forget):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
@@ -85,11 +86,14 @@ def _section(server, library: str):
 def tv_state(hass: HomeAssistant, tv: dict[str, Any]) -> dict[str, Any]:
     """Live state of a TV for the card: route, power, and what plays (from its players)."""
     out: dict[str, Any] = {"route": route_for(hass, tv), "state": "unavailable"}
-    states = [hass.states.get(e) for e in (tv.get(TV_PIPUP), tv.get(TV_PLEX), tv.get(TV_ADB)) if e]
+    on = tv_on(hass, tv)
+    states = [hass.states.get(e) for e in (tv.get(TV_PIPUP), tv.get(TV_ADB), tv.get(TV_REMOTE), tv.get(TV_PLEX)) if e]
     states = [s for s in states if s]
-    if states:
-        out["state"] = next((s.state for s in states if s.state not in ("unavailable", "unknown")), states[0].state)
-    if live := next((s for s in states if real_playback(s)), None):
+    if on is False:
+        out["state"] = "off"
+    elif states:
+        out["state"] = next((s.state for s in states if s.state not in ("unavailable", "unknown", "off")), states[0].state)
+    if on is not False and (live := next((s for s in states if real_playback(s)), None)):
         out["playing"] = {"state": live.state, "title": live.attributes.get("media_title")}
     return out
 
@@ -115,7 +119,8 @@ async def ws_config(hass: HomeAssistant, connection, msg) -> None:
             except Exception as err:  # noqa: BLE001
                 libraries[user] = {"error": str(err)}
         tvs.append({"id": tv[TV_ID], "name": tv[TV_NAME], "user": user, "route_setting": tv.get(TV_ROUTE, "auto"),
-                    **{k: tv[k] for k in (TV_PIPUP, TV_ADB, TV_PLEX) if tv.get(k)}, **tv_state(hass, tv)})
+                    **{k: tv[k] for k in (TV_PIPUP, TV_ADB, TV_PLEX, TV_REMOTE) if tv.get(k)},
+                    "power_off": bool(tv.get(TV_ADB) or tv.get(TV_REMOTE)), **tv_state(hass, tv)})
     reg = er.async_get(hass)
     found = {p for p in (e.platform for e in reg.entities.values()) if p in INTEGRATIONS}
     upcoming = sorted(s.entity_id for s in hass.states.async_all("sensor") if isinstance(s.attributes.get("data"), (list, str))
@@ -410,3 +415,31 @@ def _entries(hass):
     from . import loaded_entries  # noqa: PLC0415
 
     return loaded_entries(hass)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/resumes", vol.Optional("entry_id"): str})
+@callback
+def ws_resumes(hass: HomeAssistant, connection, msg) -> None:
+    """What was playing when each TV was turned off: {tv_id: record}."""
+    try:
+        entry = _entry(hass, msg.get("entry_id"))
+    except LookupError as err:
+        connection.send_error(msg["id"], "not_set_up", str(err))
+        return
+    res = entry.runtime_data.resumes
+    connection.send_result(msg["id"], res.all() if res else {})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/resume_forget", vol.Optional("entry_id"): str,
+                                  vol.Required("tv"): str})
+@callback
+def ws_resume_forget(hass: HomeAssistant, connection, msg) -> None:
+    """Forget a TV's resume record (the card's ✕)."""
+    try:
+        entry = _entry(hass, msg.get("entry_id"))
+    except LookupError as err:
+        connection.send_error(msg["id"], "not_set_up", str(err))
+        return
+    if entry.runtime_data.resumes:
+        entry.runtime_data.resumes.forget(msg["tv"])
+    connection.send_result(msg["id"], {})

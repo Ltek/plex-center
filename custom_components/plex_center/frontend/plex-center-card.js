@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.79
+// Version: v2026.11.17.80
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.79';
+const BUILD_NUMBER = 'v2026.11.17.80';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -521,6 +521,9 @@ const DEFAULTS = {
   hold_ms: 2000,
   np_power: false,
   watching_apps: true,
+  watching_resume: 'keep',
+  watching_forget_h: 12,
+  watching_resume_apps: false,
   watching_icon: true,
   watching_chevron: true,
   watching_chevron_pos: 'right',
@@ -1145,6 +1148,13 @@ const CARD_CSS = `
 .plc-chip.on { border-color: var(--plc-a); background: color-mix(in srgb, var(--plc-a) 18%, transparent); }
 .plc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--disabled-text-color, #777); }
 .plc-dot.on { background: var(--success-color, #4caf50); } .plc-dot.play { background: var(--plc-a); }
+.plc-dot.resume { background: var(--warning-color, #ff9800); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning-color, #ff9800) 35%, transparent); }
+.plc-tv-resume { --mdc-icon-size: 15px; color: var(--warning-color, #ff9800); margin-left: 2px; }
+.plc-sess.resume { opacity: .9; border: 1px dashed color-mix(in srgb, var(--warning-color, #ff9800) 60%, transparent); cursor: pointer; }
+.plc-sess.resume .plc-sess-art.app ha-icon { color: var(--warning-color, #ff9800); }
+.plc-resume-st { color: var(--warning-color, #ff9800); }
+.plc-resume-btns { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.plc-resume-btns .plc-btn { padding: 4px 12px; min-height: 30px; }
 .plc-select, .plc-search { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--divider-color, #444); background: var(--plc-bg2);
   color: var(--primary-text-color); font: inherit; font-size: .9em; min-width: 0; }
 .plc-search { flex: 1 1 180px; max-width: 320px; }
@@ -1753,23 +1763,40 @@ async function cached(hass, key, ttl, fetch, { force = false } = {}) {
 }
 const peek = (key) => CACHE.get(key)?.data;
 
-const realOn = (hass, tv) => [tv.pipup, tv.plex_client, tv.adb].some((id) => id && isRealPlayback(hass.states[id]));
+/** Is the TV itself on? From PiPup / ADB / Android TV Remote, never the Plex player: Plex keeps a paused session
+ *  long after the TV is turned off. null = no way to tell (only a Plex player). */
+function tvPower(hass, tv) {
+  const sts = [tv?.pipup, tv?.adb, tv?.remote].map((id) => id && hass?.states[id]).filter((x) => x && !['unavailable', 'unknown'].includes(x.state));
+  if (!sts.length) return null;
+  return sts.some((x) => !['off', 'standby'].includes(x.state));
+}
+/** The Plex player's playback, unless it's a stale paused session (the TV closed the app; its own players show nothing). */
+function plexLive(hass, tv) {
+  const x = tv?.plex_client && hass?.states[tv.plex_client];
+  if (!isRealPlayback(x) || tvPower(hass, tv) === false) return null;
+  const own = [tv.pipup, tv.adb].some((id) => id && isRealPlayback(hass.states[id]));
+  const age = Date.now() - Date.parse(x.last_updated || x.last_changed || 0);
+  if (x.state === 'paused' && !own && (tv.pipup || tv.adb) && age > 120000) return null;
+  return x;
+}
+const realOn = (hass, tv) => tvPower(hass, tv) !== false && (!!plexLive(hass, tv) || [tv.pipup, tv.adb].some((id) => id && isRealPlayback(hass.states[id])));
 const tvLabel = (tv) => tv?.name || tv?.id || 'TV';
 
 /** Now playing on a TV, from its players' states (the Plex player supplies the poster and episode). */
 function nowPlaying(hass, tv) {
   if (!tv) return null;
-  const p = tv.pipup && hass.states[tv.pipup], x = tv.plex_client && hass.states[tv.plex_client], a = tv.adb && hass.states[tv.adb];
-  const src = [p, x, a].find((s) => isRealPlayback(s));
+  const p = tv.pipup && hass.states[tv.pipup], x = plexLive(hass, tv), a = tv.adb && hass.states[tv.adb], power = tvPower(hass, tv);
+  const src = power === false ? null : [p, x, a].find((s) => isRealPlayback(s));
   if (src) {
-    const meta = x && isRealPlayback(x) ? x.attributes : {};
+    const meta = x ? x.attributes : {};
     const at = src.attributes, series = meta.media_series_title;
-    return { tv, live: true, st: src, title: series || at.media_title || meta.media_title || 'Playing',
+    return { tv, live: true, on: power, st: src, title: series || at.media_title || meta.media_title || 'Playing',
       sub: series ? `S${meta.media_season} · E${meta.media_episode}${meta.media_title ? ` · ${meta.media_title}` : ''}` : (at.app_name || ''),
       art: meta.entity_picture || (src === a ? null : at.entity_picture) || null };
   }
-  const on = [p, x, a].find((s) => s && !['off', 'unavailable', 'standby', 'unknown'].includes(s.state));
-  return { tv, live: false, st: on || p || a || x || { state: 'off', attributes: {} },
+  const r = tv.remote && hass.states[tv.remote];
+  const on = power === false ? null : [p, a, r].find((s) => s && !['off', 'unavailable', 'standby', 'unknown'].includes(s.state));
+  return { tv, live: false, on: power, st: on || p || a || r || { state: 'off', attributes: {} },
     title: tvLabel(tv), sub: on ? (on.attributes.app_name || on.state) : 'Off', art: a?.attributes?.entity_picture || null };
 }
 const seekable = (tv) => ['pipup', 'open', 'plex'].includes(tv?.route);
@@ -2004,6 +2031,7 @@ class PlexCenterCard extends HTMLElement {
         await cached(this._hass, 'sessions', SESSIONS_MS - 1000, () => ws(this._hass, 'sessions'));
         if (JSON.stringify(peek('sessions') || []) !== before) { this._paintWatching(); this._renderNP(); }
       }
+      this._fetchResumes();
     } catch (e) {
       this._err = /unknown command|not_set_up|Unknown command/i.test(e?.message || e?.code || '')
         ? 'Set up the Plex Center integration first (Settings → Devices & services → Add integration → Plex Center).'
@@ -2059,10 +2087,11 @@ class PlexCenterCard extends HTMLElement {
     const mode = cfg(this._c, 'lock') ? 'hidden' : cfg(this._c, 'tv_picker');
     const how = cfg(this._c, 'tv_label');
     const icons = this._c.tv_icons || {};
-    const dot = (tv) => `<span class="plc-dot ${realOn(this._hass, tv) ? 'play' : (tv.state && !['off', 'unavailable', 'standby'].includes(tv.state) ? 'on' : '')}" data-dot="${esc(tv.id)}"></span>`;
+    const dot = (tv) => `<span class="plc-dot ${this._dotCls(tv)}" data-dot="${esc(tv.id)}"${this._resumeFor(tv) && !realOn(this._hass, tv) ? ' title="Off · ready to resume"' : ''}></span>`;
+    const rmark = (t) => (this._resumeFor(t) && !realOn(this._hass, t) ? '<ha-icon class="plc-tv-resume" icon="mdi:play-pause" title="Off · ready to resume"></ha-icon>' : '');
     const face = (t) => {
       const ic = `<ha-icon icon="${esc(icons[t.id] || 'mdi:television')}"></ha-icon>`;
-      return how === 'icon' ? `${dot(t)}${ic}` : how === 'both' ? `${dot(t)}${ic}${esc(tvLabel(t))}` : `${dot(t)}${esc(tvLabel(t))}`;
+      return how === 'icon' ? `${dot(t)}${ic}${rmark(t)}` : how === 'both' ? `${dot(t)}${ic}${esc(tvLabel(t))}${rmark(t)}` : `${dot(t)}${esc(tvLabel(t))}${rmark(t)}`;
     };
     const cls = how === 'icon' ? ' icononly' : '';
     let picker = '';
@@ -2179,8 +2208,8 @@ class PlexCenterCard extends HTMLElement {
     const cur = this._tv(), icons = this._c.tv_icons || {};
     this._menu(anchor, 'Move to', this._tvs().filter((t) => t.id !== cur?.id).map((t) => {
       const busy = realOn(this._hass, t);
-      return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub: busy ? 'Playing something else: it will stop' : (t.state ? t.state[0].toUpperCase() + t.state.slice(1) : ''),
-        attr: `data-moveto="${esc(t.id)}"`, dot: `<span class="plc-dot ${busy ? 'play' : (t.state && !['off', 'unavailable', 'standby'].includes(t.state) ? 'on' : '')}"></span>` };
+      return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub: busy ? 'Playing something else: it will stop' : this._tvSub(t),
+        attr: `data-moveto="${esc(t.id)}"`, dot: `<span class="plc-dot ${this._dotCls(t)}"></span>` };
     }));
   }
 
@@ -2206,6 +2235,65 @@ class PlexCenterCard extends HTMLElement {
     } catch (e) { this._toast(`Could not move: ${e?.message || e}`); }
   }
 
+  /** What was playing when the TV was turned off (the integration keeps it), if this card shows it. */
+  _resumeFor(tv) {
+    if (!tv || cfg(this._c, 'watching_resume') === 'drop') return null;
+    const r = (peek('resumes') || {})[tv.id];
+    if (!r || (r.kind === 'app' && !cfg(this._c, 'watching_resume_apps'))) return null;
+    const h = Number(cfg(this._c, 'watching_forget_h')) || 0;
+    if (h > 0 && Date.now() - Date.parse(r.at) > h * 3600000) return null;
+    return r;
+  }
+  /** The TV's dot: playing, off with something to resume, on, or off. */
+  _dotCls(t) {
+    if (realOn(this._hass, t)) return 'play';
+    const p = tvPower(this._hass, t);
+    if (this._resumeFor(t) && p !== true) return 'resume';
+    if (p === true) return 'on';
+    return p === null && t.state && !['off', 'unavailable', 'standby'].includes(t.state) ? 'on' : '';
+  }
+  /** A TV's status in the TV menus. */
+  _tvSub(t) {
+    const r = this._resumeFor(t), p = tvPower(this._hass, t);
+    if (r && p !== true) return `Off · Resume ${r.show || r.title || r.app || ''}`.trim();
+    if (r) return `Ready to resume ${r.show || r.title || r.app || ''}`.trim();
+    if (p === false) return 'Off';
+    if (p === true) return 'On';
+    return t.state ? t.state[0].toUpperCase() + t.state.slice(1) : '';
+  }
+  /** "Paused at 6:29 of 43:46" */
+  _pausedAt(r) {
+    const pos = Number(r.position) || 0, dur = Number(r.duration) || 0;
+    return pos ? `Paused at ${fmtTime(pos)}${dur ? ` of ${fmtTime(dur)}` : ''}` : 'Paused';
+  }
+  /** A Plex record's poster (from Plex, fetched once). */
+  _resumeArt(tv, r) {
+    if (r.kind !== 'plex' || !r.key) return null;
+    const key = `item:${tv.id}:${r.key}`, d = peek(key);
+    if (d) return d.poster || d.art || null;
+    if (!this._upLoading?.has(key)) {
+      (this._upLoading ||= new Set()).add(key);
+      cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'item', { tv: tv.id, key: r.key }))
+        .then(() => { this._paintWatching(); this._renderNP(true); }).catch(() => {}).finally(() => this._upLoading.delete(key));
+    }
+    return null;
+  }
+  async _fetchResumes(force = false) {
+    if (!this._hass) return;
+    const before = JSON.stringify(peek('resumes') || {});
+    try { await cached(this._hass, 'resumes', SESSIONS_MS - 1000, () => ws(this._hass, 'resumes'), { force }); } catch { return; }
+    if (JSON.stringify(peek('resumes') || {}) !== before) { this._paintWatching(); this._renderNP(true); this._renderTop(); }
+  }
+  _resume(tvId) {
+    const tv = this._tvs().find((x) => x.id === tvId);
+    if (!tv) return;
+    if (tv.id !== this._tv()?.id) this._setTv(tv);
+    this._v.npOpen = tv.id;
+    this._toast(`Turning on ${tvLabel(tv)} and resuming…`);
+    this._hass.callService('plex_center', 'resume', { tv: tv.id })
+      .then(() => this._fetchResumes(true)).catch((e) => this._toast(`Could not resume: ${e?.message || e}`));
+  }
+
   /** The header's Watching now chip: its count follows the sessions. */
   _renderTopChip() {
     const chip = this._root?.querySelector('[data-watchpop]');
@@ -2226,8 +2314,9 @@ class PlexCenterCard extends HTMLElement {
     const icons = this._c.tv_icons || {};
     this._menu(anchor, 'Play on', this._tvs().map((t) => {
       const s2 = this._sessionFor(t);
-      const sub = s2 ? `${s2.user} · ${s2.show || s2.title}` : realOn(this._hass, t) ? 'Playing' : (t.state ? t.state[0].toUpperCase() + t.state.slice(1) : '');
-      const dotCls = realOn(this._hass, t) ? 'play' : (t.state && !['off', 'unavailable', 'standby'].includes(t.state) ? 'on' : '');
+      const live = realOn(this._hass, t);
+      const sub = live && s2 ? `${s2.user} · ${s2.show || s2.title}` : live ? 'Playing' : this._tvSub(t);
+      const dotCls = this._dotCls(t);
       return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub, on: t === cur, attr: `data-tvpick="${esc(t.id)}"`, dot: `<span class="plc-dot ${dotCls}"></span>` };
     }));
   }
@@ -2372,7 +2461,7 @@ class PlexCenterCard extends HTMLElement {
   }
 
   _panelVisible(np = nowPlaying(this._hass, this._tv())) {
-    return this._npMode() === 'panel' && !this._phone && !!np?.live && this._v.npHidden !== `${np.tv?.id}|${np.title}`
+    return this._npMode() === 'panel' && !this._phone && !!np && (np.live || !!this._resumeFor(np.tv)) && this._v.npHidden !== `${np.tv?.id}|${np.title}`
       && (!!cfg(this._c, 'np_auto_open') || this._v.npOpen === np.tv?.id);   // opened by hand (Watching now, Play) unless set to open by itself
   }
 
@@ -2600,7 +2689,18 @@ class PlexCenterCard extends HTMLElement {
 
   /** The sessions Watching now shows (every TV, or only the one in the selector). */
   _watchList() {
-    const cur = this._tv(), all = [...(peek('sessions') || []), ...(cfg(this._c, 'watching_apps') ? this._appSessions() : [])];
+    // Plex keeps sessions of a TV that's been turned off: drop them (a resume card stands in when there's one)
+    const plex = (peek('sessions') || []).filter((x) => {
+      const t = this._tvForSession(x);
+      if (!t) return true;
+      if (tvPower(this._hass, t) === false) return false;
+      return !(x.player_state === 'paused' && !realOn(this._hass, t) && this._resumeFor(t));
+    });
+    const resumes = this._tvs().filter((t) => !realOn(this._hass, t) && this._resumeFor(t)).map((t) => {
+      const r = this._resumeFor(t);
+      return { _tv: t.id, _resume: r, key: `resume:${t.id}`, title: r.show || r.title || r.app || 'Paused', type: r.type || r.kind };
+    });
+    const cur = this._tv(), all = [...plex, ...(cfg(this._c, 'watching_apps') ? this._appSessions() : []), ...resumes];
     return all.filter((x) => cfg(this._c, 'watching_tvs') !== 'selected' || this._tvForSession(x)?.id === cur?.id);
   }
   /** TVs playing another app (HBO Max, Netflix …), from the TV's own entity: Plex doesn't know about them. */
@@ -2641,6 +2741,7 @@ class PlexCenterCard extends HTMLElement {
     const chev = coll && cfg(this._c, 'watching_chevron') ? `<span class="chev${cpos === 'end' ? ' end' : ''}" aria-hidden="true"${cst ? ` style="${cst}"` : ''}>›</span>` : '';
     const ch = (p) => (cpos === p ? chev : '');
     sec.innerHTML = `${pop ? '' : `<div class="plc-sec-h${coll ? ' tap' : ''}"${coll ? ` role="button" tabindex="0" data-wtoggle="${place}" aria-expanded="${open}"` : ''}>${hIcon}${ch('left')}<span>Watching now</span>${ch('right')} <span class="n">${s.length}</span>${ch('count')}${ch('end')}</div>`}<div class="plc-watch${pop ? ' pop' : ''}"${open ? '' : ' hidden'}>${s.map((x) => {
+      if (x._resume) return this._resumeCardHtml(x);
       const tv = tvFor(x);
       return `
       <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}>${x._app ? `<div class="plc-sess-art app"><ha-icon icon="mdi:television-play"></ha-icon>${x.poster ? `<i style="background-image:url('${cssUrl(x.poster)}')"></i>` : ''}</div>`
@@ -2650,6 +2751,18 @@ class PlexCenterCard extends HTMLElement {
           state: x.player_state === 'paused' ? 'paused' : '' }).map(([, h], i) => `<div class="${i === 0 ? 'plc-t' : 'plc-s'}">${h}</div>`).join('')}
           <div class="plc-bar-track"><div class="plc-bar-fill" style="width:${Math.min(100, Number(x.progress) || 0)}%"></div></div></div>${tv ? '<ha-icon class="plc-sess-go" icon="mdi:remote-tv"></ha-icon>' : ''}</${tv ? 'button' : 'div'}>`;
     }).join('')}</div>`;
+  }
+  /** A Watching now card for a TV that's off with something to resume. */
+  _resumeCardHtml(x) {
+    const tv = this._tvs().find((t) => t.id === x._tv), r = x._resume, art = tv && this._resumeArt(tv, r);
+    const sub = r.kind === 'plex' ? (r.type === 'episode' && r.season != null ? `S${r.season} · E${r.episode}${r.show && r.title ? ` · ${r.title}` : ''}` : '') : (r.app || '');
+    const off = tvPower(this._hass, tv) !== true;
+    return `<div class="plc-sess resume" role="button" tabindex="0" data-sesstv="${esc(x._tv)}" title="${esc(off ? 'Off · ready to resume' : 'Ready to resume')}">
+      <div class="plc-sess-art app"><ha-icon icon="mdi:television-off"></ha-icon>${art ? `<i style="background-image:url('${cssUrl(art)}')"></i>` : ''}</div>
+      <div style="min-width:0"><div class="plc-t">${esc(x.title)}</div>${sub ? `<div class="plc-s">${esc(sub)}</div>` : ''}
+        <div class="plc-s plc-resume-st">${off ? 'TV off · ' : ''}${esc(this._pausedAt(r))} · ${esc(tvLabel(tv))}</div>
+        <div class="plc-resume-btns"><button class="plc-btn main" data-resume="${esc(x._tv)}"><ha-icon icon="mdi:play-circle-outline"></ha-icon>Resume</button>
+          <button class="plc-icon-btn" data-resumex="${esc(x._tv)}" title="Forget it"><ha-icon icon="mdi:close"></ha-icon></button></div></div></div>`;
   }
 
   _paintContinue(sec, items, force = false) {
@@ -2872,7 +2985,7 @@ class PlexCenterCard extends HTMLElement {
 const STYLE_KEYS = ['search_width', 'screen_offset', 'poster_width', 'corner_radius', 'title_size', 'line_size', 'header_size', 'section_size', 'card_padding', 'card_radius',
   'card_border_width', 'card_shadow', 'box_shadows', 'text_shadows', 'layout', ...Object.keys(COLOR_DEFS)];
 /** The buttons that start playback (held, when "Hold to play" is on). */
-const HOLD_SEL = '[data-play], [data-qplay], [data-qrestart], [data-sheetplay], [data-calplay]';
+const HOLD_SEL = '[data-play], [data-qplay], [data-qrestart], [data-sheetplay], [data-calplay], [data-resume]';
 /** Run after the browser has painted (so a CSS transition starts from the state just set). */
 const nextFrame = (fn) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => requestAnimationFrame(fn)) : setTimeout(fn, 30));
 /** Start loading the images in some HTML (background-image urls) before it is shown. */
@@ -3038,8 +3151,8 @@ Object.assign(PlexCenterCard.prototype, {
     const cur = this._target(), icons = this._c.tv_icons || {};
     this._menu(anchor, 'Play on', [...this._tvs().map((t) => {
       const busy = realOn(this._hass, t);
-      return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub: busy ? 'Playing' : (t.state ? t.state[0].toUpperCase() + t.state.slice(1) : ''), on: t === cur,
-        attr: `data-pickto="${esc(t.id)}"`, dot: `<span class="plc-dot ${busy ? 'play' : (t.state && !['off', 'unavailable', 'standby'].includes(t.state) ? 'on' : '')}"></span>` };
+      return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub: busy ? 'Playing' : this._tvSub(t), on: t === cur,
+        attr: `data-pickto="${esc(t.id)}"`, dot: `<span class="plc-dot ${this._dotCls(t)}"></span>` };
     }), { icon: 'mdi:cellphone-play', label: 'This device', sub: 'Opens the Plex app or Plex Web', on: cur === 'local', attr: 'data-pickto="local"' }]);
   },
 
@@ -3218,9 +3331,9 @@ Object.assign(PlexCenterCard.prototype, {
     const panel = mode === 'panel' && this._panelVisible(np);
     const dup = this._v.tab === 'home' && watchOn(this._c, 'home') && !!this._sessionFor(tv);
     if (np?.live) this._npLiveAt = Date.now();
-    else if (this._v.npFull && Date.now() - (this._npFullAt || 0) > 90000) this._v.npFull = false;   // playback ended: don't pop up next time
+    else if (this._v.npFull && !this._resumeFor(tv) && Date.now() - (this._npFullAt || 0) > 90000) this._v.npFull = false;   // playback ended: don't pop up next time
     const vst = tv?.pipup && this._hass.states[tv.pipup];
-    const s = JSON.stringify([this._v.tab, dup, this._v.npFull, mode, panel, np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._phone,
+    const s = JSON.stringify([this._v.tab, dup, this._v.npFull, mode, panel, JSON.stringify(this._resumeFor(tv)), tv && this._resumeFor(tv) && this._resumeArt(tv, this._resumeFor(tv)), np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._phone,
       this._tvs().map((t) => [t.id, realOn(this._hass, t)]), tv?.route]);
     if (!force && this._npSig === s) return;
     this._npSig = s;
@@ -3233,7 +3346,7 @@ Object.assign(PlexCenterCard.prototype, {
     this._root.dataset.panel = panel ? '1' : '0';
     if (panel || wasPanel) this._renderTop();
     const full = this._root.querySelector('.plc-npfull-slot');
-    if (full) full.innerHTML = this._v.npFull && np?.live ? `<div class="plc-npfull">${this._panelHtml(np)}</div>` : '';
+    if (full) full.innerHTML = this._v.npFull && (np?.live || this._resumeFor(tv)) ? `<div class="plc-npfull">${this._panelHtml(np)}</div>` : '';
     this._progress();
   },
 
@@ -3260,7 +3373,8 @@ Object.assign(PlexCenterCard.prototype, {
   },
 
   _powerHtml(np) {
-    const on = np && !['off', 'unavailable', 'standby'].includes(np.st?.state);
+    const on = np && (np.on ?? !['off', 'unavailable', 'standby'].includes(np.st?.state));
+    if (on && np.tv && np.tv.power_off === false) return '';   // no ADB / Android TV Remote: Plex Center never turns it off
     return `<button class="plc-icon-btn plc-power${on ? ' on' : ''}" data-np="${on ? 'power_off' : 'power_on'}" title="Turn the TV ${on ? 'off' : 'on'}"><ha-icon icon="mdi:power"></ha-icon></button>`;
   },
 
@@ -3315,12 +3429,14 @@ Object.assign(PlexCenterCard.prototype, {
   },
 
   _panelHtml(np) {
+    const rec = !np.live && this._resumeFor(np.tv);
+    if (rec) return this._resumePanelHtml(np, rec);
     const others = this._tvs();
     const sessions = peek('sessions') || [];
     const who = (t) => {
       const s = this._sessionFor(t);
       if (s) return `${s.user} · ${s.show || s.title}`;
-      return realOn(this._hass, t) ? 'playing' : (t.state || '');
+      return realOn(this._hass, t) ? 'playing' : this._tvSub(t).toLowerCase();
     };
     const move = others.length > 1 && !cfg(this._c, 'lock') && np.live && this._sessionFor(np.tv);
     // the icon (and app) sit under the picture: when the TV has no picture or it doesn't load (a 404 from another app), they show
@@ -3332,6 +3448,21 @@ Object.assign(PlexCenterCard.prototype, {
         ${cfg(this._c, 'np_power') ? `<span class="plc-np-power">${this._powerHtml(np)}</span>` : ''}</div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
         <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>`;
+  },
+
+  /** Now playing for a TV that's off (or just woken) with something to resume. */
+  _resumePanelHtml(np, r) {
+    const art = this._resumeArt(np.tv, r), off = np.on !== true;
+    const sub = r.kind === 'plex' ? (r.type === 'episode' && r.season != null ? `S${r.season} · E${r.episode}${r.show && r.title ? ` · ${r.title}` : ''}` : '') : (r.app || '');
+    return `<div class="plc-side-card"><div class="plc-side-art"><div class="plc-side-ph"><ha-icon icon="mdi:television-off"></ha-icon>${r.app ? `<span>${esc(r.app)}</span>` : ''}</div>
+        ${art ? `<div class="plc-side-img" style="background-image:url('${cssUrl(art)}')"></div>` : ''}
+        <button class="plc-icon-btn plc-np-x" data-npx title="Close"><ha-icon icon="mdi:close"></ha-icon></button></div>
+      <div class="plc-side-info"><div class="plc-eyebrow">${off ? 'TV is off' : 'Ready to resume'} · ${esc(tvLabel(np.tv))}</div>
+        <h2 class="plc-big">${esc(r.show || r.title || r.app || 'Paused')}</h2>${sub ? `<div class="plc-meta">${esc(sub)}</div>` : ''}
+        <div class="plc-meta">${esc(this._pausedAt(r))}</div>
+        ${r.kind === 'app' ? `<p class="plc-meta">Opens ${esc(r.app || 'the app')} and presses Play; if the TV closed it, pick the title in its Continue watching row.</p>` : ''}
+        <div class="plc-btns"><button class="plc-btn main" data-resume="${esc(np.tv.id)}"><ha-icon icon="mdi:power"></ha-icon>${off ? 'Turn on and resume' : 'Resume'}</button>
+          <button class="plc-btn" data-resumex="${esc(np.tv.id)}"><ha-icon icon="mdi:close"></ha-icon>Forget it</button></div></div></div>`;
   },
 
   _progress() {
@@ -3375,9 +3506,12 @@ Object.assign(PlexCenterCard.prototype, {
 
   _updateStates() {
     if (!this._root) return;
+    const psig = JSON.stringify(this._tvs().map((t) => [t.id, tvPower(this._hass, t), realOn(this._hass, t)]));
+    if (this._psig !== undefined && psig !== this._psig) { clearTimeout(this._rsT); this._rsT = setTimeout(() => this._fetchResumes(true), 2500); }
+    this._psig = psig;
     for (const tv of this._tvs()) {
       const el = this._root.querySelector(`[data-dot="${tv.id}"]`);
-      if (el) el.className = `plc-dot ${realOn(this._hass, tv) ? 'play' : (tv.state && !['off', 'unavailable', 'standby'].includes(tv.state) ? 'on' : '')}`;
+      if (el) el.className = `plc-dot ${this._dotCls(tv)}`;
     }
     this._renderNP();
     const asig = JSON.stringify(this._appSessions().map((x) => [x._tv, x.title, x.player, x.player_state, x.poster]));
@@ -3426,6 +3560,11 @@ Object.assign(PlexCenterCard.prototype, {
     }
     if ((el = t('[data-movemenu]'))) { this._moveMenu(el); return; }
     if ((el = t('[data-moveto]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.moveto); this._closeMenu(); if (tv) this._moveTo(tv); return; }
+    if ((el = t('[data-resume]'))) { this._resume(el.dataset.resume); return; }
+    if ((el = t('[data-resumex]'))) {
+      ws(this._hass, 'resume_forget', { tv: el.dataset.resumex }).then(() => this._fetchResumes(true)).catch(() => {});
+      return;
+    }
     if ((el = t('[data-sesstv]'))) {
       if (el.closest('.plc-watchpop')) this._closeSheet(true);
       const tv = this._tvs().find((x) => x.id === el.dataset.sesstv);
@@ -3816,7 +3955,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['calendar', 'hold_play', 'watching_home', 'watching_cal', 'watching_lib', 'watching_coll_home', 'watching_coll_cal', 'watching_coll_lib', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'card_shadow']);
+const REVEAL_KEYS = new Set(['calendar', 'watching_resume', 'hold_play', 'watching_home', 'watching_cal', 'watching_lib', 'watching_coll_home', 'watching_coll_cal', 'watching_coll_lib', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; this._onScreen = () => { if (this._rendered) this._render(); }; }
@@ -4348,6 +4487,10 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._everyScreen(`<p class="plce-hint">Tap a Watching now card to open that TV's controls (full screen on phones).</p>
         ${this._select('watching_tvs', 'Show', [['all', 'Every TV (and other Plex players)'], ['selected', 'Only the TV in the selector']])}
         ${this._check('watching_apps', 'Include TVs playing other apps (HBO Max, Netflix …), from the TV itself')}
+        <div class="plce-group">When a TV is turned off</div>
+        ${this._chips('watching_resume', 'What was playing', [['keep', 'Keep it, to resume later'], ['drop', 'Drop it']])}
+        ${this._c('watching_resume') === 'drop' ? '' : `${this._slider('watching_forget_h', 'Forget after', 0, 48, ' h')}<p class="plce-hint">0 = never. Resume turns the TV on and starts the title where it was paused.</p>
+          ${this._check('watching_resume_apps', 'Keep other apps too (HBO Max, Netflix …): Resume opens the app and presses Play, best effort')}`}
         ${this._watchPages()}
         ${this._check('np_power', 'Power button on the Now playing poster (asks before turning the TV off)')}`)}`;
   }

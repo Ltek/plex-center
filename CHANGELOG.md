@@ -1,5 +1,36 @@
 # Changelog
 
+## v2026.11.17.80
+
+**Fixed**
+- **A TV that's turned off no longer shows as on or playing.** Plex keeps a paused session long after the TV
+  goes off; Plex Center now reads the TV's power from the TV itself (PiPup, ADB, Android TV Remote), never from the
+  Plex player. Its session leaves Watching now and Now playing.
+- **Playing on a TV that was asleep or on its screensaver** (the "Plex is not on screen within 25 s" error):
+  - the TV is turned on and the screensaver closed first (and any "not responding" box);
+  - no Back press when nothing really plays (the stale Plex session used to trigger one);
+  - Plex gets 45 s to open; if it still isn't on screen, Home and one more try;
+  - a clear message when it fails: *Plex didn't open on Living Room TV. Try again.*
+- **Turn off is never a deep sleep.** Only ADB's sleep key or the Android TV Remote's Power key (the same standby
+  as the TV's remote), so Home Assistant can wake it again. PiPup's turn off is never used. A TV with neither has
+  no Turn off button.
+
+**New**
+- **Resume where you left off.** When a TV is turned off while something plays or is paused, Plex Center
+  remembers it (kept through restarts).
+  - Watching now shows it as a card: *TV off · Paused at 6:29 of 43:46*, with **Resume** and ✕.
+  - Now playing shows *TV is off* with **Turn on and resume**.
+  - The TV selector marks the TV with an amber dot and a ⏯ icon; its menus say *Off · Resume <title>*.
+  - Resume turns the TV on, closes the screensaver and starts the title at Plex's saved position. Other apps
+    (optional): opens the app and presses Play, best effort.
+  - New action `plex_center.resume` (tv).
+  - Forgotten when something else plays on that TV, on ✕, when the episode is marked watched, or after the
+    *Forget after* time.
+  - Settings (Watching now → Every screen → When a TV is turned off): *Keep it, to resume later* (default) or
+    *Drop it*; *Forget after* (12 h, 0 = never); *Keep other apps too* (off).
+- **Android TV Remote player per TV** (Plex Center → Configure → a TV), filled in automatically: used for the TV's
+  power state and for turning it on and off.
+
 ## v2026.11.17.79
 
 **Changed**

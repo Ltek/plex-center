@@ -15,7 +15,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 from homeassistant.util import slugify
 
-from .const import CONF_SERVER_ID, CONF_TVS, DOMAIN, ROUTES, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_ROUTE, TV_USER
+from .const import CONF_SERVER_ID, CONF_TVS, DOMAIN, ROUTES, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER
 from .plex import PlexConnections, plex_servers
 from .tvs import detect_tvs, route_for
 
@@ -69,13 +69,14 @@ def _tv_schema(tv: dict[str, Any], users: list[dict[str, Any]]) -> vol.Schema:
         vol.Optional(TV_PIPUP, description=sug(TV_PIPUP)): ent("pipup"),
         vol.Optional(TV_ADB, description=sug(TV_ADB)): ent("androidtv"),
         vol.Optional(TV_PLEX, description=sug(TV_PLEX)): ent("plex"),
+        vol.Optional(TV_REMOTE, description=sug(TV_REMOTE)): ent("androidtv_remote"),
         vol.Required(TV_ROUTE, default=tv.get(TV_ROUTE, "auto")): selector.SelectSelector(selector.SelectSelectorConfig(options=ROUTES, translation_key="route")),
     })
 
 
 def _clean(data: dict[str, Any], tv_id: str) -> dict[str, Any]:
     tv = {TV_ID: tv_id, TV_NAME: data[TV_NAME].strip() or tv_id, TV_USER: "" if data.get(TV_USER) in (None, "__owner__") else data[TV_USER]}
-    for k in (TV_PIPUP, TV_ADB, TV_PLEX):
+    for k in (TV_PIPUP, TV_ADB, TV_PLEX, TV_REMOTE):
         if data.get(k):
             tv[k] = data[k]
     if data.get(TV_ROUTE) and data[TV_ROUTE] != "auto":
@@ -106,7 +107,7 @@ class PlexCenterOptionsFlow(OptionsFlow):
             return "No TVs yet."
         rows = []
         for t in self._tvs:
-            players = [n for k, n in ((TV_PIPUP, "PiPup"), (TV_ADB, "ADB"), (TV_PLEX, "Plex")) if t.get(k)]
+            players = [n for k, n in ((TV_PIPUP, "PiPup"), (TV_ADB, "ADB"), (TV_REMOTE, "Android TV Remote"), (TV_PLEX, "Plex")) if t.get(k)]
             route = route_for(self.hass, t)
             rows.append(f"- **{t[TV_NAME]}**: Plex user {t.get(TV_USER) or 'server owner'}; players {', '.join(players) or 'none'}; "
                         + (f"plays with {ROUTE_NAMES.get(route, route)}" if route else "**no reachable player**"))

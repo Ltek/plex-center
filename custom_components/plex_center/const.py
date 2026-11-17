@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "plex_center"
-VERSION = "2026.11.17.79"
+VERSION = "2026.11.17.80"
 
 CONF_SERVER_ID = "server_id"
 CONF_TVS = "tvs"
@@ -15,6 +15,7 @@ TV_USER = "plex_user"       # Plex Home user the TV's Plex app uses; "" = the se
 TV_PIPUP = "pipup"          # media_player of the PiPup integration
 TV_ADB = "adb"              # media_player of the Android TV (ADB) integration
 TV_PLEX = "plex_client"     # media_player of the Plex integration for this TV's Plex app
+TV_REMOTE = "remote"        # media_player of the Android TV Remote integration (power on / off, power state)
 TV_ROUTE = "route"          # auto | pipup | adb | plex
 
 ROUTES = ["auto", "pipup", "adb", "plex"]

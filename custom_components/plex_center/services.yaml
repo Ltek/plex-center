@@ -68,3 +68,10 @@ play_trailer:
       example: https://www.youtube.com/watch?v=abcdefghijk
       selector:
         text:
+resume:
+  fields:
+    tv:
+      required: true
+      example: Living Room TV
+      selector:
+        text:

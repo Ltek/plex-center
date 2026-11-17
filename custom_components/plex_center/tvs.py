@@ -10,7 +10,11 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
-from .const import PLEX_PKG, PREVIEW_MAX_S, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_ROUTE, TV_USER
+from .const import PLEX_PKG, PREVIEW_MAX_S, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER
+
+OFF_STATES = ("off", "standby")
+GONE_STATES = ("unavailable", "unknown")
+STALE_S = 120
 
 
 def norm(text: str | None) -> str:
@@ -61,6 +65,7 @@ def detect_tvs(hass: HomeAssistant, users: list[dict[str, Any]] | None = None) -
     the TV's name.
     """
     pipups, adbs, plexes = players(hass, "pipup"), players(hass, "androidtv"), players(hass, "plex")
+    remotes = players(hass, "androidtv_remote")
     used: set[str] = set()
 
     def pick(cands: list[str], anchor: str, name: str) -> str | None:
@@ -83,6 +88,9 @@ def detect_tvs(hass: HomeAssistant, users: list[dict[str, Any]] | None = None) -
         if kind == TV_PIPUP and (adb := pick(adbs, anchor, name)):
             tv[TV_ADB] = adb
             used.add(adb)
+        if remote := pick(remotes, anchor, name):
+            tv[TV_REMOTE] = remote
+            used.add(remote)
         if plex := pick(plexes, anchor, name):
             tv[TV_PLEX] = plex
             used.add(plex)
@@ -96,6 +104,26 @@ def detect_tvs(hass: HomeAssistant, users: list[dict[str, Any]] | None = None) -
             n += 1
         ids.add(tv[TV_ID])
     return out
+
+
+def fill_remotes(hass: HomeAssistant, tvs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    """TVs set up before Plex Center knew Android TV Remote: add each one's player (same area, else its name
+    in the entity id). Returns the new list, or None when nothing changed."""
+    remotes = players(hass, "androidtv_remote")
+    used = {tv.get(TV_REMOTE) for tv in tvs}
+    out, changed = [], False
+    for tv in tvs:
+        tv = dict(tv)
+        if not tv.get(TV_REMOTE):
+            anchor = tv.get(TV_PIPUP) or tv.get(TV_ADB)
+            area, k = (area_of(hass, anchor) if anchor else None), _key(tv.get(TV_NAME) or "")
+            hit = next((r for r in remotes if r not in used and area and area_of(hass, r) == area), None) \
+                or next((r for r in remotes if r not in used and len(k) >= 3 and k in norm(r)), None)
+            if hit:
+                tv[TV_REMOTE], changed = hit, True
+                used.add(hit)
+        out.append(tv)
+    return out if changed else None
 
 
 def pipup_ready(hass: HomeAssistant, entity_id: str | None) -> bool:
@@ -136,6 +164,33 @@ def route_for(hass: HomeAssistant, tv: dict[str, Any]) -> str | None:
     if has(adb):
         return "adb"
     return "open" if has(pip) else None
+
+
+def tv_on(hass: HomeAssistant, tv: dict[str, Any]) -> bool | None:
+    """Is the TV itself on? From its own players (PiPup, ADB, Android TV Remote), never the Plex client:
+    Plex keeps a paused session for a long time after the TV is turned off. None = no way to tell."""
+    states = [hass.states.get(e) for e in (tv.get(TV_PIPUP), tv.get(TV_ADB), tv.get(TV_REMOTE)) if e]
+    states = [s for s in states if s and s.state not in GONE_STATES]
+    if not states:
+        return None
+    return any(s.state not in OFF_STATES for s in states)
+
+
+def tv_playing(hass: HomeAssistant, tv: dict[str, Any]) -> bool:
+    """Something really plays on the TV: it is on (or can't tell) and one of its players says playing / paused."""
+    if tv_on(hass, tv) is False:
+        return False
+    if any(real_playback(hass.states.get(e)) for e in (tv.get(TV_PIPUP), tv.get(TV_ADB)) if e):
+        return True
+    plex = tv.get(TV_PLEX) and hass.states.get(tv[TV_PLEX])
+    if not real_playback(plex):
+        return False
+    # Plex keeps a paused session long after the TV closed its app: paused, unchanged for 2 minutes, and the
+    # TV's own players show nothing = stale.
+    from homeassistant.util import dt as dt_util  # noqa: PLC0415
+
+    stale = plex.state == "paused" and (tv.get(TV_PIPUP) or tv.get(TV_ADB)) and (dt_util.utcnow() - plex.last_updated).total_seconds() > STALE_S
+    return not stale
 
 
 def real_playback(state) -> bool:
