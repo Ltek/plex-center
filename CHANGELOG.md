@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.17.79
+
+**Changed**
+- Removed unused code: the rest of the old slim Now playing bar (its markup, styles, settings and button handlers),
+  two editor panels and three helpers nothing called, and three unused names in the integration. No visible change;
+  old `slim_*` settings are still cleaned out of saved configs.
+
 ## v2026.11.17.78
 
 **New**

@@ -111,7 +111,6 @@ async def _volume_power(hass: HomeAssistant, tv: dict[str, Any], route: str, act
         await _svc(hass, "media_player", {"volume_up": "volume_up", "volume_down": "volume_down", "power_on": "turn_on", "power_off": "turn_off"}[action], {}, ent)
 
 
-YOUTUBE_TV = "com.google.android.youtube.tv"
 
 
 async def trailer(hass: HomeAssistant, tv: dict[str, Any], url: str | None = None, item: dict[str, Any] | None = None) -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "plex_center"
-VERSION = "2026.11.17.78"
+VERSION = "2026.11.17.79"
 
 CONF_SERVER_ID = "server_id"
 CONF_TVS = "tvs"
@@ -25,4 +25,3 @@ BTN_RESTART = "action-button-watchFromStart"
 PREVIEW_MAX_S = 60          # Plex plays a 30 s preview on a title page
 
 CARD_URL = "/plex_center/plex-center-card.js"
-IMAGE_URL = "/api/plex_center/image/{server_id}/{user}/{key}"

@@ -24,11 +24,6 @@ class PlexCenterError(HomeAssistantError):
     """A Plex call failed in a way the user should see."""
 
 
-def _plex_entries(hass: HomeAssistant) -> list:
-    return list(hass.config_entries.async_loaded_entries("plex")) if hasattr(hass.config_entries, "async_loaded_entries") \
-        else [e for e in hass.config_entries.async_entries("plex") if e.state.recoverable is not None]
-
-
 def plex_servers(hass: HomeAssistant) -> dict[str, Any]:
     """Loaded Plex servers of HA's Plex integration: {machine_id: (friendly_name, plexapi PlexServer or None, entry)}."""
     out: dict[str, Any] = {}
