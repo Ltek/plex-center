@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.16.64
+// Version: v2026.11.17.65
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.16.64';
+const BUILD_NUMBER = 'v2026.11.17.65';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -3502,6 +3502,9 @@ const EDITOR_CSS = `
         .pip-i.on { border-color: var(--accent-color, var(--ltek-c-accent)); color: var(--accent-color, var(--ltek-c-accent)); }
         .pip-i ha-icon { --mdc-icon-size: 20px; }
         .pip-hint { margin-top: 6px; font-size: 11px; color: var(--secondary-text-color); }
+        .plce-pick.src { max-width: 100%; }
+        .plce-src-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+        .plce-srcbox { margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--divider-color, #444); }
         .plce-pdot { width: 7px; height: 7px; border-radius: 50%; background: var(--success-color, #43a047); margin-left: 2px; }
         .plce-del:hover { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); }
         .plce-pg-sub { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--secondary-text-color); }
@@ -3731,13 +3734,13 @@ class PlexCenterCardEditor extends HTMLElement {
 
   _calendarBody() {
     const arr = this._conf?.arr || {}, found = Object.entries(arr).filter(([, v]) => v).map(([k]) => k[0].toUpperCase() + k.slice(1));
-    return `<p class="plce-hint">Upcoming episodes (Sonarr) and movie releases (Radarr: in cinemas, digital, Blu-ray), read through Home Assistant's own Sonarr
+    return `${this._profile(`${this._visualSubs('calendar')}<p class="plce-hint">Posters and panels grow with the title size.</p>`, 'calendar')}
+      ${this._everyScreen(`<p class="plce-hint">Upcoming episodes (Sonarr) and movie releases (Radarr: in cinemas, digital, Blu-ray), read through Home Assistant's own Sonarr
         and Radarr integrations. ${found.length ? `Found: <b>${esc(found.join(', '))}</b>.` : '<b>Neither is set up</b>: add Home Assistant\'s Sonarr or Radarr integration (Settings → Devices &amp; services).'}</p>
       ${this._check('calendar', 'Show the Calendar page (in the page menu)')}
       ${this._select('calendar_view', 'Opens in', [['month', 'Month'], ['week', 'Week'], ['day', 'Day']])}
       ${this._select('week_start', 'Weeks start on', [['mon', 'Monday'], ['sun', 'Sunday']])}
-      ${this._slider('calendar_max', 'Entries per day in Month view (then “+N more”)', 1, 10, '')}
-      ${this._profile(`${this._visualSubs('calendar')}<p class="plce-hint">Posters and panels grow with the title size.</p>`, 'calendar')}`;
+      ${this._slider('calendar_max', 'Entries per day in Month view (then “+N more”)', 1, 10, '')}`)}`;
   }
 
   /** Which controls layout the panel is editing: 'main' (Standard) or 'lay:<id>'. */
@@ -3838,7 +3841,7 @@ class PlexCenterCardEditor extends HTMLElement {
     const add = `<button class="plce-pick add" data-xadd="${type}"><ha-icon icon="mdi:plus"></ha-icon>Add</button>`;
     if (!pick) return `<p class="plce-hint">No ${esc(SEC_TYPE_TITLE[type] || kind)} row yet.</p><div class="plce-chiprow">${add}</div>`;
     return `<div class="plce-chiprow"><span class="plce-chiplbl">Row</span>${ids.map((id) => `<button class="plce-pick${id === pick ? ' on' : ''}" data-secpick="${kind}|${esc(id)}">${esc(labels.get(id) || id)}</button>`).join('')}${add}</div>
-      ${this._sub(`src:${pick}`, 'Source (every screen)', this._secStyleBody(pick, 'source'))}
+      ${this._srcChip(pick)}
       ${this._profile(`${this._secStyleBody(pick, 'visual')}${this._secStyleBody(pick, 'rest')}`, `row:${pick}`)}`;
   }
   _homeCfg() { const sc = this._homeScreen(); return { ...this._config, home_order: this._config[`home_order_${sc}`], home_hidden: this._config[`home_hidden_${sc}`] }; }
@@ -3856,22 +3859,18 @@ class PlexCenterCardEditor extends HTMLElement {
         ${(this._config.home_extra || []).some((x) => x.id === id) ? `<button class="plce-del" data-xdel="${esc(id)}" title="Remove"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>` : '<span class="plce-slot"></span>'}</div>
 </div>`).join('');
     const soon = upcomingSensors(this._hass, this._conf);
-    return `<div class="plce-group first">Add a section</div>
-      <div class="plce-row plce-wrap"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>
-      <div class="plce-group">Auto Rotate</div>
-      ${this._check('stagger_rotate', 'Stagger: sections that fade or slide change one at a time')}
-      ${this._c('stagger_rotate') ? `${this._slider('stagger_gap', 'Time between sections', 1, 15, ' s')}<p class="plce-hint">${esc(this._staggerNote())}</p>` : ''}
-      <div class="plce-group">Surprise me</div>
-      ${this._check('surprise', 'Surprise me button')}
-      ${this._c('surprise') ? `${this._select('surprise_style', 'Surprise me shows', [['icon', 'Icon only'], ['both', 'Icon and text'], ['text', 'Text only']])}
-        ${this._c('surprise_style') !== 'icon' ? this._text('surprise_label', 'Text', DEFAULTS.surprise_label) : ''}
-        ${this._c('surprise_style') !== 'text' ? `<div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-icon="surprise_icon" value="${esc(this._c('surprise_icon'))}"></plce-icon-pick></div>` : ''}` : ''}
-      <p class="plce-hint">Extra cards under the rows: <code>home_cards:</code> with any card configs, in YAML.</p>
-      <div class="plce-group">Sections</div>
-      <p class="plce-hint">Order and show / hide the sections of the Home tab, per screen type. The pencil opens the section's own panel.
-        <b>Coming Soon</b> uses ${soon.length ? soon.map((x) => `<code>${esc(x.id)}</code>`).join(', ') : 'Sonarr / Radarr through Plex Center'}.</p>
-      ${this._scrChips('')}
-      <div class="plce-list">${list}</div>`;
+    return `${this._profile(`<p class="plce-hint">Order and show / hide the sections of the Home tab. The pencil opens the section's own panel.</p>
+        <div class="plce-list">${list}</div>
+        <div class="plce-row plce-wrap"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>`, 'home')}
+      ${this._everyScreen(`<div class="plce-group">Auto Rotate</div>
+        ${this._check('stagger_rotate', 'Stagger: sections that fade or slide change one at a time')}
+        ${this._c('stagger_rotate') ? `${this._slider('stagger_gap', 'Time between sections', 1, 15, ' s')}<p class="plce-hint">${esc(this._staggerNote())}</p>` : ''}
+        <div class="plce-group">Surprise me</div>
+        ${this._check('surprise', 'Surprise me button')}
+        ${this._c('surprise') ? `${this._select('surprise_style', 'Surprise me shows', [['icon', 'Icon only'], ['both', 'Icon and text'], ['text', 'Text only']])}
+          ${this._c('surprise_style') !== 'icon' ? this._text('surprise_label', 'Text', DEFAULTS.surprise_label) : ''}
+          ${this._c('surprise_style') !== 'text' ? `<div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-icon="surprise_icon" value="${esc(this._c('surprise_icon'))}"></plce-icon-pick></div>` : ''}` : ''}
+        <p class="plce-hint">Extra cards under the rows: <code>home_cards:</code> with any card configs, in YAML.</p>`)}`;
   }
   /** "3 sections: each changes every 9 s" for the screen being edited. */
   _staggerNote() {
@@ -4029,10 +4028,26 @@ class PlexCenterCardEditor extends HTMLElement {
     return `<div class="plce-group">Screen Profile</div><p class="plce-hint plce-tight">Select Screen type to edit that profile.</p>${this._scrChips('')}
       <div class="plce-divlbl"><span>Settings for <b>${esc(name)}</b></span>${reset ? `<button class="plce-chip reset" data-secreset="${esc(reset)}" title="Reset this section on ${esc(name)} to the built-in settings"><ha-icon icon="mdi:restore"></ha-icon>Reset</button>` : ''}</div>${inner}`;
   }
+  /** The settings that don't depend on the screen type, at the bottom of a panel. */
+  _everyScreen(inner) { return inner ? `<div class="plce-divlbl"><span><b>Every screen</b></span></div>${inner}` : ''; }
+  /** A row's Source as a chip ("Source: Plex Center ▾") that opens its options. */
+  _srcChip(id) {
+    const s = this._secS(id), t = secType(this._config, id), fn = (x) => this._hass.states[x]?.attributes?.friendly_name || x;
+    const libs = (() => { const tv = this._conf?.tvs?.[0]; const l = this._conf?.libraries?.[tv?.user || '']; return Array.isArray(l) ? l : []; })();
+    const label = t === 'recent' ? (s.source ? fn(s.source) : 'Plex Center')
+      : t === 'upcoming' ? (s.source === 'arr' ? 'Sonarr / Radarr' : s.sensors?.length ? s.sensors.map(fn).join(', ') : 'Upcoming-media sensors')
+        : t === 'plexhub' ? ([libs.find((l) => l.key === s.library)?.title || 'All libraries', (this._hubChoices?.[s.library || ''] || []).find((h) => h.id === s.hub)?.title || (s.hub ? s.hub : 'pick a row')].join(' · ')) : '';
+    const open = this._open.has(`src:${id}`);
+    return `<div class="plce-chiprow"><span class="plce-chiplbl">Source (this row, every screen)</span><button class="plce-pick src${open ? ' on' : ''}" data-srcopen="${esc(id)}">
+      <ha-icon icon="mdi:database-outline"></ha-icon><span class="plce-src-n">${esc(label)}</span><ha-icon icon="mdi:chevron-${open ? 'up' : 'down'}"></ha-icon></button></div>
+      ${open ? `<div class="plce-srcbox">${this._secStyleBody(id, 'source')}</div>` : ''}`;
+  }
+
   /** Clear one section's settings on one screen type. what: 'row:<id>' or a kind (watching, continue, library, calendar). */
   _resetSection(what, sc) {
     const c = this._config, drop = (bag, k) => { if (c[bag]) { delete c[bag][k]; if (!Object.keys(c[bag]).length) delete c[bag]; } };
     if (what.startsWith('row:')) { const id = what.slice(4); drop('sec_styles', `${id}:${sc}`); drop('looks', `${id}:${sc}`); }
+    else if (what === 'home') { delete c[`home_order_${sc}`]; delete c[`home_hidden_${sc}`]; }
     else { drop('looks', `${what}:${sc}`); if (what === 'library') delete c[`${sc}_view`]; }
   }
   /** Clear everything for one screen type: its device settings, Home order / visibility, and every section's profile. */
@@ -4051,16 +4066,16 @@ class PlexCenterCardEditor extends HTMLElement {
 
   /** Watching now: what it shows (every screen), and its look per screen. */
   _watchBody() {
-    return `<p class="plce-hint">Tap a Watching now card to open that TV's controls (full screen on phones).</p>
-      ${this._select('watching_tvs', 'Show', [['all', 'Every TV (and other Plex players)'], ['selected', 'Only the TV in the selector']])}
-      ${this._check('watching_libraries', 'Also above the library pages (not only Home)')}
-      ${this._profile(this._visualSubs('watching'), 'watching')}`;
+    return `${this._profile(this._visualSubs('watching'), 'watching')}
+      ${this._everyScreen(`<p class="plce-hint">Tap a Watching now card to open that TV's controls (full screen on phones).</p>
+        ${this._select('watching_tvs', 'Show', [['all', 'Every TV (and other Plex players)'], ['selected', 'Only the TV in the selector']])}
+        ${this._check('watching_libraries', 'Also above the library pages (not only Home)')}`)}`;
   }
   /** Library: which libraries and in what order, how they behave, and per screen how the grid looks. */
   _libraryPanel() {
     const sc = this._eds();
-    return `${this._libraryBody()}
-      ${this._profile(`${this._select(`${sc}_view`, 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}${this._visualSubs('library')}`, 'library')}`;
+    return `${this._profile(`${this._select(`${sc}_view`, 'Libraries show', [['grid', 'A poster grid'], ['list', 'A list (poster, title, details)']])}${this._visualSubs('library')}`, 'library')}
+      ${this._everyScreen(this._libraryBody())}`;
   }
 
   _npBody() {
@@ -4443,6 +4458,7 @@ class PlexCenterCardEditor extends HTMLElement {
     all('[data-lookimg]', (b) => b.addEventListener('click', () => {
       const [k, v] = b.dataset.lookimg.split('|'); this._setK(k, v); this._render();
     }));
+    all('[data-srcopen]', (b) => b.addEventListener('click', () => { const k = `src:${b.dataset.srcopen}`; if (this._open.has(k)) this._open.delete(k); else this._open.add(k); this._render(); }));
     all('[data-secpick]', (b) => b.addEventListener('click', () => { const [kind, id] = b.dataset.secpick.split('|'); this._secPick = { ...(this._secPick || {}), [kind]: id }; this._render(); }));
     all('[data-goto]', (b) => b.addEventListener('click', () => {
       const [panel, pick] = b.dataset.goto.split('|');

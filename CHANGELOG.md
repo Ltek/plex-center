@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.17.65
+
+**Changed: one layout for every panel**
+1. What you're editing: the **row chips** (Recently Added, Coming Soon, Plex rows), then that row's **Source** as a
+   chip (*Source: Plex Center ▾*) that opens its options. Each row has its own source, shared by every screen
+   type.
+2. **Screen Profile** (subtitle, *Select Screen type to edit that profile.*, the screen chips), then
+   *Settings for <screen>* with that screen's settings and Reset.
+3. **Every screen**: settings that don't depend on the screen type, at the bottom.
+- **Home**: Screen Profile first (the section order / show / hide list, then the add buttons, no subtitle); under
+  *Every screen*: Auto Rotate and Surprise me. Its Reset clears that screen's order and visible sections.
+- Watching now, Library and Calendar: their profile first, their other options (the library list, Watching now's
+  options, the Calendar's page settings) under *Every screen*.
+
 ## v2026.11.16.64
 
 **New**
