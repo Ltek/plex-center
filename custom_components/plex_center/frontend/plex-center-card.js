@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.66
+// Version: v2026.11.17.67
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.66';
+const BUILD_NUMBER = 'v2026.11.17.67';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -947,7 +947,7 @@ function haCardStyle(c) {
   if (c.card_bg) o.push(`--ha-card-background:${clean(c.card_bg)}`, `background:${clean(c.card_bg)}`);
   if (c.card_border_width !== undefined) o.push(`--ha-card-border-width:${Number(c.card_border_width)}px`, `border-width:${Number(c.card_border_width)}px`);
   if (c.card_border_color) o.push(`--ha-card-border-color:${clean(c.card_border_color)}`, `border-color:${clean(c.card_border_color)}`);
-  if (c.card_radius !== undefined) o.push(`--ha-card-border-radius:${Number(c.card_radius)}px`, `border-radius:${Number(c.card_radius)}px`, 'overflow:hidden');
+  if (c.card_radius !== undefined) o.push(`--ha-card-border-radius:${Number(c.card_radius)}px`, `border-radius:${Number(c.card_radius)}px`, 'overflow:clip');
   if (SHADOWS[c.card_shadow]) o.push(`--ha-card-box-shadow:${SHADOWS[c.card_shadow]}`, `box-shadow:${SHADOWS[c.card_shadow]}`);
   return o.join(';');
 }
@@ -1103,7 +1103,7 @@ const CARD_CSS = `
 .plc { --plc-a: var(--plc-accent, var(--accent-color, var(--primary-color)));
   --plc-bg2: var(--secondary-background-color, rgba(127,127,127,.12));
   --plc-r: var(--plc-radius, 10px);
-  display: block; position: relative; overflow: hidden; color: var(--primary-text-color); padding: var(--plc-pad, 14px); box-sizing: border-box;
+  display: block; position: relative; overflow: clip; color: var(--primary-text-color); padding: var(--plc-pad, 14px); box-sizing: border-box;
   zoom: var(--plc-scale, 1); }
 .plc *, .plc *::before, .plc *::after { box-sizing: border-box; }
 .plc button { font: inherit; color: inherit; cursor: pointer; }
@@ -1347,6 +1347,10 @@ const CARD_CSS = `
 .plc-icon-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--divider-color, #555); background: transparent;
   display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .plc-detail { border-radius: calc(var(--plc-r) + 4px); background: var(--plc-bg2); overflow: hidden; align-self: start; position: sticky; top: 0; }
+/* tablets: the details panel stays in view while the library scrolls (below the dashboard's header; its own scroll when tall) */
+.plc.tablet .plc-body.with-detail .plc-detail { top: calc(var(--header-height, 56px) + 8px); max-height: calc(100vh - var(--header-height, 56px) - 16px); overflow-y: auto; scrollbar-width: thin; }
+.plc.tablet .plc-detail-slot { align-self: stretch; }
+.plc.side.fit .plc-body.with-detail .plc-detail { top: 0; max-height: calc(100dvh - var(--plc-offset, 80px) - 8px); }
 .plc-detail-img { aspect-ratio: 16 / 10; background: center / cover no-repeat; position: relative; }
 .plc-detail-img .plc-big { position: absolute; left: 14px; right: 14px; bottom: 12px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
 .plc-detail-img::after { content: ''; position: absolute; inset: 40% 0 0 0; background: linear-gradient(transparent, rgba(0,0,0,.75)); pointer-events: none; }

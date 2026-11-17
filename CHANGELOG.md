@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.17.67
+
+**Fixed**
+- **The details panel scrolled away with the library** on tablets. The card clipped its content with
+  `overflow: hidden`, which made it a scroll box and stopped the panel from staying put. It now uses
+  `overflow: clip` (the same rounded corners), and the panel stays in view just below the dashboard's header while
+  the library scrolls; a panel taller than the screen scrolls on its own.
+
 ## v2026.11.17.66
 
 **New: Text Lines place each field**
