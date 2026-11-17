@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.72
+// Version: v2026.11.17.73
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.72';
+const BUILD_NUMBER = 'v2026.11.17.73';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1723,6 +1723,10 @@ const CARD_CSS = `
 .plc-vol-n { font-size: .8em; min-width: 2.2em; text-align: center; font-variant-numeric: tabular-nums; opacity: .8; }
 .plc-power.on { color: var(--success-color, #4caf50); }
 .plc-side-art { position: relative; }
+.plc-side-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--secondary-text-color); }
+.plc-side-ph ha-icon { --mdc-icon-size: 56px; opacity: .6; }
+.plc-side-ph span { font-weight: 600; }
+.plc-side-img { position: absolute; inset: 0; background: center / cover no-repeat; }
 .plc-np-x, .plc-np-move, .plc-np-power { position: absolute; z-index: 2; }
 .plc-np-x { top: 8px; right: 8px; }
 .plc-np-move { top: 8px; left: 8px; max-width: calc(100% - 70px); font-size: .8em; }
@@ -3287,7 +3291,10 @@ Object.assign(PlexCenterCard.prototype, {
       return realOn(this._hass, t) ? 'playing' : (t.state || '');
     };
     const move = others.length > 1 && !cfg(this._c, 'lock') && np.live && this._sessionFor(np.tv);
-    return `<div class="plc-side-card"><div class="plc-side-art"${np.art ? ` style="background-image:url('${cssUrl(np.art)}')"` : ''}>${np.art ? '' : '<ha-icon icon="mdi:television"></ha-icon>'}
+    // the icon (and app) sit under the picture: when the TV has no picture or it doesn't load (a 404 from another app), they show
+    const app = np.st?.attributes?.app_name || '';
+    return `<div class="plc-side-card"><div class="plc-side-art"><div class="plc-side-ph"><ha-icon icon="mdi:${np.live ? 'television-play' : 'television'}"></ha-icon>${app ? `<span>${esc(app)}</span>` : ''}</div>
+        ${np.art ? `<div class="plc-side-img" style="background-image:url('${cssUrl(np.art)}')"></div>` : ''}
         <button class="plc-icon-btn plc-np-x" data-npx title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
         ${move ? '<button class="plc-chip plc-np-move" data-movemenu title="Move to a different TV"><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>' : ''}
         ${cfg(this._c, 'np_power') ? `<span class="plc-np-power">${this._powerHtml(np)}</span>` : ''}</div>

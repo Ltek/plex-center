@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.17.73
+
+**Fixed**
+- **Now playing poster** when the TV plays another app (HBO Max, Netflix …): the TV's picture often doesn't load
+  (a 404 from Home Assistant), which left an empty box. A TV icon and the app's name show under it now, so they appear
+  whenever there's no picture.
+
 ## v2026.11.17.72
 
 **New**
