@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.17.74
+
+**New**
+- **Watching now includes TVs playing other apps** (Watching now → *Include TVs playing other apps*, on by default).
+  A TV playing HBO Max, Netflix and so on gets a card with the title, the TV and the app, and its progress, read
+  from the TV itself (Plex doesn't know about it). Tapping it opens that TV's controls. The header chip counts it.
+  A TV whose playback Plex already reports shows once.
+
 ## v2026.11.17.73
 
 **Fixed**

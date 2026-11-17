@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.73
+// Version: v2026.11.17.74
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.73';
+const BUILD_NUMBER = 'v2026.11.17.74';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -523,6 +523,7 @@ const DEFAULTS = {
   hold_play: true,
   hold_ms: 2000,
   np_power: false,
+  watching_apps: true,
   watching_home: true,
   watching_cal: true,
   watching_lib: true,
@@ -1482,6 +1483,8 @@ const CARD_CSS = `
 .plc-watch.pop { flex-direction: column; overflow: visible; }
 .plc-watch.pop .plc-sess { flex: none; width: min(420px, 80vw); }
 .plc-sess-art { aspect-ratio: 2 / 3; border-radius: 6px; background: rgba(127,127,127,.2) center / cover no-repeat; }
+.plc-sess-art.app { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--secondary-text-color); }
+.plc-sess-art.app i { position: absolute; inset: 0; background: center / cover no-repeat; }
 .plc-sess .plc-bar-track { height: 4px; background: color-mix(in srgb, var(--primary-text-color) 18%, transparent); margin-top: 6px; }
 .plc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--plc-li-w, 340px)), 1fr)); gap: 12px; }
 .plc-li { position: relative; display: block; width: 100%; min-height: var(--plc-li-h, 150px); padding: 0; text-align: left; overflow: hidden; color: inherit;
@@ -2157,6 +2160,7 @@ class PlexCenterCard extends HTMLElement {
   /** Which of our TVs a Plex session is playing on: by the TV's Plex user, else the player's name, else what the TV is playing. */
   _tvForSession(x) {
     if (!x) return null;
+    if (x._tv) return this._tvs().find((t) => t.id === x._tv) || null;
     const tvs = this._tvs(), low = (v) => String(v || '').trim().toLowerCase(), squash = (v) => low(v).replace(/[^a-z0-9]/g, '');
     const byUser = tvs.filter((t) => t.user && x.user && low(t.user) === low(x.user));
     if (byUser.length === 1) return byUser[0];
@@ -2593,7 +2597,24 @@ class PlexCenterCard extends HTMLElement {
   }
 
   /** The sessions Watching now shows (every TV, or only the one in the selector). */
-  _watchList() { const cur = this._tv(); return (peek('sessions') || []).filter((x) => cfg(this._c, 'watching_tvs') !== 'selected' || this._tvForSession(x)?.id === cur?.id); }
+  _watchList() {
+    const cur = this._tv(), all = [...(peek('sessions') || []), ...(cfg(this._c, 'watching_apps') ? this._appSessions() : [])];
+    return all.filter((x) => cfg(this._c, 'watching_tvs') !== 'selected' || this._tvForSession(x)?.id === cur?.id);
+  }
+  /** TVs playing another app (HBO Max, Netflix …), from the TV's own entity: Plex doesn't know about them. */
+  _appSessions() {
+    if (!this._hass) return [];
+    const plex = peek('sessions') || [];
+    return this._tvs().flatMap((tv) => {
+      const np = nowPlaying(this._hass, tv);
+      const app = np?.st?.attributes?.app_name || '';
+      if (!np?.live || /plex/i.test(app) || plex.some((x) => this._tvForSession(x)?.id === tv.id)) return [];
+      const at = np.st.attributes || {}, dur = Number(at.media_duration) || 0, pos = livePosition(np.st);
+      return [{ _tv: tv.id, _app: true, type: 'app', key: `app:${tv.id}`, title: np.title, poster: np.art || undefined,
+        player: [tvLabel(tv), app].filter(Boolean).join(' · '), player_state: np.st.state === 'paused' ? 'paused' : 'playing',
+        progress: dur && pos != null ? Math.round((pos / dur) * 100) : 0 }];
+    });
+  }
   _paintWatching(target = null) {
     const pop = !!target;
     if (!target) {   // the Watching now popover too, when open, and the header chip's count
@@ -2616,7 +2637,8 @@ class PlexCenterCard extends HTMLElement {
       : pop ? '' : `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div>`}<div class="plc-watch${pop ? ' pop' : ''}"${open ? '' : ' hidden'}>${s.map((x) => {
       const tv = tvFor(x);
       return `
-      <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}><div class="plc-sess-art"${x.poster ? ` style="background-image:url('${cssUrl(x.poster)}')"` : ''}></div>
+      <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}>${x._app ? `<div class="plc-sess-art app"><ha-icon icon="mdi:television-play"></ha-icon>${x.poster ? `<i style="background-image:url('${cssUrl(x.poster)}')"></i>` : ''}</div>`
+        : `<div class="plc-sess-art"${x.poster ? ` style="background-image:url('${cssUrl(x.poster)}')"` : ''}></div>`}
         <div style="min-width:0">${fieldLines('watching', wlk, { title: x.show || x.title, number: x.type === 'episode' && x.season != null && x.episode != null ? `S${x.season} · E${x.episode}` : '',
           eptitle: x.type === 'episode' ? x.title : '', year: x.type === 'episode' ? '' : x.year, viewer: [x.user, x.player || x.device].filter(Boolean).join(' · '),
           state: x.player_state === 'paused' ? 'paused' : '' }).map(([, h], i) => `<div class="${i === 0 ? 'plc-t' : 'plc-s'}">${h}</div>`).join('')}
@@ -3360,6 +3382,8 @@ Object.assign(PlexCenterCard.prototype, {
       if (el) el.className = `plc-dot ${realOn(this._hass, tv) ? 'play' : (tv.state && !['off', 'unavailable', 'standby'].includes(tv.state) ? 'on' : '')}`;
     }
     this._renderNP();
+    const asig = JSON.stringify(this._appSessions().map((x) => [x._tv, x.title, x.player, x.player_state, x.poster]));
+    if (asig !== this._appSig) { this._appSig = asig; this._paintWatching(); }
     if (this._v.tab === 'home') {
       this._paintUpcoming();
       homeOrder(this._c).filter((id) => secStyle(this._c, id).s.source).forEach((id) => this._paintRecent(id));
@@ -4329,6 +4353,7 @@ class PlexCenterCardEditor extends HTMLElement {
     return `${this._profile(this._visualSubs('watching'), 'watching')}
       ${this._everyScreen(`<p class="plce-hint">Tap a Watching now card to open that TV's controls (full screen on phones).</p>
         ${this._select('watching_tvs', 'Show', [['all', 'Every TV (and other Plex players)'], ['selected', 'Only the TV in the selector']])}
+        ${this._check('watching_apps', 'Include TVs playing other apps (HBO Max, Netflix …), from the TV itself')}
         ${this._watchPages()}
         ${this._check('np_power', 'Power button on the Now playing poster (asks before turning the TV off)')}`)}`;
   }
