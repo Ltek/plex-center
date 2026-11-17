@@ -1,5 +1,22 @@
 # Changelog
 
+## v2026.11.17.69
+
+**Changed** (Now playing, tablets and full screen)
+- A **Close (X)** button at the top-right of the poster. On tablets it hides the side panel until something else
+  plays or you tap a Watching now card; full screen it closes the view.
+- **Move to a different TV** is an overlay at the top-left of the poster.
+- The **power button** is off by default (*Watching now → Power button on the Now playing poster*); when on, it sits
+  at the bottom-right of the poster and **asks before turning the TV off**.
+
+**New** (Watching now)
+- **Collapsible**, with **Start collapsed on Home** and **Start collapsed on the library and Calendar pages** as
+  separate settings. Watching now also shows on the **Calendar** page (with *Also above the library and Calendar
+  pages*).
+
+**Fixed**
+- Watching now showed *S2026 · Eundefined* for live TV (no season / episode numbers).
+
 ## v2026.11.17.68
 
 **Changed**

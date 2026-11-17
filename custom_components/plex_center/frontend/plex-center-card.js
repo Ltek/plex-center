@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.68
+// Version: v2026.11.17.69
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.68';
+const BUILD_NUMBER = 'v2026.11.17.69';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -519,6 +519,10 @@ const DEFAULTS = {
   slim_controls: 'toggle',
   watching_tvs: 'all',
   stagger_rotate: false,
+  np_power: false,
+  watching_collapsible: false,
+  watching_collapsed_home: false,
+  watching_collapsed_lib: false,
   stagger_gap: 3,
   calendar: true,
   calendar_view: 'month',
@@ -1681,8 +1685,13 @@ const CARD_CSS = `
 .plc-vol { display: inline-flex; align-items: center; gap: 6px; }
 .plc-vol-n { font-size: .8em; min-width: 2.2em; text-align: center; font-variant-numeric: tabular-nums; opacity: .8; }
 .plc-power.on { color: var(--success-color, #4caf50); }
-.plc-side-power { position: absolute; top: 8px; right: 8px; z-index: 2; }
-.plc-side-power .plc-icon-btn { background: rgba(0,0,0,.5); }
+.plc-side-art { position: relative; }
+.plc-np-x, .plc-np-move, .plc-np-power { position: absolute; z-index: 2; }
+.plc-np-x { top: 8px; right: 8px; }
+.plc-np-move { top: 8px; left: 8px; max-width: calc(100% - 70px); font-size: .8em; }
+.plc-np-move span, .plc-np-move { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plc-np-power { right: 8px; bottom: 8px; }
+.plc-side-art .plc-icon-btn, .plc-side-art .plc-chip { background: rgba(0,0,0,.55); border-color: rgba(255,255,255,.35); color: #fff; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 `;
 
 // ------------------------------------------------------------------------------------------- data
@@ -2271,7 +2280,7 @@ class PlexCenterCard extends HTMLElement {
   }
 
   _panelVisible(np = nowPlaying(this._hass, this._tv())) {
-    return this._npMode() === 'panel' && !this._phone && !!np?.live;
+    return this._npMode() === 'panel' && !this._phone && !!np?.live && this._v.npHidden !== `${np.tv?.id}|${np.title}`;
   }
 
   _renderTabs() { /* the tabs live in the header row: _renderTop() draws them */ }
@@ -2507,11 +2516,15 @@ class PlexCenterCard extends HTMLElement {
     applyLook(sec, wlk);
     const fanBg = (x) => (wlk.image && wlk.image !== 'poster' && (x.art || x.poster)
       ? ` style="background-image:linear-gradient(90deg, rgba(0,0,0,.82), rgba(0,0,0,${wlk.image === 'fade' ? '.15' : '.55'})), url('${cssUrl(x.art || x.poster)}')"` : '');
-    sec.innerHTML = `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div><div class="plc-watch">${s.map((x) => {
+    const place = this._v.tab === 'home' ? 'home' : 'lib', coll = !!cfg(this._c, 'watching_collapsible');
+    const open = !coll || (this._v.wOpen?.[place] ?? !cfg(this._c, place === 'home' ? 'watching_collapsed_home' : 'watching_collapsed_lib'));
+    sec.classList.toggle('closed', !open);
+    sec.innerHTML = `${coll ? `<button class="plc-sec-bar caps-h${open ? '' : ' shut'}" data-wtoggle="${place}"><ha-icon icon="mdi:account-eye"></ha-icon><span class="name caps">Watching now</span><span class="n">${s.length}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
+      : `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div>`}<div class="plc-watch"${open ? '' : ' hidden'}>${s.map((x) => {
       const tv = tvFor(x);
       return `
       <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}><div class="plc-sess-art"${x.poster ? ` style="background-image:url('${cssUrl(x.poster)}')"` : ''}></div>
-        <div style="min-width:0">${fieldLines('watching', wlk, { title: x.show || x.title, number: x.type === 'episode' ? `S${x.season} · E${x.episode}` : '',
+        <div style="min-width:0">${fieldLines('watching', wlk, { title: x.show || x.title, number: x.type === 'episode' && x.season != null && x.episode != null ? `S${x.season} · E${x.episode}` : '',
           eptitle: x.type === 'episode' ? x.title : '', year: x.type === 'episode' ? '' : x.year, viewer: [x.user, x.player || x.device].filter(Boolean).join(' · '),
           state: x.player_state === 'paused' ? 'paused' : '' }).map(([, h], i) => `<div class="${i === 0 ? 'plc-t' : 'plc-s'}">${h}</div>`).join('')}
           <div class="plc-bar-track"><div class="plc-bar-fill" style="width:${Math.min(100, Number(x.progress) || 0)}%"></div></div></div>${tv ? '<ha-icon class="plc-sess-go" icon="mdi:remote-tv"></ha-icon>' : ''}</${tv ? 'button' : 'div'}>`;
@@ -3093,8 +3106,7 @@ Object.assign(PlexCenterCard.prototype, {
     const pos = cfg(this._c, 'slim_position') === 'top' ? 'top' : 'bottom';
     this._root.querySelectorAll('.plc-slim-slot').forEach((slot) => { slot.innerHTML = slim && slot.dataset.slot === pos ? this._slimHtml(np) : ''; });
     const full = this._root.querySelector('.plc-npfull-slot');
-    if (full) full.innerHTML = this._v.npFull && np?.live ? `<div class="plc-npfull"><div class="plc-npfull-h"><span class="plc-eyebrow">Now playing</span><span class="plc-sp"></span>
-      <button class="plc-icon-btn" data-npclose title="Close"><ha-icon icon="mdi:chevron-down"></ha-icon></button></div>${this._panelHtml(np)}</div>` : '';
+    if (full) full.innerHTML = this._v.npFull && np?.live ? `<div class="plc-npfull">${this._panelHtml(np)}</div>` : '';
     this._progress();
   },
 
@@ -3183,10 +3195,13 @@ Object.assign(PlexCenterCard.prototype, {
       if (s) return `${s.user} · ${s.show || s.title}`;
       return realOn(this._hass, t) ? 'playing' : (t.state || '');
     };
-    return `<div class="plc-side-card"><div class="plc-side-power">${this._powerHtml(np)}</div><div class="plc-side-art"${np.art ? ` style="background-image:url('${cssUrl(np.art)}')"` : ''}>${np.art ? '' : '<ha-icon icon="mdi:television"></ha-icon>'}</div>
+    const move = others.length > 1 && !cfg(this._c, 'lock') && np.live && this._sessionFor(np.tv);
+    return `<div class="plc-side-card"><div class="plc-side-art"${np.art ? ` style="background-image:url('${cssUrl(np.art)}')"` : ''}>${np.art ? '' : '<ha-icon icon="mdi:television"></ha-icon>'}
+        <button class="plc-icon-btn plc-np-x" data-npx title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
+        ${move ? '<button class="plc-chip plc-np-move" data-movemenu title="Move to a different TV"><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>' : ''}
+        ${cfg(this._c, 'np_power') ? `<span class="plc-np-power">${this._powerHtml(np)}</span>` : ''}</div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
-        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>
-      ${others.length > 1 && !cfg(this._c, 'lock') && np.live && this._sessionFor(np.tv) ? `<button class="plc-btn plc-movebtn" data-movemenu><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>` : ''}`;
+        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>`;
   },
 
   _slimHtml(np) {
@@ -3293,6 +3308,7 @@ Object.assign(PlexCenterCard.prototype, {
       const tv = this._tvs().find((x) => x.id === el.dataset.sesstv);
       if (!tv) return;
       if (tv.id !== this._tv()?.id) this._setTv(tv);
+      this._v.npHidden = null;
       if (!this._panelVisible()) { this._v.npFull = true; this._npFullAt = Date.now(); }
       this._renderNP(true); return;
     }
@@ -3393,8 +3409,21 @@ Object.assign(PlexCenterCard.prototype, {
     if ((el = t('[data-cwmark]'))) { this._markWatched((this._lists.get('continue') || [])[Number(el.dataset.cwmark)], true); return; }
     if ((el = t('[data-mark]'))) { this._markWatched(this._detailItem, el.dataset.mark === '1'); return; }
     if (t('[data-trailer]')) { if (this._detailItem?.trailer) this._trailer(this._detailItem.trailer); return; }
-    if ((el = t('[data-np]'))) { const [a, v] = el.dataset.np.split(':'); this._control(a, v); return; }
+    if ((el = t('[data-np]'))) {
+      const [a, v] = el.dataset.np.split(':');
+      if (a === 'power_off' && !window.confirm(`Turn ${tvLabel(this._tv())} off?`)) return;
+      this._control(a, v); return;
+    }
+    if ((el = t('[data-wtoggle]'))) {
+      const pl = el.dataset.wtoggle, sec = el.closest('[data-sec="watching"]'), open = !sec.classList.contains('closed');
+      this._v.wOpen = { ...(this._v.wOpen || {}), [pl]: !open }; this._paintWatching(); return;
+    }
     if (t('[data-npclose]')) { this._v.npFull = false; this._renderNP(true); return; }
+    if (t('[data-npx]')) {
+      if (this._v.npFull) this._v.npFull = false;
+      else { const np = nowPlaying(this._hass, this._tv()); this._v.npHidden = np ? `${np.tv?.id}|${np.title}` : null; }
+      this._renderNP(true); return;
+    }
     if (t('[data-npopenfull]')) { this._v.npFull = true; this._renderNP(true); return; }
     if (t('[data-ctltoggle]')) { this._v.ctl = !this._v.ctl; this._renderNP(true); }
   },
@@ -3664,7 +3693,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['calendar', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['calendar', 'watching_collapsible', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; this._onScreen = () => { if (this._rendered) this._render(); }; }
@@ -4195,7 +4224,10 @@ class PlexCenterCardEditor extends HTMLElement {
     return `${this._profile(this._visualSubs('watching'), 'watching')}
       ${this._everyScreen(`<p class="plce-hint">Tap a Watching now card to open that TV's controls (full screen on phones).</p>
         ${this._select('watching_tvs', 'Show', [['all', 'Every TV (and other Plex players)'], ['selected', 'Only the TV in the selector']])}
-        ${this._check('watching_libraries', 'Also above the library pages (not only Home)')}`)}`;
+        ${this._check('watching_libraries', 'Also above the library and Calendar pages (not only Home)')}
+        ${this._check('watching_collapsible', 'Collapsible (a header bar to fold it away)')}
+        ${this._c('watching_collapsible') ? `${this._check('watching_collapsed_home', 'Start collapsed on Home')}${this._check('watching_collapsed_lib', 'Start collapsed on the library and Calendar pages')}` : ''}
+        ${this._check('np_power', 'Power button on the Now playing poster (asks before turning the TV off)')}`)}`;
   }
   /** Library: which libraries and in what order, how they behave, and per screen how the grid looks. */
   _libraryPanel() {
@@ -4787,7 +4819,17 @@ Object.assign(PlexCenterCard.prototype, {
   },
 
   async _renderCalendar(main) {
-    if (this._phone) { this._renderCalPhone(main); return; }
+    if (this._phone) { await this._renderCalPhone(main); this._calWatch(main); return; }
+    const done = this._renderCalendarTablet(main);
+    this._calWatch(main);
+    return done;
+  },
+  _calWatch(main) {
+    if (!homeVisible(this._c, 'watching') || !cfg(this._c, 'watching_libraries') || main.querySelector('[data-sec="watching"]')) return;
+    main.insertAdjacentHTML('afterbegin', '<div class="plc-sec plc-libwatch" data-sec="watching"></div>');
+    this._paintWatching();
+  },
+  async _renderCalendarTablet(main) {
     const v = this._v, [start, days, view] = this._calRange(), at = v.calDate ? parseYmd(v.calDate) : new Date();
     const key = `cal:${ymd(start)}:${days}:${this._tv()?.id || ''}`;
     const title = view === 'month' ? at.toLocaleDateString([], { month: 'long', year: 'numeric' })
