@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.17.78
+
+**New**
+- Watching now → Header → Chevron:
+  - **Chevron size** (0 = a little larger than the header text, the new default; it was the same size and looked
+    too small).
+  - **Chevron weight**: *Header text* (default), *Light*, *Normal*, *Bold*, *Heavy*.
+  - More placements: *Left of the header text*, *Right of the text* (default), *After the count*, *Far right*.
+
 ## v2026.11.17.77
 
 **New**

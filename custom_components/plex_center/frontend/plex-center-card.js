@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.77
+// Version: v2026.11.17.78
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.77';
+const BUILD_NUMBER = 'v2026.11.17.78';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -527,6 +527,8 @@ const DEFAULTS = {
   watching_icon: true,
   watching_chevron: true,
   watching_chevron_pos: 'right',
+  watching_chevron_px: 0,
+  watching_chevron_weight: '',
   np_auto_open: false,
   watching_home: true,
   watching_cal: true,
@@ -1533,7 +1535,8 @@ const CARD_CSS = `
 .plc-sec.closed .plc-watch, .plc-watch[hidden] { display: none; }
 .plc-sec-h.tap { cursor: pointer; -webkit-user-select: none; user-select: none; }
 .plc-sec-h > ha-icon { --mdc-icon-size: 18px; align-self: center; }
-.plc-sec-h .chev { display: inline-block; font: inherit; color: inherit; line-height: 1; transform: rotate(90deg); transition: transform .2s; }
+.plc-sec-h .chev { display: inline-block; font: inherit; font-size: 1.6em; color: inherit; line-height: .6; transform: rotate(90deg); transition: transform .2s; align-self: center; }
+.plc-sec-h .chev.end { margin-left: auto; }
 .plc-sec.closed .plc-sec-h .chev { transform: rotate(0deg); }
 .plc-sec-body.limit .plc-row { overflow-x: hidden; }
 .plc-sec-body.scroll .plc-row { overflow-x: auto; }
@@ -2656,8 +2659,11 @@ class PlexCenterCard extends HTMLElement {
     const open = !coll || (this._v.wOpen?.[place] ?? !cfg(this._c, `watching_collapsed_${place}`));
     sec.classList.toggle('closed', !open);
     const hIcon = cfg(this._c, 'watching_icon') ? '<ha-icon icon="mdi:account-eye"></ha-icon>' : '';
-    const chev = coll && cfg(this._c, 'watching_chevron') ? '<span class="chev" aria-hidden="true">›</span>' : '', left = cfg(this._c, 'watching_chevron_pos') === 'left';
-    sec.innerHTML = `${pop ? '' : `<div class="plc-sec-h${coll ? ' tap' : ''}"${coll ? ` role="button" tabindex="0" data-wtoggle="${place}" aria-expanded="${open}"` : ''}>${hIcon}${left ? chev : ''}<span>Watching now</span>${left ? '' : chev} <span class="n">${s.length}</span></div>`}<div class="plc-watch${pop ? ' pop' : ''}"${open ? '' : ' hidden'}>${s.map((x) => {
+    const cpos = cfg(this._c, 'watching_chevron_pos'), cpx = Number(cfg(this._c, 'watching_chevron_px')) || 0, cw = cfg(this._c, 'watching_chevron_weight');
+    const cst = [cpx ? `font-size:${cpx}px` : '', cw ? `font-weight:${cw}` : ''].filter(Boolean).join(';');
+    const chev = coll && cfg(this._c, 'watching_chevron') ? `<span class="chev${cpos === 'end' ? ' end' : ''}" aria-hidden="true"${cst ? ` style="${cst}"` : ''}>›</span>` : '';
+    const ch = (p) => (cpos === p ? chev : '');
+    sec.innerHTML = `${pop ? '' : `<div class="plc-sec-h${coll ? ' tap' : ''}"${coll ? ` role="button" tabindex="0" data-wtoggle="${place}" aria-expanded="${open}"` : ''}>${hIcon}${ch('left')}<span>Watching now</span>${ch('right')} <span class="n">${s.length}</span>${ch('count')}${ch('end')}</div>`}<div class="plc-watch${pop ? ' pop' : ''}"${open ? '' : ' hidden'}>${s.map((x) => {
       const tv = tvFor(x);
       return `
       <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}>${x._app ? `<div class="plc-sess-art app"><ha-icon icon="mdi:television-play"></ha-icon>${x.poster ? `<i style="background-image:url('${cssUrl(x.poster)}')"></i>` : ''}</div>`
@@ -4408,7 +4414,9 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-group">Header</div>
       ${this._check('watching_icon', 'Show the header icon')}
       ${pages.some(([pg]) => this._c(`watching_${pg}`) && this._c(`watching_coll_${pg}`)) ? `${this._check('watching_chevron', 'Show the chevron (collapsible pages)')}
-        ${this._c('watching_chevron') ? this._chips('watching_chevron_pos', 'Chevron', [['left', 'Left of the header text'], ['right', 'Right of the text']]) : ''}` : ''}
+        ${this._c('watching_chevron') ? `${this._chips('watching_chevron_pos', 'Chevron', [['left', 'Left of the header text'], ['right', 'Right of the text'], ['count', 'After the count'], ['end', 'Far right']])}
+          ${this._slider('watching_chevron_px', 'Chevron size', 0, 48, 'px')}<p class="plce-hint">0 = a little larger than the header text.</p>
+          ${this._chips('watching_chevron_weight', 'Chevron weight', [['', 'Header text'], ['300', 'Light'], ['400', 'Normal'], ['700', 'Bold'], ['900', 'Heavy']])}` : ''}` : ''}
       <p class="plce-hint">Home also follows the Home order (the eye in Home layout). The header's <b>Watching now</b> chip (Controls layout) opens the cards in a popover on any page.</p>`;
   }
   /** Library: which libraries and in what order, how they behave, and per screen how the grid looks. */
