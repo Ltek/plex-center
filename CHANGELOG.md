@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.17.75
+
+**Fixed**
+- **Watching now didn't collapse**: tapping its header turned the chevron but the cards stayed. They fold away now.
+
+**Changed**
+- A collapsible Watching now keeps its normal section header; tapping the header (or Enter / Space) folds and
+  unfolds it.
+
+**New**
+- Watching now → *Header*: **Show the header icon** and **Show the chevron** (collapsible pages), both on by default.
+
 ## v2026.11.17.74
 
 **New**

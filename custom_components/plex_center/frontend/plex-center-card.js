@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.74
+// Version: v2026.11.17.75
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.74';
+const BUILD_NUMBER = 'v2026.11.17.75';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -524,6 +524,8 @@ const DEFAULTS = {
   hold_ms: 2000,
   np_power: false,
   watching_apps: true,
+  watching_icon: true,
+  watching_chevron: true,
   watching_home: true,
   watching_cal: true,
   watching_lib: true,
@@ -1525,6 +1527,11 @@ const CARD_CSS = `
 .plc-sec-bar .chev { transition: transform .2s; }
 .plc-sec.closed .plc-sec-bar .chev { transform: rotate(-90deg); }
 .plc-sec.closed .plc-sec-body { display: none; }
+.plc-sec.closed .plc-watch, .plc-watch[hidden] { display: none; }
+.plc-sec-h.tap { cursor: pointer; -webkit-user-select: none; user-select: none; }
+.plc-sec-h > ha-icon { --mdc-icon-size: 18px; align-self: center; }
+.plc-sec-h .chev { margin-left: auto; color: var(--secondary-text-color); transition: transform .2s; }
+.plc-sec.closed .plc-sec-h .chev { transform: rotate(-90deg); }
 .plc-sec-body.limit .plc-row { overflow-x: hidden; }
 .plc-sec-body.scroll .plc-row { overflow-x: auto; }
 .plc-sec-body.limit .plc-row > .plc-tile, .plc-sec-body.scroll .plc-row > .plc-tile {
@@ -1920,6 +1927,10 @@ class PlexCenterCard extends HTMLElement {
     this._root.addEventListener('pointerdown', (e) => this._onScrub(e));
     this._wireGestures();
     this._wireHold();
+    this._root.addEventListener('keydown', (e) => {
+      const h = (e.key === 'Enter' || e.key === ' ') && e.target.closest?.('.plc-sec-h[data-wtoggle]');
+      if (h) { e.preventDefault(); h.click(); }
+    });
     this._root.addEventListener('focusin', (e) => { if (e.target.matches?.('[data-search]')) this._showRecent(); });
     this._root.addEventListener('focusout', (e) => { if (e.target.matches?.('[data-search]')) setTimeout(() => { if (!this._root.querySelector('[data-search]:focus')) this._root.querySelector('.plc-recent')?.remove(); }, 250); });
     this._root.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this._root.querySelector('.plc-menu')) { this._closeMenu(); return; } });
@@ -2633,8 +2644,9 @@ class PlexCenterCard extends HTMLElement {
     const place = watchPage(this._v.tab), coll = !pop && !!cfg(this._c, `watching_coll_${place}`);
     const open = !coll || (this._v.wOpen?.[place] ?? !cfg(this._c, `watching_collapsed_${place}`));
     sec.classList.toggle('closed', !open);
-    sec.innerHTML = `${coll ? `<button class="plc-sec-bar caps-h${open ? '' : ' shut'}" data-wtoggle="${place}"><ha-icon icon="mdi:account-eye"></ha-icon><span class="name caps">Watching now</span><span class="n">${s.length}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
-      : pop ? '' : `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div>`}<div class="plc-watch${pop ? ' pop' : ''}"${open ? '' : ' hidden'}>${s.map((x) => {
+    const hIcon = cfg(this._c, 'watching_icon') ? '<ha-icon icon="mdi:account-eye"></ha-icon>' : '';
+    const chev = coll && cfg(this._c, 'watching_chevron') ? '<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon>' : '';
+    sec.innerHTML = `${pop ? '' : `<div class="plc-sec-h${coll ? ' tap' : ''}"${coll ? ` role="button" tabindex="0" data-wtoggle="${place}" aria-expanded="${open}"` : ''}>${hIcon}<span>Watching now</span> <span class="n">${s.length}</span>${chev}</div>`}<div class="plc-watch${pop ? ' pop' : ''}"${open ? '' : ' hidden'}>${s.map((x) => {
       const tv = tvFor(x);
       return `
       <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}>${x._app ? `<div class="plc-sess-art app"><ha-icon icon="mdi:television-play"></ha-icon>${x.poster ? `<i style="background-image:url('${cssUrl(x.poster)}')"></i>` : ''}</div>`
@@ -4363,8 +4375,11 @@ class PlexCenterCardEditor extends HTMLElement {
     const col = (label, key, on = () => true) => `<div class="plce-group">${label}</div><div class="plce-checkrow">${pages.map(([pg, name]) => (on(pg)
       ? this._check(`${key}${pg}`, name) : '')).join('')}</div>`;
     return `${col('Show on page', 'watching_')}
-      ${col('Collapsible (a header bar to fold it away)', 'watching_coll_', (pg) => this._c(`watching_${pg}`))}
+      ${col('Collapsible (tap the header to fold it away)', 'watching_coll_', (pg) => this._c(`watching_${pg}`))}
       ${pages.some(([pg]) => this._c(`watching_${pg}`) && this._c(`watching_coll_${pg}`)) ? col('Start collapsed', 'watching_collapsed_', (pg) => this._c(`watching_${pg}`) && this._c(`watching_coll_${pg}`)) : ''}
+      <div class="plce-group">Header</div>
+      ${this._check('watching_icon', 'Show the header icon')}
+      ${pages.some(([pg]) => this._c(`watching_${pg}`) && this._c(`watching_coll_${pg}`)) ? this._check('watching_chevron', 'Show the chevron (collapsible pages)') : ''}
       <p class="plce-hint">Home also follows the Home order (the eye in Home layout). The header's <b>Watching now</b> chip (Controls layout) opens the cards in a popover on any page.</p>`;
   }
   /** Library: which libraries and in what order, how they behave, and per screen how the grid looks. */
