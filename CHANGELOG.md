@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.17.81
+
+**Fixed**
+- **Tapping Watching now didn't open Now playing** for a show paused more than 2 minutes: .80 treated any Plex
+  pause that long as a leftover from a TV that was turned off. Removed; only the TV's own power decides now.
+- A TV woken with its remote while Plex still reports the paused title it was turned off with (its app is gone)
+  shows **Ready to resume** in Watching now, Now playing and the TV selector, and Play resumes it, instead of
+  controls that do nothing.
+
 ## v2026.11.17.80
 
 **Fixed**

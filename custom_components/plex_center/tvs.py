@@ -14,7 +14,6 @@ from .const import PLEX_PKG, PREVIEW_MAX_S, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV
 
 OFF_STATES = ("off", "standby")
 GONE_STATES = ("unavailable", "unknown")
-STALE_S = 120
 
 
 def norm(text: str | None) -> str:
@@ -180,17 +179,7 @@ def tv_playing(hass: HomeAssistant, tv: dict[str, Any]) -> bool:
     """Something really plays on the TV: it is on (or can't tell) and one of its players says playing / paused."""
     if tv_on(hass, tv) is False:
         return False
-    if any(real_playback(hass.states.get(e)) for e in (tv.get(TV_PIPUP), tv.get(TV_ADB)) if e):
-        return True
-    plex = tv.get(TV_PLEX) and hass.states.get(tv[TV_PLEX])
-    if not real_playback(plex):
-        return False
-    # Plex keeps a paused session long after the TV closed its app: paused, unchanged for 2 minutes, and the
-    # TV's own players show nothing = stale.
-    from homeassistant.util import dt as dt_util  # noqa: PLC0415
-
-    stale = plex.state == "paused" and (tv.get(TV_PIPUP) or tv.get(TV_ADB)) and (dt_util.utcnow() - plex.last_updated).total_seconds() > STALE_S
-    return not stale
+    return any(real_playback(hass.states.get(e)) for e in (tv.get(TV_PIPUP), tv.get(TV_PLEX), tv.get(TV_ADB)) if e)
 
 
 def real_playback(state) -> bool:
