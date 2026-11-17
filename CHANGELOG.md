@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.17.77
+
+**New**
+- Section **Header** options (per row, per screen):
+  - **Section Title** placement: *Left* (default), *Center* or *Right*.
+  - **Chips** placement (Movies and TV chips): *Center* or *Right* (default).
+  - **Show “View all”** (Recently Added), on by default.
+
+**Changed**
+- **Hide Section Title** and **Movies and TV chips** moved from the top of a row's profile into its *Header* section.
+
 ## v2026.11.17.76
 
 **Changed**

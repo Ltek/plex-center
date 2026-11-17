@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.76
+// Version: v2026.11.17.77
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.76';
+const BUILD_NUMBER = 'v2026.11.17.77';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -852,7 +852,7 @@ function layoutItems(c, key = 'main') {
 }
 
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
-const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
+const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', chips_pos: ['center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
@@ -920,6 +920,7 @@ function secStyle(c, id) {
   return { layout: s.layout || 'row', image, fade: lkImg === 'fade', wide, lkind: SEC_KIND[type] || type, look: own, collapsible, collapsed: !!s.collapsed,
     icon: s.icon || SEC_TYPE_ICON[type] || '', show_icon: s.show_icon ?? (collapsible || !!s.icon), show_title: s.show_title ?? true,
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
+    chips_pos: s.chips_pos || 'right', title_pos: s.title_pos || 'left', view_all: s.view_all ?? true,
     show: (() => { const n = Math.max(1, Number((s.show ?? s.max) || c.across || cfg(c, 'across')) || 6);
       return wide && !(s.show ?? s.max) ? Math.max(1, Math.round(n / 2)) : n; })(),
     scroll: !!s.scroll, auto: s.auto || 'off', scroll_dir: s.scroll_dir || ((s.layout || 'row') === 'list' ? 'up' : 'left'),
@@ -1563,6 +1564,12 @@ const CARD_CSS = `
 .plc-fade.out { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .plc-fade { transition: none; } }
 .plc-main.searching > .plc-sec:not([data-sec="search"]), .plc-main.searching > .plc-cards { display: none; }
+.plc-sec-h.slots, .plc-sec-bar.slots { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.slots > .sl { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.slots > .sl.l { justify-content: flex-start; } .slots > .sl.c { justify-content: center; } .slots > .sl.r { justify-content: flex-end; }
+.plc-sec-tt { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
+.plc-sec-tt > ha-icon { align-self: center; }
+.slots .plc-kchips, .slots .plc-viewall { margin-left: 0; }
 .plc-viewall { margin-left: auto; border: none; background: none; color: var(--secondary-text-color); font-size: .9em; letter-spacing: .04em; }
 .plc-top { display: block; margin-bottom: 8px; }
 /* a header / footer row: left and right columns of equal width, the middle exactly in the center; items wrap inside their own column */
@@ -2497,7 +2504,7 @@ class PlexCenterCard extends HTMLElement {
     this._lists.set(id, items);
     sig(r, JSON.stringify([JSON.stringify(st.s), cfg(this._c, 'image_style'), this._v.secOpen?.[id], JSON.stringify(this._kinds(id)), items.map((x) => [x.key, x.title, x.watched])]),
       () => this._fill(id, r, SEC_TYPE_TITLE.recent, mine.length, items, id,
-        this._libraries()[0] ? '<button class="plc-viewall" data-viewall="added">View all →</button>' : ''));
+        this._libraries()[0] && st.view_all ? '<button class="plc-viewall" data-viewall="added">View all →</button>' : ''));
   }
 
   /** Plex rows: Plex's own hubs ("Because you watched…", "Top rated", …) for the TV's user. */
@@ -2741,10 +2748,16 @@ class PlexCenterCard extends HTMLElement {
     const chips = st.chips ? `<span class="plc-kchips">${[['movie', 'Movies'], ['show', 'TV']].map(([v, n]) =>
       `<span class="plc-chip${kinds[v] ? ' on' : ''}" role="button" data-seckind="${esc(id)}|${v}">${n}</span>`).join('')}</span>` : '';
     const hcls = `${st.head_style}-h${st.divider ? ' div' : ''}`;
+    const slot = { l: [], c: [], r: [] }, at = (p) => (p === 'center' ? 'c' : p === 'right' ? 'r' : 'l');
+    const ttl = st.collapsible ? `${icon}${name}` : `${icon}${name}${st.show_count ? ` <span class="n">${total}</span>` : ''}`;
+    slot[at(st.title_pos)].push(`<span class="plc-sec-tt">${ttl}</span>`);
+    if (chips) slot[at(st.chips_pos)].push(chips);
+    if (st.collapsible) slot.r.push(`${st.show_count ? `<span class="n">${esc(total ? count : 'None')}</span>` : ''}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon>`);
+    else if (extraHead) slot.r.push(extraHead);
+    const slots = `<span class="sl l">${slot.l.join('')}</span><span class="sl c">${slot.c.join('')}</span><span class="sl r">${slot.r.join('')}</span>`;
     const head = st.collapsible
-      ? `<button class="plc-sec-bar ${hcls}${total ? ' has' : ''}" data-secbar="${esc(id)}">${icon}${name}${chips}
-          ${st.show_count ? `<span class="n">${esc(total ? count : 'None')}</span>` : ''}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
-      : `<div class="plc-sec-h ${hcls}">${icon}${name}${st.show_count ? ` <span class="n">${total}</span>` : ''}${chips}${extraHead}</div>`;
+      ? `<button class="plc-sec-bar slots ${hcls}${total ? ' has' : ''}" data-secbar="${esc(id)}">${slots}</button>`
+      : `<div class="plc-sec-h slots ${hcls}">${slots}</div>`;
     const page = st.auto === 'fade' ? this._fadePage?.[id] || 0 : 0;
     const body = this._sectionItems(st, items, listId, page);
     const mode = st.auto === 'scroll' ? 'scroll auto' : st.auto === 'fade' ? 'limit fadeset' : st.scroll ? 'scroll' : 'limit';
@@ -4228,13 +4241,18 @@ class PlexCenterCardEditor extends HTMLElement {
       })();
     const sub = (k, t, body) => this._sub(`${k}:${id}`, t, body);
     const visual = `<div class="plce-row"><label class="lbl">Section Title</label><input type="text" data-sid="${esc(id)}" data-sk="title" value="${esc(s.title || '')}" placeholder="${esc(SEC_TYPE_TITLE[st.type] || '')}"></div>
-      <label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="hide_title"${s.show_title === false ? ' checked' : ''}>Hide Section Title</label>
-      ${st.type === 'plexhub' ? '' : `${sel('kind', 'Show', [['', 'Movies and TV'], ['movie', 'Movies'], ['show', 'TV']])}
-      ${chk('chips', 'Movies and TV chips in the header (turn each on or off)', false)}`}`;
+      ${st.type === 'plexhub' ? '' : sel('kind', 'Show', [['', 'Movies and TV'], ['movie', 'Movies'], ['show', 'TV']])}`;
+    const pick = (k, label, opts, def) => `<div class="plce-chiprow"><span class="plce-chiplbl">${esc(label)}</span>${opts.map(([v, n]) =>
+      `<button class="plce-pick${(s[k] || def) === v ? ' on' : ''}" data-sid="${esc(id)}" data-spick="${k}|${v === def ? '' : v}">${esc(n)}</button>`).join('')}</div>`;
     if (part === 'source') return source;
     if (part === 'visual') return visual;
     return `${part === 'all' ? `${source}${visual}` : ''}
-      ${sub('head', 'Header', `${chk('show_count', 'Show the number of items', true)}
+      ${sub('head', 'Header', `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="hide_title"${s.show_title === false ? ' checked' : ''}>Hide Section Title</label>
+        ${s.show_title === false ? '' : pick('title_pos', 'Section Title', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'left')}
+        ${st.type === 'plexhub' ? '' : `${chk('chips', 'Movies and TV chips in the header (turn each on or off)', false)}
+        ${st.chips ? pick('chips_pos', 'Chips', [['center', 'Center'], ['right', 'Right']], 'right') : ''}`}
+        ${st.type === 'recent' ? chk('view_all', 'Show “View all”', true) : ''}
+        ${chk('show_count', 'Show the number of items', true)}
         ${chk('show_icon', 'Show the icon', st.collapsible || !!s.icon)}
         <div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-sid="${esc(id)}" data-sicon="icon" value="${esc(s.icon || '')}"></plce-icon-pick></div>
         ${sel('head_style', 'Title style', [['', st.collapsible ? 'Plain (bar default)' : 'Section style (caps, accent)'], ['caps', 'Section style (caps, accent)'], ['plain', 'Plain']])}
@@ -4841,6 +4859,9 @@ class PlexCenterCardEditor extends HTMLElement {
       if (v === '' || v === undefined || v === null) delete o[k]; else o[k] = v;
       all2[key] = o; this._config[bag] = all2; this._emit();
     };
+    all('[data-spick]', (el) => el.addEventListener('click', () => {
+      const [k, v] = el.dataset.spick.split('|'); setSec(el.dataset.sid, k, v); this._render();
+    }));
     all('[data-sk]', (el) => el.addEventListener('change', () => {
       const k = el.dataset.sk; let v = el.value.trim();
       if (k === 'flag') v = v === '' ? '' : v === 'true';
