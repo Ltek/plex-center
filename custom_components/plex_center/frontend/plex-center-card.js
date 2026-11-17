@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.65
+// Version: v2026.11.17.66
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.65';
+const BUILD_NUMBER = 'v2026.11.17.66';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -336,10 +336,72 @@ function cleanLooks(c) {
       if (k === 'box_dir' && v !== 'none' && !GRAD_DIRS.some(([d]) => d === v)) continue;
       keep[k] = v;
     }
+    const fl = cleanFields(kind, o.fields);
+    if (fl) keep.fields = fl;
     if (Object.keys(keep).length) out[lk] = keep;
   }
   if (Object.keys(out).length) c.looks = out; else delete c.looks;
 }
+/** Text fields: what each kind of item can show, and where it goes by default: [id, label, line (0 = hidden), order]. */
+const FIELD_SETS = {
+  cal: [['title', 'Title', 1, 1], ['badge', 'New season / Premiere / Finale', 2, 1], ['episode', 'Episode (S01E02)', 2, 2], ['eptitle', 'Episode title', 2, 3],
+    ['release', 'Release type (movies)', 2, 4], ['date', 'Air date', 3, 1], ['time', 'Time', 3, 2], ['network', 'Network / studio', 4, 1], ['runtime', 'Runtime', 4, 2]],
+  row: [['title', 'Title', 1, 1], ['eptitle', 'Episode title', 2, 1], ['release', 'Release / added (day, date and time)', 3, 1], ['number', 'Episode (S01E02)', 4, 1],
+    ['rating', 'Rating', 4, 2], ['runtime', 'Runtime', 4, 3], ['genres', 'Genres', 5, 1], ['year', 'Year', 0, 1], ['day', 'Day', 0, 2], ['date', 'Date', 0, 3],
+    ['time', 'Time', 0, 4], ['studio', 'Studio / network', 0, 5]],
+  watch: [['title', 'Title', 1, 1], ['number', 'Episode (S1 · E2)', 2, 1], ['eptitle', 'Episode title', 2, 2], ['year', 'Year (movies)', 2, 3],
+    ['viewer', 'Who and where (user · player)', 3, 1], ['state', 'Paused', 3, 2]],
+};
+const fieldFamily = (kind) => (kind === 'calendar' ? 'cal' : kind === 'watching' ? 'watch' : 'row');
+/** Old per-line "show" switches (title / info / when / meta / extra = lines 1–5) still hide the fields of that line. */
+const LINE_IDS = ['title', 'info', 'when', 'meta', 'extra'];
+/** The fields of a kind on a screen: id → { line, pos, px?, weight?, color? } (the defaults with what the card sets on top). */
+function fieldLayout(kind, own = {}) {
+  const set = own.fields && typeof own.fields === 'object' ? own.fields : null, out = {};
+  for (const [id, , line, pos] of FIELD_SETS[fieldFamily(kind)]) {
+    const o = set?.[id] || {};
+    const hidden = !set && line && own[`${LINE_IDS[line - 1]}_show`] === false;
+    out[id] = { line: o.line !== undefined ? o.line : (hidden ? 0 : line), pos: o.pos !== undefined ? o.pos : pos };
+    for (const k of ['px', 'weight', 'color']) if (o[k] !== undefined && o[k] !== '') out[id][k] = o[k];
+  }
+  return out;
+}
+function cleanFields(kind, f) {
+  if (!f || typeof f !== 'object') return null;
+  const out = {};
+  for (const [id] of FIELD_SETS[fieldFamily(kind)]) {
+    const o = f[id];
+    if (!o || typeof o !== 'object') continue;
+    const r = { line: Math.max(0, Math.min(5, Math.round(Number(o.line) || 0))), pos: Math.max(1, Math.min(9, Math.round(Number(o.pos) || 1))) };
+    if (Number.isFinite(Number(o.px)) && o.px !== '' && o.px != null) r.px = Math.max(8, Math.min(40, Number(o.px)));
+    if (['400', '500', '600', '700', '800'].includes(String(o.weight))) r.weight = String(o.weight);
+    if (o.color) r.color = String(o.color).replace(/[;{}<>"]/g, '');
+    out[id] = r;
+  }
+  return Object.keys(out).length ? out : null;
+}
+/** The lines of an item: [[line no, html]] in order, each field a span (its own size / weight / colour), " · " between. */
+function fieldLines(kind, own, vals) {
+  const lay = fieldLayout(kind, own), lines = {};
+  for (const [id] of FIELD_SETS[fieldFamily(kind)]) {
+    const f = lay[id], v = vals[id];
+    if (!f.line || v == null || v === '') continue;
+    const st = [f.px ? `font-size:${Number(f.px)}px` : '', f.weight ? `font-weight:${f.weight}` : '', f.color ? `color:${f.color}` : ''].filter(Boolean).join(';');
+    (lines[f.line] ||= []).push([f.pos, `<span class="plc-fv" data-f="${id}"${st ? ` style="${st}"` : ''}>${esc(v)}</span>`]);
+  }
+  return Object.keys(lines).map(Number).sort((a, b) => a - b).map((n) => [n, lines[n].sort((a, b) => a[0] - b[0]).map(([, h]) => h).join('<span class="plc-fsep"> · </span>')]);
+}
+/** A row item's text from its fields: line 1 as the title, the others as the info lines. */
+function rowFieldsHtml(own, vals) {
+  return fieldLines('row', own, vals).map(([n, h], i) => (i === 0 ? `<div class="plc-t">${h}</div>` : `<div class="plc-s l${Math.min(4, n - 1)}">${h}</div>`)).join('');
+}
+/** A row item's field values (Plex items and upcoming-media / Sonarr-Radarr items alike). */
+function rowVals(it, c) {
+  const u = it.umc && it.umc.title ? it.umc : plexAsUmc(it), k = umcKeys(u, c);
+  return { title: k.$title, eptitle: k.$episode, release: String(u.release || '').includes('$') ? umcLines(u, { line1_default: u.release }, c)[1] : k.$release,
+    number: k.$number, rating: k.$rating, runtime: k.$runtime, genres: k.$genres, year: it.year || u.year || '', day: k.$day, date: k.$date, time: k.$time, studio: k.$studio };
+}
+
 /** Fanart text backdrop gradients: where the dark side is. */
 const GRAD_DIRS = [['bottom', 'Bottom to top'], ['top', 'Top to bottom'], ['left', 'Left to right'], ['right', 'Right to left'], ['center', 'Center out'], ['edges', 'Out to center']];
 /** The backdrop as a CSS background: dark at the chosen side, fading out over "reach" % of the image. */
@@ -993,6 +1055,19 @@ const KEYWORDS = /\$title|\$episode|\$genres|\$number|\$rating|\$release|\$runti
 
 /** Title + line 1–4 of an item: $keywords replaced; a '-'-separated part whose keyword is empty is dropped. */
 function umcLines(item, defaults, c, now = Date.now()) {
+  const keys = umcKeys(item, c, now);
+  const tpl = [c.title_text || defaults.title_default || '$title', c.line1_text || defaults.line1_default || '$episode',
+    c.line2_text || defaults.line2_default || '$release', c.line3_text || defaults.line3_default || '$rating - $runtime',
+    c.line4_text || defaults.line4_default || '$number - $studio'];
+  return tpl.map((t) => {
+    const parts = String(t).replace(/ - /g, '-').split('-')
+      .map((p) => p.replace(KEYWORDS, (k) => (keys[k] == null ? '\u0001' : keys[k])))
+      .filter((p) => !p.includes('\u0001'));
+    return parts.join(' - ').replace(KEYWORDS, (k) => keys[k] ?? '').trim();
+  });
+}
+/** The $keyword values of an upcoming-media style item. */
+function umcKeys(item, c, now = Date.now()) {
   const fmt = cfg(c, 'date');
   const air = item.airdate ? new Date(item.airdate) : null;
   const days = air && !isNaN(air) ? Math.round(Math.abs(now - air.getTime()) / 86400000) : 99;
@@ -1012,15 +1087,7 @@ function umcLines(item, defaults, c, now = Date.now()) {
     $time: air && !isNaN(air) ? air.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: cfg(c, 'clock') !== '24' }) : null,
     $aired: formatDate(item.aired, fmt) || null, $tmdb_id: item.tmdb_id || null, $empty: '',
   };
-  const tpl = [c.title_text || defaults.title_default || '$title', c.line1_text || defaults.line1_default || '$episode',
-    c.line2_text || defaults.line2_default || '$release', c.line3_text || defaults.line3_default || '$rating - $runtime',
-    c.line4_text || defaults.line4_default || '$number - $studio'];
-  return tpl.map((t) => {
-    const parts = String(t).replace(/ - /g, '-').split('-')
-      .map((p) => p.replace(KEYWORDS, (k) => (keys[k] == null ? '\u0001' : keys[k])))
-      .filter((p) => !p.includes('\u0001'));
-    return parts.join(' - ').replace(KEYWORDS, (k) => keys[k] ?? '').trim();
-  });
+  return keys;
 }
 
 /** YouTube watch / youtu.be link → embed URL; anything else unchanged. */
@@ -1072,7 +1139,8 @@ const CARD_CSS = `
 .plc-ci-txt { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 22px; }
 .plc-ci-title { font-size: var(--li-title-px); font-weight: var(--li-title-w); color: var(--li-title-c, var(--primary-text-color)); overflow: hidden; text-overflow: ellipsis; }
 .plc-ci-info { font-size: var(--li-info-px); font-weight: var(--li-info-w); color: var(--li-info-c, var(--secondary-text-color)); }
-.plc-ci-info b { color: var(--c); }
+.plc-ci-info b, .plc-ci .plc-fv[data-f="badge"] { color: var(--c); font-weight: 700; }
+.plc-ci-extra { font-size: var(--li-extra-px, 12px); font-weight: var(--li-extra-w, 400); color: var(--li-extra-c, var(--secondary-text-color)); }
 .plc-ci-when { font-size: var(--li-when-px); font-weight: var(--li-when-w); color: var(--li-when-c, var(--secondary-text-color)); }
 .plc-ci-meta { font-size: var(--li-meta-px); font-weight: var(--li-meta-w); color: var(--li-meta-c, var(--secondary-text-color)); opacity: .85; }
 .plc-ci-time, .plc-ci-type { position: absolute; right: 3px; bottom: 3px; }
@@ -2203,10 +2271,11 @@ class PlexCenterCard extends HTMLElement {
 
   // ---- tiles
 
-  _tile(it, listId, i, { fanart = false, fade = false, lines = null } = {}) {
+  _tile(it, listId, i, { fanart = false, fade = false, lines = null, look = null } = {}) {
     const art = fanart ? (it.art || it.poster) : (it.poster || it.art);
     const ln = lines || [it.show || it.title, it.type === 'episode' ? `S${it.season} · E${it.episode} · ${it.title}` : (it.year || '')];
-    const text = `<div class="plc-t">${esc(ln[0])}</div>${ln.slice(1).map((l, n) => (l ? `<div class="plc-s l${n + 1}">${esc(l)}</div>` : '')).join('')}`;
+    const text = look?.fields ? rowFieldsHtml(look, rowVals(it, this._c))
+      : `<div class="plc-t">${esc(ln[0])}</div>${ln.slice(1).map((l, n) => (l ? `<div class="plc-s l${n + 1}">${esc(l)}</div>` : '')).join('')}`;
     const sel = this._v.detail && this._v.detail.list === listId && this._v.detail.i === i ? ' sel' : '';
     const flag = it.flag && cfg(this._c, 'flag') ? '<span class="plc-badge">New</span>' : '';
     const watched = it.watched ? '<span class="plc-watched" title="Watched"><ha-icon icon="mdi:check"></ha-icon></span>' : '';
@@ -2390,7 +2459,9 @@ class PlexCenterCard extends HTMLElement {
       const badge = this._calBadge(ev);
       pool.push({ title: ev.title, poster: ev.poster || ev.fanart || '', art: ev.fanart || ev.poster || '', type: ev.kind === 'movie' ? 'movie' : 'episode',
         trailer: ev.trailer ? `https://www.youtube.com/watch?v=${ev.trailer}` : null, airdate: ev.at, summary: ev.overview || '', year: ev.year,
-        umc: { summary: ev.overview || '' }, flag: !!badge,
+        umc: { title: ev.title, episode: ev.episode_title || '', number: sxe(ev), airdate: ev.at, release: ev.kind === 'movie' ? `${rel} $date` : (ev.all_day ? '$day, $date' : '$day, $date $time'),
+          runtime: ev.runtime || '', genres: (ev.genres || []).join(', '), studio: ev.network || ev.studio || '', rating: '', summary: ev.overview || '', year: ev.year },
+        flag: !!badge,
         lines: [ev.title, ev.kind === 'episode' ? [badge, sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : rel, [day, time].filter(Boolean).join(' · '),
           [ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : ''].filter(Boolean).join(' · ')] });
     }
@@ -2433,9 +2504,9 @@ class PlexCenterCard extends HTMLElement {
       const tv = tvFor(x);
       return `
       <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}><div class="plc-sess-art"${x.poster ? ` style="background-image:url('${cssUrl(x.poster)}')"` : ''}></div>
-        <div style="min-width:0"><div class="plc-t">${esc(x.show || x.title)}</div>
-          <div class="plc-s">${esc(x.type === 'episode' ? `S${x.season} · E${x.episode} · ${x.title}` : (x.year || ''))}</div>
-          <div class="plc-s">${esc([x.user, x.player || x.device].filter(Boolean).join(' · '))}${x.player_state === 'paused' ? ' · paused' : ''}</div>
+        <div style="min-width:0">${fieldLines('watching', wlk, { title: x.show || x.title, number: x.type === 'episode' ? `S${x.season} · E${x.episode}` : '',
+          eptitle: x.type === 'episode' ? x.title : '', year: x.type === 'episode' ? '' : x.year, viewer: [x.user, x.player || x.device].filter(Boolean).join(' · '),
+          state: x.player_state === 'paused' ? 'paused' : '' }).map(([, h], i) => `<div class="${i === 0 ? 'plc-t' : 'plc-s'}">${h}</div>`).join('')}
           <div class="plc-bar-track"><div class="plc-bar-fill" style="width:${Math.min(100, Number(x.progress) || 0)}%"></div></div></div>${tv ? '<ha-icon class="plc-sess-go" icon="mdi:remote-tv"></ha-icon>' : ''}</${tv ? 'button' : 'div'}>`;
     }).join('')}</div>`;
   }
@@ -2545,12 +2616,12 @@ class PlexCenterCard extends HTMLElement {
         const lines = it.lines || [];
         const qp = it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<span class="plc-play" data-qplay="${esc(listId)}|${j}" role="button" title="Play"><ha-icon icon="mdi:play"></ha-icon></span>` : '';
         return `<button class="plc-li${fan ? '' : ' poster'}" data-open="${esc(listId)}|${j}"><div class="plc-li-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
-          <div class="plc-li-text"><div class="plc-t">${esc(lines[0] || it.title)}</div>${lines.slice(1).map((l, n) => (l ? `<div class="plc-s l${n + 1}">${esc(l)}</div>` : '')).join('')}</div>
+          <div class="plc-li-text">${st.look?.fields ? rowFieldsHtml(st.look, rowVals(it, this._c)) : `<div class="plc-t">${esc(lines[0] || it.title)}</div>${lines.slice(1).map((l, n) => (l ? `<div class="plc-s l${n + 1}">${esc(l)}</div>` : '')).join('')}`}</div>
           ${flagOn && it.flag ? '<span class="plc-li-flag"></span>' : ''}${qp}</button>`;
       }).join('')}</div>`;
     } else {
       body = `<div class="plc-row plc-fade${fan ? ' fanart' : ''}">${sel.map(([it, j]) => this._tile({ ...it, flag: flagOn && it.flag }, listId, j,
-        { fanart: fan, fade: !!st.fade, lines: it.lines || null })).join('')}</div>`;
+        { fanart: fan, fade: !!st.fade, lines: it.lines || null, look: st.look })).join('')}</div>`;
     }
     return body;
   }
@@ -2715,7 +2786,7 @@ Object.assign(PlexCenterCard.prototype, {
     const from = list.length;
     list.push(...res.items);
     const fan = (this._libImg || cfg(this._c, 'image_style')) === 'fanart';
-    grid.insertAdjacentHTML('beforeend', res.items.map((it, k) => (grid.classList.contains('list') ? this._lrow(it, 'grid', from + k) : this._tile(it, 'grid', from + k, { fanart: fan, fade: !!this._libFade }))).join(''));
+    grid.insertAdjacentHTML('beforeend', res.items.map((it, k) => (grid.classList.contains('list') ? this._lrow(it, 'grid', from + k) : this._tile(it, 'grid', from + k, { fanart: fan, fade: !!this._libFade, look: lookOwn(this._c, 'library') }))).join(''));
     if (!list.length) grid.innerHTML = `<div class="plc-msg">${v.query ? 'Nothing matches.' : 'Nothing here.'}</div>`;
     this._io?.disconnect();
     if (res.more && typeof IntersectionObserver !== 'undefined') {
@@ -3502,6 +3573,7 @@ const EDITOR_CSS = `
         .pip-i.on { border-color: var(--accent-color, var(--ltek-c-accent)); color: var(--accent-color, var(--ltek-c-accent)); }
         .pip-i ha-icon { --mdc-icon-size: 20px; }
         .pip-hint { margin-top: 6px; font-size: 11px; color: var(--secondary-text-color); }
+        .plce-addrow { margin: 0 0 6px; }
         .plce-pick.src { max-width: 100%; }
         .plce-src-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
         .plce-srcbox { margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--divider-color, #444); }
@@ -3641,13 +3713,21 @@ class PlexCenterCardEditor extends HTMLElement {
       <span class="plce-val" data-val="${key}">${v}${unit}</span>${this._config[key] !== undefined ? `<button class="plce-reset" data-reset="${key}" title="Back to default"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>`;
   }
   _getK(k) {
-    if (String(k).startsWith('look:')) { const [, kind, screen, f] = String(k).split(':'); return this._config.looks?.[`${kind}:${screen}`]?.[f] ?? ''; }
+    if (String(k).startsWith('look:')) {
+      const [, kind, screen, f] = String(k).split(':'), o = this._config.looks?.[`${kind}:${screen}`] || {};
+      if (f.startsWith('fields.')) { const [, id, prop] = f.split('.'); return fieldLayout(kind, o)[id]?.[prop] ?? ''; }
+      return o[f] ?? '';
+    }
     return this._config[k];
   }
   _setK(k, v) {
     if (!String(k).startsWith('look:')) { this._set(k, v); return; }
     const [, kind, screen, f] = String(k).split(':'), lk = `${kind}:${screen}`, looks = { ...(this._config.looks || {}) }, o = { ...(looks[lk] || {}) };
-    if (v === '' || v === undefined || v === null) delete o[f]; else o[f] = v;
+    if (f.startsWith('fields.')) {   // the first change copies the defaults, so the layout is fixed from then on
+      const [, id, prop] = f.split('.'), all = fieldLayout(kind, o);
+      if (v === '' || v === undefined || v === null) delete all[id][prop]; else all[id][prop] = v;
+      o.fields = all;
+    } else if (v === '' || v === undefined || v === null) delete o[f]; else o[f] = v;
     looks[lk] = o; this._config.looks = looks; this._emit();
   }
 
@@ -3830,7 +3910,19 @@ class PlexCenterCardEditor extends HTMLElement {
     if (id === 'watching') return 'sec-watching';
     if (id === 'continue') return 'sec-continue';
     const t = secType(this._config, id);
-    return t === 'recent' ? `sec-recent|${id}` : t === 'upcoming' ? `sec-soon|${id}` : t === 'plexhub' ? `sec-hub|${id}` : '';
+    return ['recent', 'upcoming', 'plexhub'].includes(t) ? `row-${id}` : '';
+  }
+  /** One panel per Home row (Recently Added, Coming Soon, Plex row): its Source, its Screen Profile, and Remove for added rows. */
+  _rowPanels() {
+    const icons = { recent: 'mdi:new-box', upcoming: 'mdi:calendar-clock', plexhub: 'mdi:plex' };
+    return homeSections(this._config).filter(([id]) => ['recent', 'upcoming', 'plexhub'].includes(secType(this._config, id))).map(([id]) => {
+      const t = secType(this._config, id), base = SEC_TYPE_TITLE[t] || id;
+      const own = SCREENS.map(([sc]) => this._config.sec_styles?.[`${id}:${sc}`]?.title).find(Boolean) || this._config.home_style?.[id]?.title;
+      const added = (this._config.home_extra || []).some((x) => x.id === id);
+      return this._panel(`row-${id}`, icons[t], own && own !== base ? `${base} · ${own}` : base, `${this._srcChip(id)}
+        ${this._profile(`${this._secStyleBody(id, 'visual')}${this._secStyleBody(id, 'rest')}`, `row:${id}`)}
+        ${added ? `<div class="plce-row"><button class="plce-add plce-del" data-xdelask="${esc(id)}"><ha-icon icon="mdi:trash-can-outline"></ha-icon>Remove this row</button></div>` : ''}`);
+    }).join('');
   }
   /** A section's panel: its rows as chips (the lit one is edited), its content (every screen), its look (per screen). */
   _secPanel(kind) {
@@ -3860,8 +3952,7 @@ class PlexCenterCardEditor extends HTMLElement {
 </div>`).join('');
     const soon = upcomingSensors(this._hass, this._conf);
     return `${this._profile(`<p class="plce-hint">Order and show / hide the sections of the Home tab. The pencil opens the section's own panel.</p>
-        <div class="plce-list">${list}</div>
-        <div class="plce-row plce-wrap"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>`, 'home')}
+        <div class="plce-list">${list}</div>`, 'home')}
       ${this._everyScreen(`<div class="plce-group">Auto Rotate</div>
         ${this._check('stagger_rotate', 'Stagger: sections that fade or slide change one at a time')}
         ${this._c('stagger_rotate') ? `${this._slider('stagger_gap', 'Time between sections', 1, 15, ' s')}<p class="plce-hint">${esc(this._staggerNote())}</p>` : ''}
@@ -3980,7 +4071,7 @@ class PlexCenterCardEditor extends HTMLElement {
         })()}
         ${st.auto === 'fade' && !(id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner') ? `${sl('speed', 'Next set every', 2, 60, st.speed, ' s')}${sl('fade_ms', 'Fade time', 0, 3000, st.fade_ms, ' ms')}` : ''}
         ${st.scroll || st.auto !== 'off' ? sl('total', id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner' ? 'Titles to rotate through' : 'Items to load', st.show, 100, st.total, '') : ''}`)}
-      ${sub('lines', 'Text Lines', this._lookBody(id, 'lines'))}
+      ${sub('lines', 'Text Lines', this._fieldsBody(id))}
       ${sub('shape', 'Content Visuals', `${this._lookBody(id, 'visual')}${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}
         ${st.flag ? col('flag_color', '"New" flag colour', '#0099cc') : ''}${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}
         ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
@@ -4061,7 +4152,32 @@ class PlexCenterCardEditor extends HTMLElement {
     }
   }
   _visualSubs(kind) {
-    return `${this._sub(`lk-lines:${kind}`, 'Text Lines', this._lookBody(kind, 'lines'))}${this._sub(`lk-vis:${kind}`, 'Content Visuals', this._lookBody(kind, 'visual'))}`;
+    return `${this._sub(`lk-lines:${kind}`, 'Text Lines', this._fieldsBody(kind))}${this._sub(`lk-vis:${kind}`, 'Content Visuals', this._lookBody(kind, 'visual'))}`;
+  }
+
+  /** Text Lines: each field's line (or Hidden), its order on the line, and its size / weight / colour. */
+  _fieldsBody(kind) {
+    const screen = this._eds(), own = this._config.looks?.[`${kind}:${screen}`] || {}, lay = fieldLayout(kind, own), fam = FIELD_SETS[fieldFamily(kind)];
+    const K = (id, prop) => `look:${kind}:${screen}:fields.${id}.${prop}`, locked = this._fLock?.[kind] !== false, ord = ['1st', '2nd', '3rd', '4th', '5th', '6th'];
+    const sorted = [...fam].sort((a, b) => ((lay[a[0]].line || 9) - (lay[b[0]].line || 9)) || (lay[a[0]].pos - lay[b[0]].pos));
+    const chips = sorted.map(([id, label]) => `<div class="plce-hchips${lay[id].line ? '' : ' off'}"><span class="plce-name">${esc(label)}</span>${lay[id].line
+      ? `<span class="plce-chip pl-library">Line ${lay[id].line}</span><span class="plce-chip row">${ord[lay[id].pos - 1] || lay[id].pos}</span>${
+        lay[id].px ? `<span class="plce-chip al">${lay[id].px}px</span>` : ''}` : '<span class="plce-chip off"><ha-icon icon="mdi:eye-off"></ha-icon>Hidden</span>'}</div>`).join('');
+    const weights = [['', 'Line default'], ['400', 'Regular'], ['500', 'Medium'], ['600', 'Semi-bold'], ['700', 'Bold'], ['800', 'Extra bold']];
+    const opt = (cur, list) => list.map(([v, n]) => `<option value="${v}"${String(cur ?? '') === String(v) ? ' selected' : ''}>${n}</option>`).join('');
+    const rows = sorted.map(([id, label]) => `<div class="plce-item${lay[id].line ? '' : ' off'}"><div class="plce-item-h"><span class="plce-name">${esc(label)}</span></div>
+      <div class="plce-row plce-wrap"><select data-fld="${esc(K(id, 'line'))}">${opt(lay[id].line, [[0, 'Hidden'], [1, 'Line 1'], [2, 'Line 2'], [3, 'Line 3'], [4, 'Line 4'], [5, 'Line 5']])}</select>
+        ${lay[id].line ? `<select data-fld="${esc(K(id, 'pos'))}">${opt(lay[id].pos, ord.map((n, i) => [i + 1, n]))}</select>
+        <select data-fld="${esc(K(id, 'weight'))}">${opt(lay[id].weight, weights)}</select>` : ''}</div>
+      ${lay[id].line ? `<div class="plce-row plce-nowrap"><label class="lbl">Size</label><input type="range" data-fldr="${esc(K(id, 'px'))}" min="8" max="40" step="1" value="${Number(lay[id].px || (lay[id].line === 1 ? 15 : 12))}">
+        <span class="plce-val" data-fldv="${esc(K(id, 'px'))}">${lay[id].px ? `${lay[id].px}px` : 'line'}</span>${lay[id].px ? `<button class="plce-reset" data-fldclr="${esc(K(id, 'px'))}" title="Line size"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>
+        ${this._colorControl(K(id, 'color'), ['Colour', 'Line colour', '#bbbbbb'])}` : ''}</div>`).join('');
+    const tpl = fieldFamily(kind) === 'row' && !own.fields;
+    return `${tpl ? '<p class="plce-hint">This row shows its current lines (Appearance → Row text) until you change one of these.</p>' : ''}
+      <div class="plce-lockbar"><button class="plce-lock${locked ? '' : ' open'}" data-flock="${esc(kind)}"><ha-icon icon="mdi:${locked ? 'lock' : 'lock-open-variant'}"></ha-icon>${locked ? 'Unlock to edit' : 'Editing: lock'}</button>
+        ${own.fields || LINE_IDS.some((x) => own[`${x}_show`] !== undefined || own[`${x}_px`] !== undefined) ? `<button class="plce-chip reset" data-fldreset="${esc(`${kind}:${screen}`)}"><ha-icon icon="mdi:restore"></ha-icon>Reset to defaults</button>` : ''}</div>
+      ${locked ? `<div class="plce-hlist">${chips}</div>` : `<div class="plce-list">${rows}</div>`}
+      <p class="plce-hint">Fields on the same line are joined with “ · ”; empty ones are left out.</p>`;
   }
 
   /** Watching now: what it shows (every screen), and its look per screen. */
@@ -4301,11 +4417,10 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._panel('header', 'mdi:page-layout-header-footer', 'Controls layout', this._headerBody())}
       ${this._panel('home', 'mdi:home-variant', 'Home', this._homeBody())}
       <div class="plce-gh">Sections</div>
+      <div class="plce-row plce-wrap plce-addrow"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>
       ${this._panel('sec-watching', 'mdi:account-eye', 'Watching now', this._watchBody())}
       ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', this._profile(`${this._secStyleBody('continue', 'visual')}${this._secStyleBody('continue', 'rest')}`, 'row:continue'))}
-      ${this._panel('sec-recent', 'mdi:new-box', 'Recently Added', this._secPanel('recent'))}
-      ${this._panel('sec-soon', 'mdi:calendar-clock', 'Coming Soon', this._secPanel('soon'))}
-      ${this._panel('sec-hub', 'mdi:plex', 'Plex rows', this._secPanel('hub'))}
+      ${this._rowPanels()}
       ${this._panel('library', 'mdi:bookshelf', 'Library', this._libraryPanel())}
       ${this._panel('calendar', 'mdi:calendar-month', 'Calendar', this._calendarBody())}
       ${this._panel('style', 'mdi:palette', 'Appearance', this._styleBody())}
@@ -4455,6 +4570,19 @@ class PlexCenterCardEditor extends HTMLElement {
       this._resetScreen(this._eds()); this._emit(); this._render();
     }));
     all('[data-edscreen]', (b) => b.addEventListener('click', () => { this._edScreen = b.dataset.edscreen; this._render(); }));
+    all('[data-flock]', (b) => b.addEventListener('click', () => { const k = b.dataset.flock; this._fLock = { ...(this._fLock || {}), [k]: this._fLock?.[k] === false }; this._render(); }));
+    all('[data-fld]', (el) => el.addEventListener('change', () => { const prop = el.dataset.fld.split('.').pop(); this._setK(el.dataset.fld, prop === 'weight' ? el.value : Number(el.value)); this._render(); }));
+    all('[data-fldr]', (el) => {
+      el.addEventListener('input', () => { const v = this.querySelector(`[data-fldv="${CSS.escape(el.dataset.fldr)}"]`); if (v) v.textContent = `${el.value}px`; });
+      el.addEventListener('change', () => { this._setK(el.dataset.fldr, Number(el.value)); this._render(); });
+    });
+    all('[data-fldclr]', (b) => b.addEventListener('click', () => { this._setK(b.dataset.fldclr, ''); this._render(); }));
+    all('[data-fldreset]', (b) => b.addEventListener('click', () => {
+      if (!window.confirm('Put these text lines back to the defaults for this screen?')) return;
+      const lk = b.dataset.fldreset, looks = { ...(this._config.looks || {}) }, o = { ...(looks[lk] || {}) };
+      delete o.fields; for (const x of LINE_IDS) for (const p2 of ['show', 'px', 'weight', 'color']) delete o[`${x}_${p2}`];
+      looks[lk] = o; this._config.looks = looks; this._emit(); this._render();
+    }));
     all('[data-lookimg]', (b) => b.addEventListener('click', () => {
       const [k, v] = b.dataset.lookimg.split('|'); this._setK(k, v); this._render();
     }));
@@ -4523,10 +4651,17 @@ class PlexCenterCardEditor extends HTMLElement {
       const type = b.dataset.xadd, pre = { recent: 'recent', upcoming: 'soon', plexhub: 'hub' }[type], ex = this._config.home_extra || [];
       let n = pre === 'hub' ? 1 : 2; while (ex.some((x) => x.id === `${pre}-${n}`)) n += 1;
       this._config.home_extra = [...ex, { id: `${pre}-${n}`, type }];
-      const panel = `sec-${pre}`;
-      this._secPick = { ...(this._secPick || {}), [pre]: `${pre}-${n}` };
+      const panel = `row-${pre}-${n}`;
       for (const k of [...this._open]) if (!k.includes(':') && !k.startsWith('ly-') && !k.startsWith('ap-') && !k.startsWith('pg-')) this._open.delete(k);
       this._open.add(panel); this._emit(); this._render();
+    }));
+    all('[data-xdelask]', (b) => b.addEventListener('click', () => {
+      if (!window.confirm('Remove this row from the card (on every screen)?')) return;
+      const id = b.dataset.xdelask;
+      this._config.home_extra = (this._config.home_extra || []).filter((x) => x.id !== id);
+      if (this._config.home_style) delete this._config.home_style[id];
+      for (const bag of ['sec_styles', 'looks']) if (this._config[bag]) for (const k of Object.keys(this._config[bag])) if (k.startsWith(`${id}:`)) delete this._config[bag][k];
+      this._emit(); this._render();
     }));
     all('[data-xdel]', (b) => b.addEventListener('click', () => {
       const id = b.dataset.xdel;
@@ -4598,7 +4733,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 
@@ -4751,13 +4886,13 @@ Object.assign(PlexCenterCard.prototype, {
     const time = this._calTime(ev);
     const day = (ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
     const info = ev.kind === 'episode' ? (last ? `${nx(ev)} – ${nx(last)}` : [phone ? nx(ev) : sxe(ev), ev.episode_title].filter(Boolean).join(phone ? ' • ' : ' · ')) : label;
-    const lines = {
-      title: esc(`${ev.title}${phone && ev.year && ev.kind === 'episode' ? ` (${ev.year})` : ''}`),
-      info: `${badge ? `<b>${esc(badge)}</b> ` : ''}${esc(info)}`,
-      when: esc(l.time_corner ? day : [day, time].filter(Boolean).join(phone ? ' at ' : ' · ')),
-      meta: esc([ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : ''].filter(Boolean).join(' · ')),
-    };
-    const text = LOOK_LINES.filter(([id]) => l[`${id}_show`] && lines[id]).map(([id]) => `<span class="plc-ci-${id}">${lines[id]}</span>`).join('')
+    const own = (this._c.looks || {})[`calendar:${this._c._screen || 'tablet_landscape'}`] || {};
+    const vals = { title: `${ev.title}${phone && ev.year && ev.kind === 'episode' ? ` (${ev.year})` : ''}`, badge,
+      episode: ev.kind === 'episode' ? (last ? `${nx(ev)} – ${nx(last)}` : (phone ? nx(ev) : sxe(ev))) : '',
+      eptitle: ev.kind === 'episode' && !last ? ev.episode_title : '', release: ev.kind === 'movie' ? label : '',
+      date: day, time: l.time_corner ? '' : time, network: ev.network || ev.studio, runtime: ev.runtime ? `${ev.runtime} min` : '' };
+    void info;
+    const text = fieldLines('calendar', own, vals).map(([n2, h]) => `<span class="plc-ci-${LINE_IDS[n2 - 1]}">${h}</span>`).join('')
       + (big && ev.overview ? `<span class="plc-lrow-sum">${esc(ev.overview)}</span>` : '');
     const corner = `${l.time_corner && time ? `<span class="plc-ci-time">${esc(time)}</span>` : ''}${l.type_icon ? `<ha-icon class="plc-ci-type" icon="mdi:${ev.kind === 'movie' ? 'movie-open' : 'television-classic'}"></ha-icon>` : ''}`;
     const marks = `${l.status && ev.watched ? '<ha-icon class="plc-ci-watched" icon="mdi:check-circle" title="Watched"></ha-icon>' : ''}${l.status && ev.has_file && !ev.watched ? '<span class="plc-ci-avail" title="Available"></span>' : ''}`;

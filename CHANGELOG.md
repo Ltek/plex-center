@@ -1,5 +1,24 @@
 # Changelog
 
+## v2026.11.17.66
+
+**New: Text Lines place each field**
+- In every **Text Lines** section, each piece of information is a field with a **Line** (1–5, or *Hidden*), its
+  **order** on the line (1st, 2nd…) and its own **size, weight and colour**. Fields on the same line are joined with
+  “ · ”; empty ones are left out. Locked, each field shows as chips (*Air date · Line 3 · 1st*, or *Hidden*);
+  *Unlock to edit*. **Reset to defaults** (asks first) puts the screen's lines back.
+- **Calendar**: Title, New season / Premiere / Finale, Episode, Episode title, Release type, **Air date**, **Time**,
+  **Network / studio**, **Runtime** (each on its own now). Defaults are today's lines.
+- **Rows** (Recently Added, Coming Soon, Plex rows, Continue watching, Library): Title, Episode title, Release /
+  added, Episode number, Rating, Runtime, Genres, and (hidden by default) Year, Day, Date, Time, Studio. A row keeps
+  its current lines (Appearance → Row text) until you change one of its fields.
+- **Watching now**: Title, Episode, Episode title, Year, Who and where, Paused.
+
+**Changed**
+- **One panel per row**: each Recently Added, Coming Soon and Plex row has its own panel in *Sections* (named by
+  its title, e.g. *Coming Soon · Movies coming soon*), with its Source, its Screen Profile and *Remove this row*
+  (asks first) for rows you added. **+ Recently Added / + Coming Soon / + Plex row** are at the top of *Sections*.
+
 ## v2026.11.17.65
 
 **Changed: one layout for every panel**
