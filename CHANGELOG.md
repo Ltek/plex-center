@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.17.71
+
+**New**
+- **Watching now chip** for the header (Controls layout → *Watching now*, hidden by default): shows how many are
+  watching and opens the Watching now cards in a popover on any page. Tapping a card opens that TV's controls.
+
+**Changed**
+- **Watching now options are per page** (Home, Calendar, Library), each a checkbox: *Show on page*, *Collapsible*
+  and *Start collapsed*. Collapsible appears for the pages it shows on, Start collapsed for the collapsible ones.
+  Older settings carry over (*Also above the library and Calendar pages*, *Collapsible*, *Start collapsed*).
+
 ## v2026.11.17.70
 
 **New**

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.70
+// Version: v2026.11.17.71
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.70';
+const BUILD_NUMBER = 'v2026.11.17.71';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -210,13 +210,13 @@ const SIZE_PX = { title_size: { large: 17, medium: 14, small: 12 }, line_size: {
 const SHADOWS = { none: 'none', soft: '0 2px 8px rgba(0,0,0,.25)', strong: '0 8px 28px rgba(0,0,0,.55)' };
 const HEADER_ITEMS = [['title', 'Title'], ['tabs', 'Page menu (Home and libraries)'], ['search', 'Search'], ['surprise', 'Surprise me'],
   ['watched', 'All / Unwatched'], ['genre', 'Genre'], ['decade', 'Decade'], ['rating', 'Content rating'], ['length', 'Under 2 h (movies)'],
-  ['sort', 'Sort'], ['view', 'Grid / list switch'], ['filterbtn', 'Filters button (opens the Filters popup)'], ['achips', 'Active filters (a chip per filter that is on)'], ['tvs', 'TV picker']];
+  ['sort', 'Sort'], ['view', 'Grid / list switch'], ['filterbtn', 'Filters button (opens the Filters popup)'], ['achips', 'Active filters (a chip per filter that is on)'], ['watchchip', 'Watching now (a chip that opens the cards)'], ['tvs', 'TV picker']];
 const SORT_OPTS = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
 const FLABEL = { watched: 'Show', genre: 'Genre', decade: 'Decade', rating: 'Rating', sort: 'Sort', length: 'Length', view: 'View' };
 /** An icon for each controls-layout item (editor list). */
 const ITEM_ICONS = { title: 'mdi:format-title', tabs: 'mdi:tab', search: 'mdi:magnify', surprise: 'mdi:auto-fix', watched: 'mdi:eye-check-outline',
   genre: 'mdi:drama-masks', decade: 'mdi:calendar-range', rating: 'mdi:shield-account-outline', length: 'mdi:timer-outline', sort: 'mdi:sort',
-  view: 'mdi:view-grid-outline', filterbtn: 'mdi:filter-variant', achips: 'mdi:filter-check-outline', tvs: 'mdi:television' };
+  view: 'mdi:view-grid-outline', filterbtn: 'mdi:filter-variant', achips: 'mdi:filter-check-outline', watchchip: 'mdi:account-eye', tvs: 'mdi:television' };
 /** Library filter items: each can sit in the header / footer or in the Filters popup. */
 const FILTER_IDS = new Set(['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view']);
 /** Styles an item can be shown in (first = default). */
@@ -227,13 +227,14 @@ const DEFAULT_HEADER = [
   { id: 'title', section: 'library', row: 1, align: 'left' }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view', 'filterbtn'].map((id) => ({ id, section: 'library', row: 1, align: 'right' })),
-  { id: 'tvs', section: 'library', row: 2, align: 'left' }, { id: 'achips', section: 'library', row: 3, align: 'left', hidden: true }];
+  { id: 'tvs', section: 'library', row: 2, align: 'left' }, { id: 'achips', section: 'library', row: 3, align: 'left', hidden: true },
+  { id: 'watchchip', section: 'library', row: 1, align: 'right', hidden: true }];
 const DEFAULT_HEADER_PHONE = [
   { id: 'title', section: 'library', row: 1, align: 'left', hidden: true }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view'].map((id) => ({ id, section: 'popover', row: 1, align: 'right' })),
   { id: 'filterbtn', section: 'library', row: 1, align: 'right' }, { id: 'tvs', section: 'library', row: 1, align: 'right' },
-  { id: 'achips', section: 'library', row: 2, align: 'left', hidden: true }];
+  { id: 'achips', section: 'library', row: 2, align: 'left', hidden: true }, { id: 'watchchip', section: 'library', row: 1, align: 'right', hidden: true }];
 const ALIGNS = ['left', 'center', 'right'];
 const PLACES = ['library', 'player', 'footer', 'popover'];
 const HOME_BUILTIN = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['recent', 'Recently Added'], ['soon', 'Coming Soon']];
@@ -522,8 +523,14 @@ const DEFAULTS = {
   hold_play: true,
   hold_ms: 2000,
   np_power: false,
-  watching_collapsible: false,
+  watching_home: true,
+  watching_cal: true,
+  watching_lib: true,
+  watching_coll_home: false,
+  watching_coll_cal: false,
+  watching_coll_lib: false,
   watching_collapsed_home: false,
+  watching_collapsed_cal: false,
   watching_collapsed_lib: false,
   stagger_gap: 3,
   calendar: true,
@@ -531,7 +538,6 @@ const DEFAULTS = {
   week_start: 'mon',
   calendar_max: 4,
   show_title: true,
-  watching_libraries: true,
   panel_when: 'always',
   fit_screen: true,
   screen_offset: 80,
@@ -665,6 +671,20 @@ function migrateScreens(c) {
     'phone_view', 'phone_now_playing', 'phone_slim_position', 'phone_hide_on_scroll', 'swipe_tabs', 'poster_width', 'panel_when']) delete c[k];
 }
 
+/** 2026.11.17.71: Watching now gets Show / Collapsible / Start collapsed per page (Home, Calendar, Library). */
+function migrateWatching(c) {
+  if (c.watching_libraries === false) { c.watching_cal ??= false; c.watching_lib ??= false; }
+  delete c.watching_libraries;
+  if (c.watching_collapsible) for (const pg of WATCH_PAGES) c[`watching_coll_${pg}`] ??= true;
+  delete c.watching_collapsible;
+  if (c.watching_collapsed_lib && c.watching_collapsed_cal === undefined) c.watching_collapsed_cal = true;
+}
+const WATCH_PAGES = ['home', 'cal', 'lib'];
+/** The page Watching now is on: home / cal / lib. */
+const watchPage = (tab) => (tab === 'home' ? 'home' : tab === 'calendar' ? 'cal' : 'lib');
+/** Whether Watching now shows on a page (Home also follows the Home order's visibility). */
+const watchOn = (c, pg) => !!cfg(c, `watching_${pg}`) && (pg !== 'home' || homeVisible(c, 'watching'));
+
 function normalizeConfig(raw) {
   const c = { ...(raw || {}) };
   delete c.type;
@@ -673,6 +693,7 @@ function normalizeConfig(raw) {
   for (const [id] of HOME_BUILTIN) { if (c[`show_${id}`] === false) hidden.add(id); delete c[`show_${id}`]; }
   c.home_hidden = [...hidden];
   migratePhone(c);
+  migrateWatching(c);
   cleanLooks(c);
   migrateScreens(c);
   for (const [k, v] of Object.entries(DEFAULTS)) if (c[k] === v) delete c[k];
@@ -1451,6 +1472,8 @@ const CARD_CSS = `
 .plc-sess-go { position: absolute; top: 8px; right: 8px; --mdc-icon-size: 18px; color: var(--secondary-text-color); }
 .plc-movebtn { align-self: center; margin-top: 4px; }
 .plc-libwatch { margin-bottom: 14px; }
+.plc-watch.pop { flex-direction: column; overflow: visible; }
+.plc-watch.pop .plc-sess { flex: none; width: min(420px, 80vw); }
 .plc-sess-art { aspect-ratio: 2 / 3; border-radius: 6px; background: rgba(127,127,127,.2) center / cover no-repeat; }
 .plc-sess .plc-bar-track { height: 4px; background: color-mix(in srgb, var(--primary-text-color) 18%, transparent); margin-top: 6px; }
 .plc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--plc-li-w, 340px)), 1fr)); gap: 12px; }
@@ -1961,7 +1984,7 @@ class PlexCenterCard extends HTMLElement {
       await cached(this._hass, 'config', first ? 0 : REFRESH_MS, () => ws(this._hass, 'config'), { force: first && !had });
       this._err = null;
       if (!had || first) this._renderAll();
-      if (homeVisible(this._c, 'watching') && (this._v.tab === 'home' || cfg(this._c, 'watching_libraries'))) {
+      if (watchOn(this._c, watchPage(this._v.tab)) || headerLayout(this._c, this._c._screen).some((h) => h.id === 'watchchip' && !h.hidden)) {
         const before = JSON.stringify(peek('sessions') || []);
         await cached(this._hass, 'sessions', SESSIONS_MS - 1000, () => ws(this._hass, 'sessions'));
         if (JSON.stringify(peek('sessions') || []) !== before) { this._paintWatching(); this._renderNP(); }
@@ -2073,6 +2096,7 @@ class PlexCenterCard extends HTMLElement {
       length: inLib ? this._fpiece('length') : '',
       filterbtn: popItems.length ? filterBtn : '',
       achips: inLib ? this._chipsHtml() : '',
+      watchchip: (() => { const n = this._watchList().length; return n ? `<button class="plc-chip plc-menuchip" data-watchpop title="Watching now"><ha-icon icon="mdi:account-eye"></ha-icon><span class="plc-menuchip-n">Watching</span><span class="plc-fcount">${n}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>` : ''; })(),
       surprise: !cfg(this._c, 'surprise') || !libs.length ? ''
         : style === 'icon' ? `<button class="plc-icon-btn" data-surprise title="${esc(label)}"><ha-icon icon="${esc(icon)}"></ha-icon></button>`
           : `<button class="plc-chip" data-surprise>${style === 'both' ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ''}${esc(label)}</button>`,
@@ -2163,6 +2187,20 @@ class PlexCenterCard extends HTMLElement {
       }
       this._renderNP(true);
     } catch (e) { this._toast(`Could not move: ${e?.message || e}`); }
+  }
+
+  /** The header's Watching now chip: its count follows the sessions. */
+  _renderTopChip() {
+    const chip = this._root?.querySelector('[data-watchpop]');
+    const n = this._watchList().length;
+    if (chip) { if (n) chip.querySelector('.plc-fcount').textContent = String(n); else this._renderTop(); }
+    else if (n && headerLayout(this._c, this._c._screen).some((h) => h.id === 'watchchip' && !h.hidden)) this._renderTop();
+  }
+  /** The Watching now popover (from the header chip): the same cards; tapping one opens its TV's controls. */
+  _watchPopover() {
+    this._sheet(`<div class="plc-detail-body plc-watchpop"><div class="plc-fpanel-h"><h2 class="plc-big">Watching now</h2><span class="plc-sp"></span>
+      <button class="plc-btn" data-close-sheet>Close</button></div><div class="plc-sec" data-wpop></div></div>`, null, false, 'fit');
+    this._paintWatching(this._root.querySelector('.plc-watchpop [data-wpop]'));
   }
 
   /** TV picker menu: every TV, its state and who is watching. */
@@ -2378,7 +2416,7 @@ class PlexCenterCard extends HTMLElement {
   _renderHome(main) {
     const parts = [];
     for (const id of homeOrder(this._c)) {
-      if (!homeVisible(this._c, id)) continue;
+      if (!homeVisible(this._c, id) || (id === 'watching' && !cfg(this._c, 'watching_home'))) continue;
       if (id === 'cards') parts.push('<div class="plc-cards"></div>');
       else parts.push(`<div class="plc-sec" data-sec="${esc(id)}"></div>`);
     }
@@ -2543,21 +2581,28 @@ class PlexCenterCard extends HTMLElement {
       <div class="plc-row">${g.items.map((it, i) => this._tile(it, `search:${gi}`, i)).join('')}</div>`; }).join('');
   }
 
-  _paintWatching() {
-    const sec = this._root?.querySelector('[data-sec="watching"]');
+  /** The sessions Watching now shows (every TV, or only the one in the selector). */
+  _watchList() { const cur = this._tv(); return (peek('sessions') || []).filter((x) => cfg(this._c, 'watching_tvs') !== 'selected' || this._tvForSession(x)?.id === cur?.id); }
+  _paintWatching(target = null) {
+    const pop = !!target;
+    if (!target) {   // the Watching now popover too, when open, and the header chip's count
+      const p2 = this._root?.querySelector('.plc-watchpop [data-wpop]');
+      if (p2) this._paintWatching(p2);
+      this._renderTopChip();
+    }
+    const sec = target || this._root?.querySelector('[data-sec="watching"]');
     if (!sec) return;
-    const cur = this._tv();
-    const s = (peek('sessions') || []).filter((x) => cfg(this._c, 'watching_tvs') !== 'selected' || this._tvForSession(x)?.id === cur?.id);
-    if (!s.length) { sec.innerHTML = ''; return; }
+    const s = this._watchList();
+    if (!s.length) { sec.innerHTML = pop ? '<div class="plc-msg">Nothing is playing.</div>' : ''; return; }
     const tvFor = (x) => this._tvForSession(x), wlk = lookOwn(this._c, 'watching');
     applyLook(sec, wlk);
     const fanBg = (x) => (wlk.image && wlk.image !== 'poster' && (x.art || x.poster)
       ? ` style="background-image:linear-gradient(90deg, rgba(0,0,0,.82), rgba(0,0,0,${wlk.image === 'fade' ? '.15' : '.55'})), url('${cssUrl(x.art || x.poster)}')"` : '');
-    const place = this._v.tab === 'home' ? 'home' : 'lib', coll = !!cfg(this._c, 'watching_collapsible');
-    const open = !coll || (this._v.wOpen?.[place] ?? !cfg(this._c, place === 'home' ? 'watching_collapsed_home' : 'watching_collapsed_lib'));
+    const place = watchPage(this._v.tab), coll = !pop && !!cfg(this._c, `watching_coll_${place}`);
+    const open = !coll || (this._v.wOpen?.[place] ?? !cfg(this._c, `watching_collapsed_${place}`));
     sec.classList.toggle('closed', !open);
     sec.innerHTML = `${coll ? `<button class="plc-sec-bar caps-h${open ? '' : ' shut'}" data-wtoggle="${place}"><ha-icon icon="mdi:account-eye"></ha-icon><span class="name caps">Watching now</span><span class="n">${s.length}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
-      : `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div>`}<div class="plc-watch"${open ? '' : ' hidden'}>${s.map((x) => {
+      : pop ? '' : `<div class="plc-sec-h">Watching now <span class="n">${s.length}</span></div>`}<div class="plc-watch${pop ? ' pop' : ''}"${open ? '' : ' hidden'}>${s.map((x) => {
       const tv = tvFor(x);
       return `
       <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}><div class="plc-sess-art"${x.poster ? ` style="background-image:url('${cssUrl(x.poster)}')"` : ''}></div>
@@ -2805,7 +2850,7 @@ Object.assign(PlexCenterCard.prototype, {
     const list = this._v.view === 'list', lk = lookOwn(this._c, 'library');
     this._libImg = lk.image ? (lk.image === 'poster' ? 'poster' : 'fanart') : cfg(this._c, 'image_style');
     this._libFade = lk.image === 'fade';
-    const watch = homeVisible(this._c, 'watching') && cfg(this._c, 'watching_libraries') ? '<div class="plc-sec plc-libwatch" data-sec="watching"></div>' : '';
+    const watch = watchOn(this._c, 'lib') ? '<div class="plc-sec plc-libwatch" data-sec="watching"></div>' : '';
     main.innerHTML = `${watch}<div class="plc-gridwrap${this._jumpOn() ? ' jump' : ''}"><div class="plc-grid${list ? ' list' : this._libImg === 'fanart' ? ' fanart' : ''}"></div><div class="plc-sentinel"></div><div class="plc-jump-slot"></div></div>`;
     this._lists.set('grid', []);
     applyLook(main.querySelector('.plc-gridwrap'), lk);
@@ -3125,7 +3170,7 @@ Object.assign(PlexCenterCard.prototype, {
     const np = nowPlaying(this._hass, tv);
     const mode = this._npMode();
     const panel = mode === 'panel' && this._panelVisible(np);
-    const dup = this._v.tab === 'home' && homeVisible(this._c, 'watching') && !!this._sessionFor(tv);
+    const dup = this._v.tab === 'home' && watchOn(this._c, 'home') && !!this._sessionFor(tv);
     const slim = false;   // removed 2026.11.16.42: Watching now opens the controls
     if (np?.live) this._npLiveAt = Date.now();
     else if (this._v.npFull && Date.now() - (this._npFullAt || 0) > 90000) this._v.npFull = false;   // playback ended: don't pop up next time
@@ -3346,6 +3391,7 @@ Object.assign(PlexCenterCard.prototype, {
     if ((el = t('[data-movemenu]'))) { this._moveMenu(el); return; }
     if ((el = t('[data-moveto]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.moveto); this._closeMenu(); if (tv) this._moveTo(tv); return; }
     if ((el = t('[data-sesstv]'))) {
+      if (el.closest('.plc-watchpop')) this._closeSheet(true);
       const tv = this._tvs().find((x) => x.id === el.dataset.sesstv);
       if (!tv) return;
       if (tv.id !== this._tv()?.id) this._setTv(tv);
@@ -3455,6 +3501,7 @@ Object.assign(PlexCenterCard.prototype, {
       if (a === 'power_off' && !window.confirm(`Turn ${tvLabel(this._tv())} off?`)) return;
       this._control(a, v); return;
     }
+    if (t('[data-watchpop]')) { this._watchPopover(); return; }
     if ((el = t('[data-wtoggle]'))) {
       const pl = el.dataset.wtoggle, sec = el.closest('[data-sec="watching"]'), open = !sec.classList.contains('closed');
       this._v.wOpen = { ...(this._v.wOpen || {}), [pl]: !open }; this._paintWatching(); return;
@@ -3669,6 +3716,7 @@ const EDITOR_CSS = `
         .plce-val { flex: 0 0 var(--ltek-slider-val-w); text-align: right; font-weight: var(--ltek-fw-bold); font-variant-numeric: tabular-nums;
           white-space: nowrap; color: var(--ltek-c-text); font-size: var(--ltek-fs-body); }
         .plce-nowrap { flex-wrap: nowrap; }
+        .plce-checkrow { display: flex; flex-wrap: wrap; gap: 4px 18px; }
         .plce-check { display: flex; align-items: center; gap: var(--ltek-sp-2); padding: var(--ltek-sp-1) 0; color: var(--ltek-c-label);
           font-size: var(--ltek-fs-body); cursor: pointer; }
         .plce-check input { accent-color: var(--ltek-c-accent); }
@@ -3734,7 +3782,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['calendar', 'hold_play', 'watching_collapsible', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
+const REVEAL_KEYS = new Set(['calendar', 'hold_play', 'watching_home', 'watching_cal', 'watching_lib', 'watching_coll_home', 'watching_coll_cal', 'watching_coll_lib', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'slim_controls', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; this._onScreen = () => { if (this._rendered) this._render(); }; }
@@ -4267,10 +4315,18 @@ class PlexCenterCardEditor extends HTMLElement {
     return `${this._profile(this._visualSubs('watching'), 'watching')}
       ${this._everyScreen(`<p class="plce-hint">Tap a Watching now card to open that TV's controls (full screen on phones).</p>
         ${this._select('watching_tvs', 'Show', [['all', 'Every TV (and other Plex players)'], ['selected', 'Only the TV in the selector']])}
-        ${this._check('watching_libraries', 'Also above the library and Calendar pages (not only Home)')}
-        ${this._check('watching_collapsible', 'Collapsible (a header bar to fold it away)')}
-        ${this._c('watching_collapsible') ? `${this._check('watching_collapsed_home', 'Start collapsed on Home')}${this._check('watching_collapsed_lib', 'Start collapsed on the library and Calendar pages')}` : ''}
+        ${this._watchPages()}
         ${this._check('np_power', 'Power button on the Now playing poster (asks before turning the TV off)')}`)}`;
+  }
+  /** Watching now per page: Show on page, Collapsible, Start collapsed. */
+  _watchPages() {
+    const pages = [['home', 'Home'], ['cal', 'Calendar'], ['lib', 'Library']];
+    const col = (label, key, on = () => true) => `<div class="plce-group">${label}</div><div class="plce-checkrow">${pages.map(([pg, name]) => (on(pg)
+      ? this._check(`${key}${pg}`, name) : '')).join('')}</div>`;
+    return `${col('Show on page', 'watching_')}
+      ${col('Collapsible (a header bar to fold it away)', 'watching_coll_', (pg) => this._c(`watching_${pg}`))}
+      ${pages.some(([pg]) => this._c(`watching_${pg}`) && this._c(`watching_coll_${pg}`)) ? col('Start collapsed', 'watching_collapsed_', (pg) => this._c(`watching_${pg}`) && this._c(`watching_coll_${pg}`)) : ''}
+      <p class="plce-hint">Home also follows the Home order (the eye in Home layout). The header's <b>Watching now</b> chip (Controls layout) opens the cards in a popover on any page.</p>`;
   }
   /** Library: which libraries and in what order, how they behave, and per screen how the grid looks. */
   _libraryPanel() {
@@ -4284,7 +4340,6 @@ class PlexCenterCardEditor extends HTMLElement {
         something plays (per screen, in Layout).</p>
       <div class="plce-group">Watching now</div>
         ${this._select('watching_tvs', 'Show', [['all', 'Every TV (and other Plex players)'], ['selected', 'Only the TV in the selector']])}
-        ${this._check('watching_libraries', 'Also above the library pages (not only Home)')}
       <div class="plce-group">Side panel</div>
         ${this._check('fit_screen', 'Fit the card to the screen height: the player stays put, the library scrolls')}
         ${this._c('fit_screen') ? `${this._slider('screen_offset', 'Space above / below the card', 0, 300)}<p class="plce-hint">Room for the dashboard header and margins. Raise it if the card runs past the bottom of the screen.</p>` : ''}`;
@@ -4868,7 +4923,7 @@ Object.assign(PlexCenterCard.prototype, {
     return done;
   },
   _calWatch(main) {
-    if (!homeVisible(this._c, 'watching') || !cfg(this._c, 'watching_libraries') || main.querySelector('[data-sec="watching"]')) return;
+    if (!watchOn(this._c, 'cal') || main.querySelector('[data-sec="watching"]')) return;
     main.insertAdjacentHTML('afterbegin', '<div class="plc-sec plc-libwatch" data-sec="watching"></div>');
     this._paintWatching();
   },
