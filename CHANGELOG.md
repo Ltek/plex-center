@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.17.70
+
+**New**
+- **Hold to play** (Library → *Hold to play*, on by default, *Hold for* 2 s): Play, Resume, Start over and the ▶ on
+  posters and episodes start only after being held; the button fills while you hold it, and a quick tap shows
+  *Hold Play for 2 s to start*. Keyboard Enter still plays at once. The Now playing controls aren't affected.
+- **Play on in the Calendar's quick look**: when the title is in Plex, a *Play on* chip next to Play picks the TV
+  (or this device).
+
+**Changed**
+- In a title's details, **Play on** and the **Play / Start over / Trailer / Mark watched** buttons are above the
+  season and episode list (they were below it, often off screen).
+
 ## v2026.11.17.69
 
 **Changed** (Now playing, tablets and full screen)
