@@ -7,6 +7,31 @@ Each TV shows the libraries, Continue Watching and watched marks of the Plex Hom
 
 One integration, with its Dashboard card included: no login, no tokens in the browser.
 
+## Screenshots
+
+The titles and artwork below are made up for the screenshots.
+
+**Home on a tablet:** Watching now (including a TV that's off with a show to resume), Continue watching, Recently
+Added and Coming Soon, with the Now playing panel.
+
+![Home on a tablet](screenshots/01-home-tablet.png)
+
+**A show's details:** Play on, Trailer, Mark watched, and its seasons and episodes.
+
+![A show's details](screenshots/02-library-details.png)
+
+**Calendar** from Sonarr and Radarr: episodes and movie releases (in cinemas, digital, Blu-ray).
+
+![Calendar on a tablet](screenshots/03-calendar-tablet.png)
+
+**On a phone:** Home, the Calendar, and Now playing.
+
+<p>
+  <img src="screenshots/04-home-phone.png" alt="Home on a phone" width="260">
+  <img src="screenshots/05-calendar-phone.png" alt="Calendar on a phone" width="260">
+  <img src="screenshots/06-now-playing-phone.png" alt="Now playing on a phone" width="260">
+</p>
+
 ## What you need
 
 | Part | Used for |
