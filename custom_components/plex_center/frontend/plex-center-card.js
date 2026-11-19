@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.83
+// Version: v2026.11.19.84
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.83';
+const BUILD_NUMBER = 'v2026.11.19.84';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -854,7 +854,7 @@ function layoutItems(c, key = 'main') {
 }
 
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
-const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', chips_pos: ['center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
+const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', cycle_mode: ['scroll', 'fade'], cycle_chip: 'bool', chips_pos: ['center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
@@ -919,14 +919,17 @@ function secStyle(c, id) {
   const own = lookOwn(c, id), lkImg = own.image;
   const image = (lkImg === 'fade' ? 'fanart' : lkImg) || s.image || cfg(c, 'image_style');
   const wide = (s.layout || 'row') === 'row' && image === 'fanart';
-  return { layout: s.layout || 'row', image, fade: lkImg === 'fade', wide, lkind: SEC_KIND[type] || type, look: own, collapsible, collapsed: !!s.collapsed,
+  // Cycle: the header chip turns the section's auto-rotate on / off; Cycle content says how (scroll or fade)
+  const cycleMode = s.cycle_mode || (s.auto && s.auto !== 'off' ? s.auto : id === 'continue' ? 'fade' : 'scroll');
+  const want = c._cycle?.[id], auto = want === undefined ? (s.auto || 'off') : want ? cycleMode : 'off';
+  return { layout: s.layout || 'row', cycle_mode: cycleMode, cycle_chip: s.cycle_chip ?? true, image, fade: lkImg === 'fade', wide, lkind: SEC_KIND[type] || type, look: own, collapsible, collapsed: !!s.collapsed,
     icon: s.icon || SEC_TYPE_ICON[type] || '', show_icon: s.show_icon ?? (collapsible || !!s.icon), show_title: s.show_title ?? true,
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
     chips_pos: s.chips_pos || 'right', title_pos: s.title_pos || 'left', view_all: s.view_all ?? true,
     show: (() => { const n = Math.max(1, Number((s.show ?? s.max) || c.across || cfg(c, 'across')) || 6);
       return wide && !(s.show ?? s.max) ? Math.max(1, Math.round(n / 2)) : n; })(),
-    scroll: !!s.scroll, auto: s.auto || 'off', scroll_dir: s.scroll_dir || ((s.layout || 'row') === 'list' ? 'up' : 'left'),
-    speed: Number(s.speed ?? (s.auto === 'scroll' && s.layout !== 'banner' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
+    scroll: !!s.scroll, auto, scroll_dir: s.scroll_dir || ((s.layout || 'row') === 'list' ? 'up' : 'left'),
+    speed: Number(s.speed ?? (auto === 'scroll' && s.layout !== 'banner' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
     flag: s.flag ?? cfg(c, 'flag'), list_w: Number(s.list_w ?? 340), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
     get max() { return this.total; } };
@@ -1156,6 +1159,11 @@ const CARD_CSS = `
 .plc-sess.resume .plc-sess-art.app ha-icon { color: var(--warning-color, #ff9800); }
 .plc-resume-st { color: var(--warning-color, #ff9800); }
 .plc-chip.plc-openshow { margin: 6px 0 2px; }
+.plc-cycle { font-size: .8em; padding: 2px 10px; letter-spacing: normal; text-transform: none; font-weight: 600; }
+.plc-cycle ha-icon { --mdc-icon-size: 14px; }
+.plc-vasheet .plc-grid { --plc-across: 5; }
+.plc.phone .plc-vasheet .plc-grid { --plc-across: 2; }
+.plc-viewall[role="button"] { cursor: pointer; white-space: nowrap; }
 .plc-side-info .plc-chip.plc-openshow { align-self: center; }
 .plc-resume-btns { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .plc-resume-btns .plc-btn { padding: 4px 12px; min-height: 30px; }
@@ -1409,7 +1417,10 @@ const CARD_CSS = `
 .plc-detail-close { position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,.55); border: none; color: #fff; }
 .plc.phone .plc-detail { position: fixed; inset: 0; z-index: 8; border-radius: 0; overflow-y: auto; background: var(--card-background-color, var(--ha-card-background, #1c1c1c)); }
 .plc.phone .plc-detail .plc-btns { position: sticky; bottom: 0; padding: 10px 0 4px; background: inherit; }
-.plc-eps { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
+.plc-eps { display: flex; flex-direction: column; gap: 2px; }
+.plc-eps [data-eplist] { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
+.plc-target { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.plc-target .plc-seasonpick { margin-left: auto; }
 .plc.phone .plc-eps { max-height: none; }
 .plc-ep { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-bottom: 1px solid var(--divider-color, #333); font-size: .9em; }
 .plc-ep span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1593,7 +1604,7 @@ const CARD_CSS = `
 .plc-rate b { color: #f5c518; font-weight: 700; }
 .plc-av { border: 1px solid rgba(255,255,255,.5); background: rgba(0,0,0,.35); font-weight: 600; letter-spacing: .03em; }
 /* episode picker */
-.plc-seasons { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 4px; }
+.plc-seasons { display: flex; flex: none; gap: 6px; padding-bottom: 6px; }
 .plc-seasons .plc-chip { flex: none; }
 .plc-seasons ha-icon { --mdc-icon-size: 15px; }
 .plc-seasons small { opacity: .7; }
@@ -1828,7 +1839,7 @@ class PlexCenterCard extends HTMLElement {
   _setConfig(config) {
     const prev = this._c;
     this._raw = normalizeConfig(config);
-    this._c = effectiveConfig(this._raw, !!this._phone);
+    this._c = effectiveConfig(this._raw, !!this._phone); this._c._cycle = this._v?.cycle;
     if (!this._built) return;
     this._applyLook();
     if (prev && prev.library_view !== this._c.library_view) { this._v.view = cfg(this._c, 'library_view'); this._v.detail = null; this._saveView(); }
@@ -2063,7 +2074,7 @@ class PlexCenterCard extends HTMLElement {
     const phone = want === 'phone' || (want === 'auto' && w > 0 && w < PHONE_MAX_W);
     if (!this._root) return;
     const sig = screenOf(phone, isPortrait());
-    this._c = effectiveConfig(raw, phone);
+    this._c = effectiveConfig(raw, phone); this._c._cycle = this._v?.cycle;
     this._root.setAttribute('style', cardVars(this._c));
     if (this._phone === phone && this._lsig === sig) return;
     const first = this._lsig === undefined, changed = this._lsig !== sig;
@@ -2544,14 +2555,14 @@ class PlexCenterCard extends HTMLElement {
     homeOrder(this._c).filter((id) => secType(this._c, id) === 'recent' && homeVisible(this._c, id) && secStyle(this._c, id).s.source).forEach((id) => this._paintRecent(id));
     const paint = (h) => {
       const c = main.querySelector('[data-sec="continue"]');
-      this._lists.set('continue', h.continue || []);
+      this._lists.set('continue', h.continue || []); (this._full ||= {}).continue = h.continue || [];
       if (c) { if (h.continue?.length) this._paintContinue(c, h.continue); else c.remove(); }
       const nx = main.querySelector('[data-sec="next"]'), next = h.next || [];
-      this._lists.set('next', next);
+      this._lists.set('next', next); (this._full ||= {}).next = next;
       if (nx) {
         const st = secStyle(this._c, 'next');
         if (!next.length) nx.remove();
-        else sig(nx, JSON.stringify([JSON.stringify(st.s), this._c._screen, JSON.stringify(lookOwn(this._c, 'next')), this._v.secOpen?.next, next.map((x) => [x.key, x.watched])]),
+        else sig(nx, JSON.stringify([JSON.stringify(st.s), st.auto, this._c._screen, JSON.stringify(lookOwn(this._c, 'next')), this._v.secOpen?.next, next.map((x) => [x.key, x.watched])]),
           () => this._fill('next', nx, 'Next Episode', next.length, next.slice(0, st.max), 'next'));
       }
       this._recent = h.recent || [];
@@ -2577,7 +2588,7 @@ class PlexCenterCard extends HTMLElement {
       const mine = this._byKind(id, this._sensorItems(this._sensorKinds([st.s.source])));
       if (!this._hass.states[st.s.source]) { r.innerHTML = `<div class="plc-msg err">${esc(st.s.source)} not found.</div>`; return; }
       const items = mine.slice(0, st.max);
-      this._lists.set(id, items);
+      this._lists.set(id, items); (this._full ||= {})[id] = mine;
       sig(r, JSON.stringify([JSON.stringify(st.s), cfg(this._c, 'image_style'), this._v.secOpen?.[id], JSON.stringify(this._kinds(id)), items.map((x) => [x.title, x.poster, x.lines])]),
         () => { this._fill(id, r, SEC_TYPE_TITLE.recent, mine.length, items, id); });
       return;
@@ -2669,7 +2680,7 @@ class PlexCenterCard extends HTMLElement {
       const pool = this._sensorItems(sensors).filter((x) => !x.key && !this._alreadyIn(have, { type: x.type, title: x.title, number: x.umc?.number }))
         .sort((a, b) => String(a.airdate).localeCompare(String(b.airdate)));
       const mine = this._byKind(id, pool), items = mine.slice(0, st.max);
-      this._lists.set(id, items);
+      this._lists.set(id, items); (this._full ||= {})[id] = mine;
       sig(sec, JSON.stringify([JSON.stringify(this._c.home_style?.[id] || {}), cfg(this._c, 'image_style'), this._v.secOpen?.[id], this._v.secKind?.[id],
         JSON.stringify(this._kinds(id)), items.map((x) => [x.title, x.poster, x.lines])]), () => { this._fill(id, sec, SEC_TYPE_TITLE.upcoming, mine.length, items, id); });
     }
@@ -2702,7 +2713,7 @@ class PlexCenterCard extends HTMLElement {
           [ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : ''].filter(Boolean).join(' · ')] });
     }
     const mine = this._byKind(id, pool), items = mine.slice(0, st.max);
-    this._lists.set(id, items);
+    this._lists.set(id, items); (this._full ||= {})[id] = mine;
     sig(sec, JSON.stringify(['arr', JSON.stringify(this._c.home_style?.[id] || {}), cfg(this._c, 'image_style'), this._v.secOpen?.[id], this._v.secKind?.[id],
       JSON.stringify(this._kinds(id)), items.map((x) => [x.title, x.poster, x.lines])]), () => { this._fill(id, sec, SEC_TYPE_TITLE.upcoming, mine.length, items, id); });
   }
@@ -2865,7 +2876,8 @@ class PlexCenterCard extends HTMLElement {
           <button class="plc-btn" data-qrestart="continue|${i}"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>
           <button class="plc-btn" data-cwmark="${i}" title="Mark as watched"><ha-icon icon="mdi:check"></ha-icon>Mark watched</button>${this._openShowHtml(it)}</div>
         <div class="plc-pager"><button class="plc-icon-btn" data-hero="-1" title="Previous"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
-          ${i + 1} / ${items.length}<button class="plc-icon-btn" data-hero="1" title="Next"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div></div></div>`;
+          ${i + 1} / ${items.length}<button class="plc-icon-btn" data-hero="1" title="Next"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+          ${items.length > 1 && st.cycle_chip ? this._cycleChip('continue', st) : ''}${items.length > 1 && st.view_all ? '<span class="plc-viewall" role="button" tabindex="0" data-viewsec="continue">View all →</span>' : ''}</div></div></div>`;
   }
 
   /** A Home section in its style: plain heading or collapsible bar; poster/fanart row or upcoming-media list. */
@@ -2887,6 +2899,9 @@ class PlexCenterCard extends HTMLElement {
     const ttl = st.collapsible ? `${icon}${name}` : `${icon}${name}${st.show_count ? ` <span class="n">${total}</span>` : ''}`;
     slot[at(st.title_pos)].push(`<span class="plc-sec-tt">${ttl}</span>`);
     if (chips) slot[at(st.chips_pos)].push(chips);
+    const more = Math.max(total, items.length) > st.show;   // more than fits at once
+    if (more && st.cycle_chip) slot.r.push(this._cycleChip(id, st));
+    if (more && st.view_all && !extraHead) slot.r.push(`<span class="plc-viewall" role="button" tabindex="0" data-viewsec="${esc(id)}">View all →</span>`);
     if (st.collapsible) slot.r.push(`${st.show_count ? `<span class="n">${esc(total ? count : 'None')}</span>` : ''}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon>`);
     else if (extraHead) slot.r.push(extraHead);
     const slots = `<span class="sl l">${slot.l.join('')}</span><span class="sl c">${slot.c.join('')}</span><span class="sl r">${slot.r.join('')}</span>`;
@@ -3201,9 +3216,13 @@ Object.assign(PlexCenterCard.prototype, {
     if (!box || !show.seasons) return;
     const pick = show.seasons.find((s) => s.key === this._v.season) || show.seasons.find((s) => show.next && s.key === show.next.season_key) || show.seasons[0];
     this._v.season = pick.key;
-    box.innerHTML = `<div class="plc-seasons" role="tablist">${show.seasons.map((s) => `<button class="plc-chip${s === pick ? ' on' : ''}" data-seasonchip="${esc(s.key)}">${esc(s.title)}${
-      s.watched ? ' <ha-icon icon="mdi:check"></ha-icon>' : s.watched_episodes ? ` <small>${s.watched_episodes}/${s.episodes}</small>` : ''}</button>`).join('')}</div><div data-eplist><div class="plc-msg">Loading episodes…</div></div>`;
-    box.querySelector('.plc-chip.on')?.scrollIntoView?.({ inline: 'center', block: 'nearest' });
+    const seen = (x) => (x.watched ? ' ✓' : x.watched_episodes ? ` · ${x.watched_episodes}/${x.episodes}` : '');
+    this._seasonsOf = show.seasons;
+    const chip = `<button class="plc-chip plc-menuchip plc-seasonpick" data-seasonmenu title="Pick a season"><ha-icon icon="mdi:layers-outline"></ha-icon><span class="plc-menuchip-n">${esc(pick.title)}${esc(seen(pick))}</span>${show.seasons.length > 1 ? '<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon>' : ''}</button>`;
+    const row = this._root.querySelector('.plc-detail .plc-target, .plc-npfull .plc-target');
+    this._root.querySelectorAll('.plc-seasonpick').forEach((n) => n.remove());
+    if (row && row.closest('.plc-detail-body') === box.closest('.plc-detail-body')) row.insertAdjacentHTML('beforeend', chip);
+    box.innerHTML = `${row ? '' : `<div class="plc-seasons">${chip}</div>`}<div data-eplist><div class="plc-msg">Loading episodes…</div></div>`;
     const tv = this._tv(), key = `item:${tv.id}:${pick.key}`;
     let season;
     try { season = await cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'item', { tv: tv.id, key: pick.key })); }
@@ -3261,6 +3280,21 @@ Object.assign(PlexCenterCard.prototype, {
     if (tv && tv !== 'local') this._v.npOpen = tv.id;
     if (!this._panelVisible()) { this._v.npFull = true; this._npFullAt = Date.now(); }
     this._renderDetail(); this._renderNP(true);
+  },
+
+  /** The Cycle chip: turns the section's scrolling / fading on and off. */
+  _cycleChip(id, st) {
+    const on = st.auto !== 'off';
+    return `<span class="plc-chip plc-cycle${on ? ' on' : ''}" role="button" tabindex="0" data-cycle="${esc(id)}" title="${on ? 'Stop cycling' : `Cycle (${st.cycle_mode === 'fade' ? 'fade' : 'scroll'})`}"><ha-icon icon="mdi:${on ? 'pause' : st.cycle_mode === 'fade' ? 'animation-play-outline' : 'arrow-left-right'}"></ha-icon>Cycle</span>`;
+  },
+  /** View all: every item of a section in a popup grid. */
+  _viewAll(id) {
+    const items = this._full?.[id] || this._lists.get(id) || [];
+    if (!items.length) return;
+    this._lists.set(`va:${id}`, items);
+    const title = homeSections(this._c).find(([x]) => x === id)?.[1] || 'All';
+    this._sheet(`<div class="plc-detail-body plc-vasheet"><div class="plc-fpanel-h"><h2 class="plc-big">${esc(title)} <span class="n">${items.length}</span></h2><span class="plc-sp"></span>
+      <button class="plc-btn" data-close-sheet>Close</button></div><div class="plc-grid">${items.map((it, i) => this._tile(it, `va:${id}`, i)).join('')}</div></div>`, null, false, 'fit');
   },
 
   /** "Open show" for an episode (or season): jumps to the show's details. */
@@ -3579,6 +3613,7 @@ Object.assign(PlexCenterCard.prototype, {
   _onClick(e) {
     const t = (sel) => e.target.closest?.(sel);
     let el;
+    if (t('.plc-vasheet .plc-tile') && !t('[data-qplay]')) this._closeSheet(true);
     if ((el = t('[data-openshow]'))) { e.stopPropagation(); this._closeMenu?.(); this._openShow(el.dataset.openshow, el.dataset.showtitle); return; }
     const menu = this._root.querySelector('.plc-menu');
     if (menu) {
@@ -3627,6 +3662,24 @@ Object.assign(PlexCenterCard.prototype, {
       if (!this._panelVisible()) { this._v.npFull = true; this._npFullAt = Date.now(); }
       this._renderNP(true); return;
     }
+    if ((el = t('[data-seasonmenu]'))) {
+      const list = this._seasonsOf || [];
+      if (list.length > 1) this._menu(el, 'Season', list.map((x) => ({ icon: x.watched ? 'mdi:check-circle-outline' : 'mdi:layers-outline', label: x.title,
+        sub: x.episodes ? `${x.watched_episodes || 0} of ${x.episodes} watched` : '', on: x.key === this._v.season, attr: `data-seasonpick="${esc(x.key)}"` })));
+      return;
+    }
+    if ((el = t('[data-seasonpick]'))) {
+      this._closeMenu(); this._v.season = el.dataset.seasonpick;
+      if (this._detailItem) this._paintSeasons(this._detailItem);
+      return;
+    }
+    if ((el = t('[data-cycle]'))) {
+      e.stopPropagation();
+      const id = el.dataset.cycle, on = secStyle(this._c, id).auto !== 'off';
+      this._v.cycle = { ...(this._v.cycle || {}), [id]: !on }; this._c._cycle = this._v.cycle;
+      this._saveView?.(); this._renderMain(); return;
+    }
+    if ((el = t('[data-viewsec]'))) { e.stopPropagation(); this._viewAll(el.dataset.viewsec); return; }
     if ((el = t('[data-seckind]'))) {
       e.stopPropagation();
       const [id, k] = el.dataset.seckind.split('|');
@@ -4399,7 +4452,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${s.show_title === false ? '' : pick('title_pos', 'Section Title', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'left')}
         ${st.type === 'plexhub' ? '' : `${chk('chips', 'Movies and TV chips in the header (turn each on or off)', false)}
         ${st.chips ? pick('chips_pos', 'Chips', [['center', 'Center'], ['right', 'Right']], 'right') : ''}`}
-        ${st.type === 'recent' ? chk('view_all', 'Show “View all”', true) : ''}
+        ${chk('view_all', st.type === 'recent' ? 'Show “View all” (opens the library, newest first)' : 'Show “View all” when there are more than fit (opens them all in a popup)', true)}
         ${chk('show_count', 'Show the number of items', true)}
         ${chk('show_icon', 'Show the icon', st.collapsible || !!s.icon)}
         <div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-sid="${esc(id)}" data-sicon="icon" value="${esc(s.icon || '')}"></plce-icon-pick></div>
@@ -4408,7 +4461,10 @@ class PlexCenterCardEditor extends HTMLElement {
         ${st.divider ? col('divider_color', 'Divider color', '#2196f3', false, 'Section text color') : ''}
         <label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsible"${s.collapsible ? ' checked' : ''}>Collapsible, with a header bar</label>
         ${s.collapsible ? `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsed"${s.collapsed ? ' checked' : ''}>Start collapsed</label>` : ''}`)}
-      ${sub('items', 'Layout', `${id === 'continue' ? sel('layout', 'Layout', [['', this._eds().startsWith('phone') ? 'Row (phones\' default)' : 'Banner, one at a time (tablets\' default)'], ['banner', 'Banner, one at a time'], ['row', 'Row'], ['list', 'Column']])
+      ${sub('items', 'Layout', `${pick('cycle_mode', 'Cycle content', [['scroll', 'Scroll'], ['fade', 'Fade']], st.cycle_mode)}
+        ${chk('cycle_chip', 'Cycle chip in the header (turns cycling on and off; shown when there are more than fit)', true)}
+        <p class="plce-hint">Cycle content is what the chip (and Auto rotate below) does when it's on.</p>
+        ${id === 'continue' ? sel('layout', 'Layout', [['', this._eds().startsWith('phone') ? 'Row (phones\' default)' : 'Banner, one at a time (tablets\' default)'], ['banner', 'Banner, one at a time'], ['row', 'Row'], ['list', 'Column']])
           : sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
         ${id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner' ? '' : `${sl('show', 'Items to show', 0, 20, 0, '')}
         <p class="plce-hint">0 = the screen's Posters across (half for Fanart rows).</p>`}

@@ -1,5 +1,20 @@
 # Changelog
 
+## v2026.11.19.84
+
+**Fixed**
+- A show's **season chips** were squashed and cut off at the bottom of its details. The season is now one chip
+  on the *Play on* row (e.g. *Season 3 · 2/8*); tapping it opens a menu of the seasons with how many episodes of
+  each are watched. Only the episode list scrolls.
+
+**New**
+- **View all** on any section with more items than fit at once (Continue watching, Next Episode, Coming Soon,
+  Plex rows, extra rows): opens them all in a popup grid. Recently Added keeps its own (the library, newest first).
+  Per row and screen: Header → *Show “View all”*.
+- **Cycle** chip in the section header (and on the Continue watching banner): turns the section's scrolling or
+  fading on and off. Per row and screen, Layout → **Cycle content** (*Scroll* or *Fade*; defaults to the row's Auto
+  rotate, else Fade for Continue watching and Scroll for the rest) and *Cycle chip in the header*.
+
 ## v2026.11.19.83
 
 **Fixed**
