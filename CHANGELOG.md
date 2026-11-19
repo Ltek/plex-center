@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.19.88
+
+**Changed**
+- **The info card's layout** (details, Calendar quick look, Coming Soon, Surprise me, Resume): the poster at the
+  left (episodes show the show's poster), then the date (Calendar and Coming Soon) or the type, the **show** as the
+  title, the **episode title** under it, and one row with **S · E**, rating, runtime and badges. The status
+  (Available / Missing / Monitored) sits at the right over the fanart.
+
 ## v2026.11.19.87
 
 **Changed**

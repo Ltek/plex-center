@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.87
+// Version: v2026.11.19.88
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.87';
+const BUILD_NUMBER = 'v2026.11.19.88';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1308,6 +1308,10 @@ const CARD_CSS = `
 .plc-fact ha-icon { --mdc-icon-size: 16px; }
 .plc-info .plc-av { font-size: .85em; padding: 3px 8px; }
 .plc-cq .plc-info-art { border-radius: 16px 16px 0 0; }
+.plc-info .plc-detail-ttl { flex: 1; }
+.plc-info .plc-rates { align-items: center; }
+.plc-info-se { color: #fff; font-size: .98em; text-shadow: 0 1px 6px rgba(0,0,0,.9); margin-right: 4px; }
+.plc-info-status { flex: none; align-self: flex-end; justify-content: flex-end; margin: 0; }
 .plc-side-info .plc-info-sub { color: var(--secondary-text-color); text-shadow: none; }
 .plc-np-facts { justify-content: center; gap: 8px; margin: 6px 0 2px; display: flex; flex-wrap: wrap; }
 .plc-np-facts .plc-rate.big, .plc-np-facts .plc-fact { background: var(--plc-bg2); color: var(--primary-text-color); }
@@ -3153,14 +3157,15 @@ Object.assign(PlexCenterCard.prototype, {
     const isEp = it.type === 'episode';
     const soon = it.ev ? this._calInfo(it.ev) : it.umc ? (() => {   // upcoming-media sensor items
       const u = it.umc, d = it.airdate ? new Date(it.airdate) : null, rt = Number.parseInt(u.runtime, 10);
-      return { eyebrow: [`Coming soon${d && !Number.isNaN(d.getTime()) ? ` · ${d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`, 'mdi:calendar-clock'],
-        title: it.title, sub: [u.number, u.episode].filter(Boolean).join(' · '), runtime: rt ? fmtRun(rt * 60) : '', status: '',
+      return { eyebrow: [d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'Coming soon'],
+        title: it.title, sub: u.episode || '', se: u.number || '', runtime: rt ? fmtRun(rt * 60) : '', status: '',
         meta: [u.year, u.studio, u.genres].filter(Boolean).join(' · ') };
     })() : null;
-    const eyebrow = isEp ? [`Episode${it.show ? ` · ${it.show}` : ''}`, 'mdi:television-classic'] : it.type === 'show' ? ['TV show', 'mdi:television'] : it.type === 'movie' ? ['Movie', 'mdi:movie-open-outline'] : null;
-    const sub = isEp && it.season != null ? `S${it.season} · E${it.episode}` : (it.type === 'show' && it.episodes ? `${it.episodes} episodes${it.watched_episodes ? ` · ${it.watched_episodes} watched` : ''}` : '');
-    slot.innerHTML = `<div class="plc-detail">${this._infoHtml({ art: img, poster: soon ? it.poster : isEp ? null : it.poster, close: 'data-close',
-      eyebrow: soon ? soon.eyebrow : eyebrow, title: soon ? soon.title : isEp ? it.title : (it.show || it.title), sub: soon ? soon.sub : sub,
+    const eyebrow = isEp ? ['Episode'] : it.type === 'show' ? ['TV show'] : it.type === 'movie' ? ['Movie'] : null;
+    const sub = isEp ? (it.show ? it.title : '') : (it.type === 'show' && it.episodes ? `${it.episodes} episodes${it.watched_episodes ? ` · ${it.watched_episodes} watched` : ''}` : '');
+    const se = isEp && it.season != null ? `S${it.season} · E${it.episode}` : '';
+    slot.innerHTML = `<div class="plc-detail">${this._infoHtml({ art: img, poster: it.poster, close: 'data-close',
+      eyebrow: soon ? soon.eyebrow : eyebrow, title: soon ? soon.title : (it.show || it.title), sub: soon ? soon.sub : sub, se: soon ? soon.se : se,
       rating: this._ratingPills(it), runtime: soon ? soon.runtime : it.duration ? fmtRun(it.duration) : '', badges: it.badges, status: soon?.status,
       body: `${soon ? (soon.meta ? `<div class="plc-meta">${esc(soon.meta)}</div>` : '') : `${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${umc}`}
         ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div>` : ''}${ends}
@@ -3320,22 +3325,22 @@ Object.assign(PlexCenterCard.prototype, {
    *  title, sub, rating: [html…], runtime, badges: [], status: html, cls, body } */
   _infoHtml(o) {
     const [eb, ic, col] = o.eyebrow || [];
-    const facts = [...(o.rating || []), o.runtime ? `<span class="plc-fact"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(o.runtime)}</span>` : '',
+    const facts = [o.se ? `<span class="plc-info-se">${esc(o.se)}</span>` : '', ...(o.rating || []), o.runtime ? `<span class="plc-fact"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(o.runtime)}</span>` : '',
       ...(o.badges || []).map((b) => `<span class="plc-av">${esc(b)}</span>`)].filter(Boolean).join('');
     return `<div class="plc-info${o.cls ? ` ${o.cls}` : ''}"><div class="plc-detail-img plc-info-art${o.art ? '' : ' noart'}"${o.art ? ` style="background-image:url('${cssUrl(o.art)}')"` : ''}>
         <button class="plc-icon-btn plc-detail-close" ${o.close} title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
         <div class="plc-detail-head">${o.poster ? `<div class="plc-detail-poster" style="background-image:url('${cssUrl(o.poster)}')"></div>` : ''}
           <div class="plc-detail-ttl">${eb ? `<div class="plc-eyebrow"${col ? ` style="color:${col}"` : ''}>${ic ? `<ha-icon icon="${esc(ic)}"></ha-icon> ` : ''}${esc(eb)}</div>` : ''}
             <h2 class="plc-big">${esc(o.title || '')}</h2>${o.sub ? `<div class="plc-info-sub">${esc(o.sub)}</div>` : ''}
-            ${facts ? `<div class="plc-rates">${facts}</div>` : ''}</div></div></div>
-      <div class="plc-detail-body">${o.status ? `<div class="plc-cal-chips">${o.status}</div>` : ''}${o.body || ''}</div></div>`;
+            ${facts ? `<div class="plc-rates">${facts}</div>` : ''}</div>${o.status ? `<div class="plc-cal-chips plc-info-status">${o.status}</div>` : ''}</div></div>
+      <div class="plc-detail-body">${o.body || ''}</div></div>`;
   },
   /** The card's head fields for a Plex title (eyebrow, title, episode line, rating, runtime, badges). */
   _infoHead(it, eyebrowText = null) {
     const isEp = it.type === 'episode';
-    const kind = isEp ? [`Episode${it.show ? ` · ${it.show}` : ''}`, 'mdi:television-classic'] : it.type === 'show' ? ['TV show', 'mdi:television'] : ['Movie', 'mdi:movie-open-outline'];
-    return { art: it.art || it.still || it.poster, poster: isEp ? null : it.poster, eyebrow: eyebrowText ? [eyebrowText, kind[1]] : kind,
-      title: isEp ? it.title : (it.show || it.title), sub: isEp && it.season != null ? `S${it.season} · E${it.episode}` : '',
+    const kind = isEp ? 'Episode' : it.type === 'show' ? 'TV show' : 'Movie';
+    return { art: it.art || it.still || it.poster, poster: it.poster, eyebrow: [eyebrowText || kind],
+      title: isEp ? (it.show || it.title) : (it.show || it.title), sub: isEp && it.show ? it.title : '', se: isEp && it.season != null ? `S${it.season} · E${it.episode}` : '',
       rating: this._ratingPills(it), runtime: it.duration ? fmtRun(it.duration) : '', badges: it.badges };
   },
   /** Rating pills: every source Plex has (TMDB / IMDb / Rotten Tomatoes), else the audience ★. */
@@ -5462,8 +5467,9 @@ Object.assign(PlexCenterCard.prototype, {
     const when = `${(ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}${this._calTime(ev) ? ` · ${this._calTime(ev)}` : ''}`;
     const status = [ev.watched && ['Watched', '#22c55e'], ev.has_file ? ['Available', '#22c55e'] : ev.monitored ? (evDay(ev) <= ymd(new Date()) ? ['Missing', '#f59e0b'] : ['Monitored', '#818cf8']) : ['Not monitored', '#9ca3af'],
       badge && [badge, c]].filter(Boolean).map(([t, col]) => `<span class="plc-cal-chip" style="--c:${col}">${esc(t)}</span>`).join('');
-    return { eyebrow: [`${label === 'Episodes' ? 'Episode' : label} · ${when}`, icon, c], title: ev.title, status,
-      sub: ev.kind === 'episode' ? [sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : '', runtime: ev.runtime ? fmtRun(ev.runtime * 60) : '',
+    const ep = ev.kind === 'episode';
+    return { eyebrow: [ep ? when : `${label} · ${when}`, null, c], title: ev.title, status, icon,
+      sub: ep ? ev.episode_title || '' : '', se: ep ? (ev.season != null && ev.episode != null ? `S${ev.season} · E${ev.episode}` : sxe(ev)) : '', runtime: ev.runtime ? fmtRun(ev.runtime * 60) : '',
       meta: [ev.year, ev.network || ev.studio, ev.certification, (ev.genres || []).join(', ')].filter(Boolean).join(' · ') };
   },
   async _calQuick(n) {
@@ -5471,7 +5477,7 @@ Object.assign(PlexCenterCard.prototype, {
     if (!ev) return;
     const ci = this._calInfo(ev), meta = ci.meta;
     this._sheet(this._infoHtml({ cls: 'plc-cq', art: ev.fanart || ev.poster, poster: ev.poster, close: 'data-close-sheet',
-      eyebrow: ci.eyebrow, title: ci.title, sub: ci.sub, runtime: ci.runtime, status: ci.status,
+      eyebrow: ci.eyebrow, title: ci.title, sub: ci.sub, se: ci.se, runtime: ci.runtime, status: ci.status,
       body: `${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${ev.overview ? `<div>${esc(ev.overview)}</div>` : ''}
         <div class="plc-btns"><span data-calplex></span><button class="plc-btn" data-caltrailer><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>
           <button class="plc-btn" data-close-sheet>Close</button></div>` }), null, false);
