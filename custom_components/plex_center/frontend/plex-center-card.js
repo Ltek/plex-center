@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.84
+// Version: v2026.11.19.85
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.84';
+const BUILD_NUMBER = 'v2026.11.19.85';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -2690,7 +2690,8 @@ class PlexCenterCard extends HTMLElement {
   async _paintUpcomingArr(id, sec, st) {
     const start = new Date(); start.setHours(0, 0, 0, 0);
     let res;
-    try { res = await cached(this._hass, `cal:soon:${ymd(start)}`, 300000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: addDays(start, 60).toISOString() })); }
+    const tvId = this._tv()?.id;
+    try { res = await cached(this._hass, `cal:soon:${ymd(start)}:${tvId || ''}`, 300000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: addDays(start, 60).toISOString(), tv: tvId })); }
     catch { return; }
     if (!sec.isConnected) return;
     const now = Date.now(), seen = new Set(), pool = [], have = this._plexKeys();
@@ -2705,6 +2706,7 @@ class PlexCenterCard extends HTMLElement {
       const time = this._calTime(ev), rel = (CAL_TYPES[ev.release] || CAL_TYPES.episode)[0];
       const badge = this._calBadge(ev);
       pool.push({ title: ev.title, poster: ev.poster || ev.fanart || '', art: ev.fanart || ev.poster || '', type: ev.kind === 'movie' ? 'movie' : 'episode',
+        ...(ev.kind === 'episode' ? { show: ev.title, show_key: ev.plex_show || undefined, season: ev.season, episode: ev.episode } : {}),
         trailer: ev.trailer ? `https://www.youtube.com/watch?v=${ev.trailer}` : null, airdate: ev.at, summary: ev.overview || '', year: ev.year,
         umc: { title: ev.title, episode: ev.episode_title || '', number: sxe(ev), airdate: ev.at, release: ev.kind === 'movie' ? `${rel} $date` : (ev.all_day ? '$day, $date' : '$day, $date $time'),
           runtime: ev.runtime || '', genres: (ev.genres || []).join(', '), studio: ev.network || ev.studio || '', rating: '', summary: ev.overview || '', year: ev.year },
@@ -3299,10 +3301,21 @@ Object.assign(PlexCenterCard.prototype, {
 
   /** "Open show" for an episode (or season): jumps to the show's details. */
   _openShowHtml(it, cls = 'plc-btn') {
-    const key = it && (it.type === 'episode' || it.type === 'season') ? it.show_key : null;
-    return key ? `<button class="${cls} plc-openshow" data-openshow="${esc(key)}" data-showtitle="${esc(it.show || '')}"><ha-icon icon="mdi:television-classic"></ha-icon>Open show</button>` : '';
+    if (!it || (it.type !== 'episode' && it.type !== 'season')) return '';
+    const name = it.show || (it.umc || it.lines ? it.title : '');
+    if (!it.show_key && !name) return '';
+    return `<button class="${cls} plc-openshow" data-openshow="${esc(it.show_key || '')}" data-showtitle="${esc(name || '')}"><ha-icon icon="mdi:television-classic"></ha-icon>Open show</button>`;
   },
-  _openShow(key, title) {
+  async _openShow(key, title) {
+    if (!key) {   // not linked to Plex yet (Coming Soon): find the show by its name
+      const low = (x) => String(x || '').trim().toLowerCase();
+      try {
+        const res = await ws(this._hass, 'search', { tv: this._tv()?.id, query: title, limit: 10 });
+        const shows = (res || []).flatMap((g) => g.items || []).filter((x) => x.type === 'show');
+        key = (shows.find((x) => low(x.title) === low(title)) || shows[0])?.key;
+      } catch { key = null; }
+      if (!key) { this._toast(`${title || 'This show'} isn't in Plex yet`); return; }
+    }
     if (this._root.querySelector('.plc-sheet')) this._closeSheet(true);
     if (this._v.npFull) { this._v.npFull = false; this._renderNP(true); }
     this._lists.set('openshow', [{ key: String(key), type: 'show', title: title || '' }]);

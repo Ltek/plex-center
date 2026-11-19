@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.19.85
+
+**Changed**
+- **Every TV item opens its episode.** Recently Added used to list (and open) the show; TV libraries now give the
+  newest added episode of each show, like Continue watching and Coming Soon.
+- **Open show on every episode**, Coming Soon too: from Sonarr / Radarr the card now asks with the TV, so an
+  episode of a show that's in Plex links straight to it; otherwise Open show finds the show in Plex by its name
+  (or says it isn't in Plex yet).
+
 ## v2026.11.19.84
 
 **Fixed**

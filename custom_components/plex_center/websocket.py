@@ -98,6 +98,27 @@ def tv_state(hass: HomeAssistant, tv: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _recent_in(sec, n: int) -> list:
+    """Recently added in a library. TV libraries: episodes (the newest per show), not Plex's grouped shows / seasons,
+    so every TV item opens as an episode like Continue watching does."""
+    if getattr(sec, "type", None) != "show":
+        return sec.recentlyAdded(maxresults=n)
+    try:
+        eps = sec.search(libtype="episode", sort="addedAt:desc", maxresults=n * 4)
+    except Exception:  # noqa: BLE001 - an older server: Plex's own list
+        return sec.recentlyAdded(maxresults=n)
+    out, shows = [], set()
+    for e in eps:
+        show = str(getattr(e, "grandparentRatingKey", "") or getattr(e, "ratingKey", ""))
+        if show in shows:
+            continue
+        shows.add(show)
+        out.append(e)
+        if len(out) >= n:
+            break
+    return out
+
+
 def _safe(fn) -> list:
     if fn is None:
         return []
@@ -314,11 +335,11 @@ async def ws_hubs(hass: HomeAssistant, connection, msg) -> None:
     def fetch(server):
         if msg.get("library"):
             sec = _section(server, msg["library"])
-            cont, recent = sec.continueWatching(), sec.recentlyAdded(maxresults=n)
+            cont, recent = sec.continueWatching(), _recent_in(sec, n)
             deck = _safe(getattr(sec, "onDeck", None))
         else:
             cont = server.continueWatching()
-            recent = [i for s in _sections(server) for i in s.recentlyAdded(maxresults=n)]
+            recent = [i for s in _sections(server) for i in _recent_in(s, n)]
             recent.sort(key=lambda i: getattr(i, "addedAt", None) or datetime.min, reverse=True)
             deck = _safe(getattr(server.library, "onDeck", None))
         cw, nxt = split_continue([*cont, *deck], pct, lambda ep: _next_episode(ep))

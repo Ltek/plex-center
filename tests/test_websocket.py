@@ -215,3 +215,23 @@ def test_split_continue_next_episode():
     assert [x.ratingKey for x in nxt] == [4, 5]
     cont, nxt = split_continue([b5], 98, lambda e: b6)                        # 97 % < 98 %: still continue
     assert [x.ratingKey for x in cont] == [3] and nxt == []
+
+
+def test_recently_added_tv_gives_episodes_newest_per_show():
+    from custom_components.plex_center.websocket import _recent_in
+
+    def ep(key, show):
+        return NS(ratingKey=key, type="episode", grandparentRatingKey=show)
+
+    calls = []
+
+    class TVSec:
+        type = "show"
+
+        def search(self, **kw):
+            calls.append(kw)
+            return [ep(1, "A"), ep(2, "A"), ep(3, "B"), ep(4, "C")]
+
+    assert [e.ratingKey for e in _recent_in(TVSec(), 2)] == [1, 3]
+    assert calls[0]["libtype"] == "episode" and calls[0]["sort"] == "addedAt:desc"
+    assert _recent_in(MOVIES, 1)[0] is BILL
