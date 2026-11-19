@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.86
+// Version: v2026.11.19.87
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.86';
+const BUILD_NUMBER = 'v2026.11.19.87';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1308,6 +1308,9 @@ const CARD_CSS = `
 .plc-fact ha-icon { --mdc-icon-size: 16px; }
 .plc-info .plc-av { font-size: .85em; padding: 3px 8px; }
 .plc-cq .plc-info-art { border-radius: 16px 16px 0 0; }
+.plc-side-info .plc-info-sub { color: var(--secondary-text-color); text-shadow: none; }
+.plc-np-facts { justify-content: center; gap: 8px; margin: 6px 0 2px; display: flex; flex-wrap: wrap; }
+.plc-np-facts .plc-rate.big, .plc-np-facts .plc-fact { background: var(--plc-bg2); color: var(--primary-text-color); }
 .plc-cal-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .plc-cal-chip { padding: 2px 8px; border-radius: 999px; font-size: .75em; font-weight: 600; color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
 .plc-note { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: .88em;
@@ -1430,7 +1433,8 @@ const CARD_CSS = `
 .plc-eps { display: flex; flex-direction: column; gap: 2px; }
 .plc-eps [data-eplist] { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
 .plc-target { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.plc-target .plc-seasonpick { margin-left: auto; }
+.plc-target .plc-sp { flex: 1; }
+.plc-target .plc-act ha-icon { --mdc-icon-size: 16px; }
 .plc.phone .plc-eps { max-height: none; }
 .plc-ep { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-bottom: 1px solid var(--divider-color, #333); font-size: .9em; }
 .plc-ep span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2717,7 +2721,7 @@ class PlexCenterCard extends HTMLElement {
       const badge = this._calBadge(ev);
       pool.push({ title: ev.title, poster: ev.poster || ev.fanart || '', art: ev.fanart || ev.poster || '', type: ev.kind === 'movie' ? 'movie' : 'episode',
         ...(ev.kind === 'episode' ? { show: ev.title, show_key: ev.plex_show || undefined, season: ev.season, episode: ev.episode } : {}),
-        trailer: ev.trailer ? `https://www.youtube.com/watch?v=${ev.trailer}` : null, airdate: ev.at, summary: ev.overview || '', year: ev.year,
+        trailer: ev.trailer ? `https://www.youtube.com/watch?v=${ev.trailer}` : null, airdate: ev.at, summary: ev.overview || '', year: ev.year, ev,
         umc: { title: ev.title, episode: ev.episode_title || '', number: sxe(ev), airdate: ev.at, release: ev.kind === 'movie' ? `${rel} $date` : (ev.all_day ? '$day, $date' : '$day, $date $time'),
           runtime: ev.runtime || '', genres: (ev.genres || []).join(', '), studio: ev.network || ev.studio || '', rating: '', summary: ev.overview || '', year: ev.year },
         flag: !!badge,
@@ -3147,20 +3151,27 @@ Object.assign(PlexCenterCard.prototype, {
     const resume = it.offset ? `Resume ${fmtTime(it.offset)}` : (it.type === 'show' && it.next ? `Play S${it.next.season} · E${it.next.episode}` : 'Play');
     const ends = it.duration ? `<div class="plc-meta">Ends at ${esc(endsAt(it.duration - (it.offset || 0), cfg(this._c, 'clock')))} if started now</div>` : '';
     const isEp = it.type === 'episode';
+    const soon = it.ev ? this._calInfo(it.ev) : it.umc ? (() => {   // upcoming-media sensor items
+      const u = it.umc, d = it.airdate ? new Date(it.airdate) : null, rt = Number.parseInt(u.runtime, 10);
+      return { eyebrow: [`Coming soon${d && !Number.isNaN(d.getTime()) ? ` · ${d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`, 'mdi:calendar-clock'],
+        title: it.title, sub: [u.number, u.episode].filter(Boolean).join(' · '), runtime: rt ? fmtRun(rt * 60) : '', status: '',
+        meta: [u.year, u.studio, u.genres].filter(Boolean).join(' · ') };
+    })() : null;
     const eyebrow = isEp ? [`Episode${it.show ? ` · ${it.show}` : ''}`, 'mdi:television-classic'] : it.type === 'show' ? ['TV show', 'mdi:television'] : it.type === 'movie' ? ['Movie', 'mdi:movie-open-outline'] : null;
     const sub = isEp && it.season != null ? `S${it.season} · E${it.episode}` : (it.type === 'show' && it.episodes ? `${it.episodes} episodes${it.watched_episodes ? ` · ${it.watched_episodes} watched` : ''}` : '');
-    slot.innerHTML = `<div class="plc-detail">${this._infoHtml({ art: img, poster: isEp ? null : it.poster, close: 'data-close', eyebrow,
-      title: isEp ? it.title : (it.show || it.title), sub, rating: this._ratingPills(it), runtime: it.duration ? fmtRun(it.duration) : '', badges: it.badges,
-      body: `${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${umc}
+    slot.innerHTML = `<div class="plc-detail">${this._infoHtml({ art: img, poster: soon ? it.poster : isEp ? null : it.poster, close: 'data-close',
+      eyebrow: soon ? soon.eyebrow : eyebrow, title: soon ? soon.title : isEp ? it.title : (it.show || it.title), sub: soon ? soon.sub : sub,
+      rating: this._ratingPills(it), runtime: soon ? soon.runtime : it.duration ? fmtRun(it.duration) : '', badges: it.badges, status: soon?.status,
+      body: `${soon ? (soon.meta ? `<div class="plc-meta">${esc(soon.meta)}</div>` : '') : `${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${umc}`}
         ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div>` : ''}${ends}
         ${summary ? `<div>${esc(summary)}</div>` : ''}
         ${it.cast?.length ? `<div class="plc-cast">${esc(it.cast.join(', '))}</div>` : ''}
-        ${this._pickHtml()}
+        <div class="plc-meta plc-target">${this._canPick(it) ? `Play on ${this._pickChip()}` : ''}<span class="plc-sp"></span>
+          <button class="plc-chip plc-act" data-trailergo title="${it.trailer_key || it.trailer ? 'Trailer' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>
+          ${it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<button class="plc-chip plc-act" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div>
         <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:${this._target() === 'local' ? 'open-in-new' : 'play'}"></ha-icon>${this._target() === 'local' ? 'Open on this device' : `${esc(resume)} on ${esc(tvLabel(this._target()))}`}</button>
           ${it.type !== 'show' && (it.offset || it.watched) ? '<button class="plc-btn" data-play="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>' : ''}` : ''}
-          <button class="plc-btn" data-trailergo title="${it.trailer_key || it.trailer ? '' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer${it.trailer_key || it.trailer ? '' : ' (YouTube search)'}</button>
-          ${it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<button class="plc-btn" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div>
-          ${this._openShowHtml(it)}
+          ${this._openShowHtml(it)}</div>
         ${it.type === 'show' ? '<div class="plc-eps" data-eps><div class="plc-msg">Loading seasons…</div></div>' : ''}` })}</div>`;
     if (it.type === 'show') this._paintSeasons(it);
     if (key && !peek(key)) {
@@ -3196,12 +3207,12 @@ Object.assign(PlexCenterCard.prototype, {
   _target() { return this._pickTv === 'local' ? 'local' : (this._pickTv || this._tv()); },
 
   /** Where Play goes: a chip that opens the target menu. Only for titles in the library (Coming Soon has nothing to play). */
+  _canPick(it = this._detailItem) {
+    if (cfg(this._c, 'lock') || !it?.key || it.umc || it.ev || !['movie', 'episode', 'show'].includes(it.type)) return false;
+    return cfg(this._c, 'client_choice') === 'ask' || !!cfg(this._c, 'popup_target');
+  },
   _pickHtml(it = this._detailItem) {
-    if (cfg(this._c, 'lock')) return '';
-    if (!it?.key || it.umc || !['movie', 'episode', 'show'].includes(it.type)) return '';
-    const ask = cfg(this._c, 'client_choice') === 'ask', show = cfg(this._c, 'popup_target');
-    if (!ask && !show) return '';
-    return `<div class="plc-meta plc-target">Play on ${this._pickChip()}</div>`;
+    return this._canPick(it) ? `<div class="plc-meta plc-target">Play on ${this._pickChip()}</div>` : '';
   },
   _pickChip() {
     const cur = this._target(), icons = this._c.tv_icons || {};
@@ -3319,6 +3330,14 @@ Object.assign(PlexCenterCard.prototype, {
             ${facts ? `<div class="plc-rates">${facts}</div>` : ''}</div></div></div>
       <div class="plc-detail-body">${o.status ? `<div class="plc-cal-chips">${o.status}</div>` : ''}${o.body || ''}</div></div>`;
   },
+  /** The card's head fields for a Plex title (eyebrow, title, episode line, rating, runtime, badges). */
+  _infoHead(it, eyebrowText = null) {
+    const isEp = it.type === 'episode';
+    const kind = isEp ? [`Episode${it.show ? ` · ${it.show}` : ''}`, 'mdi:television-classic'] : it.type === 'show' ? ['TV show', 'mdi:television'] : ['Movie', 'mdi:movie-open-outline'];
+    return { art: it.art || it.still || it.poster, poster: isEp ? null : it.poster, eyebrow: eyebrowText ? [eyebrowText, kind[1]] : kind,
+      title: isEp ? it.title : (it.show || it.title), sub: isEp && it.season != null ? `S${it.season} · E${it.episode}` : '',
+      rating: this._ratingPills(it), runtime: it.duration ? fmtRun(it.duration) : '', badges: it.badges };
+  },
   /** Rating pills: every source Plex has (TMDB / IMDb / Rotten Tomatoes), else the audience ★. */
   _ratingPills(it) {
     const out = (it.ratings || []).map((r) => (r.source === 'Rotten Tomatoes'
@@ -3358,10 +3377,13 @@ Object.assign(PlexCenterCard.prototype, {
     if (cfg(this._c, 'client_choice') === 'ask' && this._tvs().length > 1 && !direct && !cfg(this._c, 'lock')) { this._openDetail(r); return; }
     if (it.offset && !direct) {
       this._pickTv = null;
-      this._sheet(`<div class="plc-detail-body"><h2 class="plc-big">${esc(it.show || it.title)}</h2>${this._pickHtml(it) || `<div class="plc-meta">${esc(tvLabel(this._tv()))}</div>`}
+      this._sheet(this._infoHtml({ ...this._infoHead(it), cls: 'plc-cq', close: 'data-close-sheet',
+        body: `${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div>` : ''}
+        <div class="plc-meta">${esc(`${fmtTime(it.offset)} watched${it.duration ? ` · ${fmtTime(Math.max(0, it.duration - it.offset))} left` : ''}`)}</div>
+        ${this._pickHtml(it) || `<div class="plc-meta plc-target">Play on <b>${esc(tvLabel(this._tv()))}</b></div>`}
         <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Resume ${fmtTime(it.offset)}</button>
         <button class="plc-btn" data-sheetplay="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>
-        ${this._openShowHtml(it)}<button class="plc-btn" data-close-sheet>Cancel</button></div></div>`, it);
+        ${this._openShowHtml(it)}<button class="plc-btn" data-close-sheet>Cancel</button></div>` }), it);
       return;
     }
     this._play(it, it.type === 'show' ? 'next' : 'play');
@@ -3434,11 +3456,11 @@ Object.assign(PlexCenterCard.prototype, {
     try { it = await ws(this._hass, 'random', { tv: this._tv().id, library: lib }); } catch (e) { this._toast(e?.message || e); return; }
     if (!it) { this._toast('Nothing to pick from.'); return; }
     let n = 5;
-    const paint = () => this._sheet(`<div class="plc-detail-img"${it.art || it.poster ? ` style="background-image:url('${cssUrl(it.art || it.poster)}')"` : ''}><h2 class="plc-big">${esc(it.show || it.title)}</h2></div>
-      <div class="plc-detail-body"><div class="plc-meta">${esc([it.year, it.duration ? fmtTime(it.duration) : '', (it.genres || []).join(', ')].filter(Boolean).join(' · '))}</div>
+    const paint = () => this._sheet(this._infoHtml({ ...this._infoHead(it, `Surprise · ${it.type === 'show' ? 'TV show' : it.type === 'episode' ? 'Episode' : 'Movie'}`), cls: 'plc-cq', close: 'data-close-sheet',
+      body: `<div class="plc-meta">${esc([it.year, it.content_rating, (it.genres || []).join(', ')].filter(Boolean).join(' · '))}</div>
       ${it.summary ? `<div>${esc(it.summary)}</div>` : ''}<div class="plc-count">${n}</div>
       <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Play now</button>
-      <button class="plc-btn" data-surprise>Something else</button><button class="plc-btn" data-close-sheet>Not tonight</button></div></div>`, it, false);
+      <button class="plc-btn" data-surprise>Something else</button><button class="plc-btn" data-close-sheet>Not tonight</button></div>` }), it, false);
     paint();
     clearInterval(this._count);
     this._count = setInterval(() => {
@@ -3575,7 +3597,10 @@ Object.assign(PlexCenterCard.prototype, {
         ${move ? '<button class="plc-chip plc-np-move" data-movemenu title="Move to a different TV"><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>' : ''}
         ${cfg(this._c, 'np_power') ? `<span class="plc-np-power">${this._powerHtml(np)}</span>` : ''}</div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
-        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${(() => { const sx = np.live && this._sessionFor(np.tv); return sx ? this._openShowHtml(sx, 'plc-chip') : ''; })()}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>`;
+        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-info-sub">${esc(np.sub)}</div>` : ''}${(() => {
+          const sx = np.live && this._sessionFor(np.tv), dur = Number(np.st?.attributes?.media_duration) || sx?.duration || 0;
+          const pills = [...(sx ? this._ratingPills(sx) : []), dur ? `<span class="plc-fact"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(fmtRun(dur))}</span>` : ''].filter(Boolean).join('');
+          return `${pills ? `<div class="plc-rates plc-np-facts">${pills}</div>` : ''}${sx ? this._openShowHtml(sx, 'plc-chip') : ''}`; })()}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>`;
   },
 
   /** Now playing for a TV that's off (or just woken) with something to resume. */
@@ -5431,17 +5456,22 @@ Object.assign(PlexCenterCard.prototype, {
   },
 
   /** Quick look: fanart, poster, what and when, status, overview, Trailer, and Play / Open when it is in Plex. */
+  /** A Sonarr / Radarr entry as the info card wants it (Calendar quick look and Coming Soon details). */
+  _calInfo(ev) {
+    const [label, icon] = CAL_TYPES[ev.release] || CAL_TYPES.episode, c = this._calColor(ev), badge = this._calBadge(ev);
+    const when = `${(ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}${this._calTime(ev) ? ` · ${this._calTime(ev)}` : ''}`;
+    const status = [ev.watched && ['Watched', '#22c55e'], ev.has_file ? ['Available', '#22c55e'] : ev.monitored ? (evDay(ev) <= ymd(new Date()) ? ['Missing', '#f59e0b'] : ['Monitored', '#818cf8']) : ['Not monitored', '#9ca3af'],
+      badge && [badge, c]].filter(Boolean).map(([t, col]) => `<span class="plc-cal-chip" style="--c:${col}">${esc(t)}</span>`).join('');
+    return { eyebrow: [`${label === 'Episodes' ? 'Episode' : label} · ${when}`, icon, c], title: ev.title, status,
+      sub: ev.kind === 'episode' ? [sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : '', runtime: ev.runtime ? fmtRun(ev.runtime * 60) : '',
+      meta: [ev.year, ev.network || ev.studio, ev.certification, (ev.genres || []).join(', ')].filter(Boolean).join(' · ') };
+  },
   async _calQuick(n) {
     const ev = this._calEvents?.[n];
     if (!ev) return;
-    const [label, icon] = CAL_TYPES[ev.release] || CAL_TYPES.episode, c = this._calColor(ev), badge = this._calBadge(ev);
-    const when = `${(ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}${this._calTime(ev) ? ` · ${this._calTime(ev)}` : ''}`;
-    const chips = [ev.watched && ['Watched', '#22c55e'], ev.has_file ? ['Available', '#22c55e'] : ev.monitored ? (evDay(ev) <= ymd(new Date()) ? ['Missing', '#f59e0b'] : ['Monitored', '#818cf8']) : ['Not monitored', '#9ca3af'],
-      badge && [badge, c]].filter(Boolean).map(([t, col]) => `<span class="plc-cal-chip" style="--c:${col}">${esc(t)}</span>`).join('');
-    const meta = [ev.year, ev.network || ev.studio, ev.certification, (ev.genres || []).join(', ')].filter(Boolean).join(' · ');
+    const ci = this._calInfo(ev), meta = ci.meta;
     this._sheet(this._infoHtml({ cls: 'plc-cq', art: ev.fanart || ev.poster, poster: ev.poster, close: 'data-close-sheet',
-      eyebrow: [`${label === 'Episodes' ? 'Episode' : label} · ${when}`, icon, c], title: ev.title,
-      sub: ev.kind === 'episode' ? [sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : '', runtime: ev.runtime ? fmtRun(ev.runtime * 60) : '', status: chips,
+      eyebrow: ci.eyebrow, title: ci.title, sub: ci.sub, runtime: ci.runtime, status: ci.status,
       body: `${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${ev.overview ? `<div>${esc(ev.overview)}</div>` : ''}
         <div class="plc-btns"><span data-calplex></span><button class="plc-btn" data-caltrailer><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>
           <button class="plc-btn" data-close-sheet>Close</button></div>` }), null, false);

@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.19.87
+
+**Changed**
+- **Every title popup shares the one card**: details, the Calendar's quick look, Coming Soon, **Surprise me** and
+  the **Resume / Start over** popup all show the fanart with the type, title, episode line, rating, runtime and
+  badges over it. Now playing uses the same title, episode line and rating / runtime pills.
+- **Coming Soon details** look like the Calendar's: release type and date, status (Available / Missing /
+  Monitored), episode line, runtime, network and genres (instead of the raw text lines).
+- **Buttons:** *Play on*, **Trailer** and **Mark watched** share one row (the season chip goes there too); **Open
+  show** sits next to Play and Start over.
+
 ## v2026.11.19.86
 
 **Changed**
