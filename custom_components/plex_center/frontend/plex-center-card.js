@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.88
+// Version: v2026.11.19.89
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.88';
+const BUILD_NUMBER = 'v2026.11.19.89';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1754,7 +1754,15 @@ const CARD_CSS = `
 .plc-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 auto; min-width: 0; }
 .plc-tools .plc-search { flex: 1 1 160px; max-width: 280px; }
 .plc-chip ha-icon { --mdc-icon-size: 18px; }
-.plc-count { font-size: 2.6em; font-weight: 800; color: var(--plc-a); text-align: center; }
+.plc-ring { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 2; width: 96px; height: 96px; padding: 0; border: 0; border-radius: 50%;
+  background: rgba(0,0,0,.45); cursor: pointer; display: grid; place-items: center; -webkit-tap-highlight-color: transparent; }
+.plc-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.plc-ring circle { fill: none; stroke-width: 4; }
+.plc-ring .bg { stroke: rgba(255,255,255,.25); }
+.plc-ring .fg { stroke: var(--plc-a); stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
+.plc-ring-n { position: relative; font-size: 2.4em; font-weight: 800; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+.plc-ring.paused .plc-ring-n { font-size: 0; }
+.plc-ring.paused .plc-ring-n::before { content: '❚❚'; font-size: 22px; letter-spacing: -2px; }
 .plc-cast { color: var(--secondary-text-color); font-size: .85em; }
 .plc-npfull { position: fixed; inset: 0; z-index: 10; overflow-y: auto; padding: 12px 14px calc(14px + env(safe-area-inset-bottom, 0px));
   background: var(--card-background-color, var(--ha-card-background, #111)); display: flex; flex-direction: column; gap: 12px; }
@@ -3328,7 +3336,7 @@ Object.assign(PlexCenterCard.prototype, {
     const facts = [o.se ? `<span class="plc-info-se">${esc(o.se)}</span>` : '', ...(o.rating || []), o.runtime ? `<span class="plc-fact"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(o.runtime)}</span>` : '',
       ...(o.badges || []).map((b) => `<span class="plc-av">${esc(b)}</span>`)].filter(Boolean).join('');
     return `<div class="plc-info${o.cls ? ` ${o.cls}` : ''}"><div class="plc-detail-img plc-info-art${o.art ? '' : ' noart'}"${o.art ? ` style="background-image:url('${cssUrl(o.art)}')"` : ''}>
-        <button class="plc-icon-btn plc-detail-close" ${o.close} title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
+        <button class="plc-icon-btn plc-detail-close" ${o.close} title="Close"><ha-icon icon="mdi:close"></ha-icon></button>${o.overlay || ''}
         <div class="plc-detail-head">${o.poster ? `<div class="plc-detail-poster" style="background-image:url('${cssUrl(o.poster)}')"></div>` : ''}
           <div class="plc-detail-ttl">${eb ? `<div class="plc-eyebrow"${col ? ` style="color:${col}"` : ''}>${ic ? `<ha-icon icon="${esc(ic)}"></ha-icon> ` : ''}${esc(eb)}</div>` : ''}
             <h2 class="plc-big">${esc(o.title || '')}</h2>${o.sub ? `<div class="plc-info-sub">${esc(o.sub)}</div>` : ''}
@@ -3460,21 +3468,36 @@ Object.assign(PlexCenterCard.prototype, {
     let it;
     try { it = await ws(this._hass, 'random', { tv: this._tv().id, library: lib }); } catch (e) { this._toast(e?.message || e); return; }
     if (!it) { this._toast('Nothing to pick from.'); return; }
-    let n = 5;
-    const paint = () => this._sheet(this._infoHtml({ ...this._infoHead(it, `Surprise · ${it.type === 'show' ? 'TV show' : it.type === 'episode' ? 'Episode' : 'Movie'}`), cls: 'plc-cq', close: 'data-close-sheet',
+    const TOTAL = 5000, C = 2 * Math.PI * 26;
+    let left = TOTAL, paused = false;
+    const ring = `<button class="plc-ring" data-surprisepause title="Pause"><svg viewBox="0 0 60 60"><circle class="bg" cx="30" cy="30" r="26"></circle>
+      <circle class="fg" cx="30" cy="30" r="26" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="0"></circle></svg><span class="plc-ring-n">${TOTAL / 1000}</span></button>`;
+    const paint = () => this._sheet(this._infoHtml({ ...this._infoHead(it, `Surprise · ${it.type === 'show' ? 'TV show' : it.type === 'episode' ? 'Episode' : 'Movie'}`), cls: 'plc-cq', close: 'data-close-sheet', overlay: ring,
       body: `<div class="plc-meta">${esc([it.year, it.content_rating, (it.genres || []).join(', ')].filter(Boolean).join(' · '))}</div>
-      ${it.summary ? `<div>${esc(it.summary)}</div>` : ''}<div class="plc-count">${n}</div>
+      ${it.summary ? `<div>${esc(it.summary)}</div>` : ''}
       <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Play now</button>
+      <button class="plc-btn" data-surprisepause><ha-icon icon="mdi:pause"></ha-icon><span>Pause</span></button>
       <button class="plc-btn" data-surprise>Something else</button><button class="plc-btn" data-close-sheet>Not tonight</button></div>` }), it, false);
     paint();
     clearInterval(this._count);
+    const TICK = 100;
+    this._surprisePause = () => {
+      paused = !paused;
+      const sheet = this._root.querySelector('.plc-sheet');
+      sheet?.querySelector('.plc-ring')?.classList.toggle('paused', paused);
+      sheet?.querySelectorAll('[data-surprisepause]').forEach((b) => { b.title = paused ? 'Continue' : 'Pause'; });
+      const btn = sheet?.querySelector('.plc-btn[data-surprisepause]');
+      if (btn) btn.innerHTML = `<ha-icon icon="mdi:${paused ? 'play-outline' : 'pause'}"></ha-icon><span>${paused ? 'Continue' : 'Pause'}</span>`;
+    };
     this._count = setInterval(() => {
-      n -= 1;
-      const c = this._root.querySelector('.plc-count');
-      if (!c) { clearInterval(this._count); return; }
-      if (n <= 0) { clearInterval(this._count); this._closeSheet(); this._play(it, it.type === 'show' ? 'next' : 'play'); return; }
-      c.textContent = n;
-    }, 1000);
+      const r = this._root.querySelector('.plc-ring');
+      if (!r) { clearInterval(this._count); return; }
+      if (paused) return;
+      left -= TICK;
+      if (left <= 0) { clearInterval(this._count); this._closeSheet(); this._play(it, it.type === 'show' ? 'next' : 'play'); return; }
+      r.querySelector('.fg').setAttribute('stroke-dashoffset', (C * (1 - left / TOTAL)).toFixed(2));
+      r.querySelector('.plc-ring-n').textContent = Math.ceil(left / 1000);
+    }, TICK);
   },
 
   // ---- now playing: side panel and full screen
@@ -3771,6 +3794,7 @@ Object.assign(PlexCenterCard.prototype, {
     if ((el = t('[data-qplay]'))) { e.stopPropagation(); this._quickPlay(this._item(el.dataset.qplay), el.hasAttribute('data-direct')); return; }
     if ((el = t('[data-qrestart]'))) { e.stopPropagation(); const { item } = this._item(el.dataset.qrestart); if (item) this._play(item, 'restart'); return; }
     if ((el = t('[data-sheetplay]'))) { const it = this._sheetItem; this._closeSheet(true); if (it) this._play(it, el.dataset.sheetplay === 'restart' ? 'restart' : (it.type === 'show' ? 'next' : 'play')); return; }
+    if (t('[data-surprisepause]')) { this._surprisePause?.(); return; }
     if (t('[data-surprise]')) { this._surprise(); return; }
     if ((el = t('[data-close-sheet]')) && (e.target === el || el.tagName === 'BUTTON')) { this._closeSheet(); return; }
     if ((el = t('[data-tv]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.tv); if (tv) this._setTv(tv); return; }

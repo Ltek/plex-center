@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.19.89
+
+**Changed**
+- **Surprise me:** the countdown is a ring around the number in the middle of the fanart, and a **Pause** button
+  stops the timer (**Continue** starts it again). Tapping the ring pauses and continues too.
+
 ## v2026.11.19.88
 
 **Changed**
