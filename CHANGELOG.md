@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.19.86
+
+**Changed**
+- **One details card everywhere.** A title's details and the Calendar's quick look are now the same card, in the
+  quick look's format with the information over the fanart:
+  - over the fanart: what it is (*Movie*, *TV show*, *Episode · <show>*, or the Calendar's release type and date),
+    the title, the episode line (*S3 · E1*), then the rating, the runtime and the 4K / HDR / Atmos badges;
+  - **rating and runtime are larger pills** (e.g. *TMDB 7.2*, *Rotten Tomatoes 🍅 91%*, *⏱ 1h 13m*);
+  - below: the Calendar's status chips, year · content rating · genres · studio, *Ends at*, the summary and cast,
+    Play on (with the season chip), and the buttons.
+
 ## v2026.11.19.85
 
 **Changed**

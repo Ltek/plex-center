@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.85
+// Version: v2026.11.19.86
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.85';
+const BUILD_NUMBER = 'v2026.11.19.86';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1053,6 +1053,8 @@ const fmtTime = (s) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`;
 };
+/** 1h 13m / 45m */
+const fmtRun = (s) => { const m = Math.round((Number(s) || 0) / 60), h = Math.floor(m / 60); return h ? `${h}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`; };
 const endsAt = (remainingS, clock = '12', now = Date.now()) =>
   new Date(now + Math.max(0, remainingS) * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: clock !== '24' });
 
@@ -1293,11 +1295,19 @@ const CARD_CSS = `
 .plc-cal-daylist { display: flex; flex-direction: column; gap: 8px; }
 .plc-cal-daylist .plc-cal-txt .plc-t { font-size: 1.05em; }
 .plc-cq { position: relative; }
-.plc-cq-art { height: 160px; background: center / cover no-repeat; border-radius: 16px 16px 0 0; }
-.plc-cq-art + .plc-detail-body .plc-cq-head { margin-top: -60px; }
-.plc-cq-head { display: flex; gap: 14px; align-items: flex-end; }
-.plc-cq-poster { flex: none; width: 92px; aspect-ratio: 2 / 3; border-radius: 8px; background: #222 center / cover no-repeat; box-shadow: 0 6px 18px rgba(0,0,0,.6); }
-.plc-cq .plc-eyebrow ha-icon { --mdc-icon-size: 14px; }
+.plc-info-art { aspect-ratio: auto; min-height: 230px; }
+.plc-info-art.noart { min-height: 170px; background: linear-gradient(135deg, var(--plc-bg2), #000); }
+.plc-info-art::after { inset: 0; background: linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.35) 35%, rgba(0,0,0,.9)); }
+.plc-info .plc-eyebrow { color: var(--plc-a); text-shadow: 0 1px 6px rgba(0,0,0,.9); }
+.plc-info .plc-eyebrow ha-icon { --mdc-icon-size: 14px; }
+.plc-info-sub { color: rgba(255,255,255,.88); font-size: 1.02em; text-shadow: 0 1px 6px rgba(0,0,0,.9); margin-top: 2px; }
+.plc-info .plc-rates { gap: 8px; margin-top: 8px; }
+.plc-rate.big, .plc-fact { font-size: .98em; padding: 4px 10px; border-radius: 7px; background: rgba(0,0,0,.6); font-weight: 600; }
+.plc-rate.big b { font-weight: 800; }
+.plc-fact { display: inline-flex; align-items: center; gap: 5px; color: #fff; }
+.plc-fact ha-icon { --mdc-icon-size: 16px; }
+.plc-info .plc-av { font-size: .85em; padding: 3px 8px; }
+.plc-cq .plc-info-art { border-radius: 16px 16px 0 0; }
 .plc-cal-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .plc-cal-chip { padding: 2px 8px; border-radius: 999px; font-size: .75em; font-weight: 600; color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
 .plc-note { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: .88em;
@@ -3130,23 +3140,18 @@ Object.assign(PlexCenterCard.prototype, {
     const it = { ...base, ...(key ? peek(key) || {} : {}) };
     this._detailItem = it;
     const img = it.art || it.still || it.poster;
-    const meta = [it.year, it.content_rating, it.duration ? fmtTime(it.duration) : '', it.rating ? `★ ${Number(it.rating).toFixed(1)}` : '', (it.genres || []).join(', ')].filter(Boolean).join(' · ');
-    const ep = it.type === 'episode' ? `<div class="plc-meta">${esc(`${it.show || ''} · S${it.season} · E${it.episode}`)}</div>` : '';
+    const meta = [it.year, it.content_rating, (it.genres || []).join(', '), it.studio].filter(Boolean).join(' · ');
     const umc = it.umc ? (it.lines || []).slice(1).filter(Boolean).map((l) => `<div class="plc-meta">${esc(l)}</div>`).join('') : '';
     const summary = it.summary || it.umc?.summary;
     const playable = it.key && ['movie', 'episode', 'show'].includes(it.type);
     const resume = it.offset ? `Resume ${fmtTime(it.offset)}` : (it.type === 'show' && it.next ? `Play S${it.next.season} · E${it.next.episode}` : 'Play');
     const ends = it.duration ? `<div class="plc-meta">Ends at ${esc(endsAt(it.duration - (it.offset || 0), cfg(this._c, 'clock')))} if started now</div>` : '';
-    const poster = it.type === 'episode' ? null : it.poster;
-    const chips = [...(it.ratings || []).map((r) => (r.source === 'Rotten Tomatoes'
-      ? `<span class="plc-rate" title="Rotten Tomatoes ${r.kind}">${r.kind === 'audience' ? '🍿' : r.fresh ? '🍅' : '🤢'} ${Math.round(r.value * 10)}%</span>`
-      : `<span class="plc-rate" title="${esc(r.source)} ${r.kind}"><b>${esc(r.source)}</b> ${Number(r.value).toFixed(1)}</span>`)),
-      ...(it.badges || []).map((b) => `<span class="plc-av">${esc(b)}</span>`)].join('');
-    slot.innerHTML = `<div class="plc-detail"><div class="plc-detail-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}>
-        <button class="plc-icon-btn plc-detail-close" data-close title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
-        <div class="plc-detail-head">${poster ? `<div class="plc-detail-poster" style="background-image:url('${cssUrl(poster)}')"></div>` : ''}
-          <div class="plc-detail-ttl"><h2 class="plc-big">${esc(it.type === 'episode' ? it.title : (it.show || it.title))}</h2>${chips ? `<div class="plc-rates">${chips}</div>` : ''}</div></div></div>
-      <div class="plc-detail-body">${ep}${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${umc}
+    const isEp = it.type === 'episode';
+    const eyebrow = isEp ? [`Episode${it.show ? ` · ${it.show}` : ''}`, 'mdi:television-classic'] : it.type === 'show' ? ['TV show', 'mdi:television'] : it.type === 'movie' ? ['Movie', 'mdi:movie-open-outline'] : null;
+    const sub = isEp && it.season != null ? `S${it.season} · E${it.episode}` : (it.type === 'show' && it.episodes ? `${it.episodes} episodes${it.watched_episodes ? ` · ${it.watched_episodes} watched` : ''}` : '');
+    slot.innerHTML = `<div class="plc-detail">${this._infoHtml({ art: img, poster: isEp ? null : it.poster, close: 'data-close', eyebrow,
+      title: isEp ? it.title : (it.show || it.title), sub, rating: this._ratingPills(it), runtime: it.duration ? fmtRun(it.duration) : '', badges: it.badges,
+      body: `${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${umc}
         ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div>` : ''}${ends}
         ${summary ? `<div>${esc(summary)}</div>` : ''}
         ${it.cast?.length ? `<div class="plc-cast">${esc(it.cast.join(', '))}</div>` : ''}
@@ -3156,7 +3161,7 @@ Object.assign(PlexCenterCard.prototype, {
           <button class="plc-btn" data-trailergo title="${it.trailer_key || it.trailer ? '' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer${it.trailer_key || it.trailer ? '' : ' (YouTube search)'}</button>
           ${it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<button class="plc-btn" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div>
           ${this._openShowHtml(it)}
-        ${it.type === 'show' ? '<div class="plc-eps" data-eps><div class="plc-msg">Loading seasons…</div></div>' : ''}</div></div>`;
+        ${it.type === 'show' ? '<div class="plc-eps" data-eps><div class="plc-msg">Loading seasons…</div></div>' : ''}` })}</div>`;
     if (it.type === 'show') this._paintSeasons(it);
     if (key && !peek(key)) {
       try { await cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'item', { tv: tv.id, key: base.key })); }
@@ -3297,6 +3302,30 @@ Object.assign(PlexCenterCard.prototype, {
     const title = homeSections(this._c).find(([x]) => x === id)?.[1] || 'All';
     this._sheet(`<div class="plc-detail-body plc-vasheet"><div class="plc-fpanel-h"><h2 class="plc-big">${esc(title)} <span class="n">${items.length}</span></h2><span class="plc-sp"></span>
       <button class="plc-btn" data-close-sheet>Close</button></div><div class="plc-grid">${items.map((it, i) => this._tile(it, `va:${id}`, i)).join('')}</div></div>`, null, false, 'fit');
+  },
+
+  /** The one info card for a title (details panel and the Calendar's quick look): fanart with the eyebrow, title,
+   *  episode line, rating, runtime and badges over it, then the body. o: { art, poster, close, eyebrow: [text, icon, color],
+   *  title, sub, rating: [html…], runtime, badges: [], status: html, cls, body } */
+  _infoHtml(o) {
+    const [eb, ic, col] = o.eyebrow || [];
+    const facts = [...(o.rating || []), o.runtime ? `<span class="plc-fact"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(o.runtime)}</span>` : '',
+      ...(o.badges || []).map((b) => `<span class="plc-av">${esc(b)}</span>`)].filter(Boolean).join('');
+    return `<div class="plc-info${o.cls ? ` ${o.cls}` : ''}"><div class="plc-detail-img plc-info-art${o.art ? '' : ' noart'}"${o.art ? ` style="background-image:url('${cssUrl(o.art)}')"` : ''}>
+        <button class="plc-icon-btn plc-detail-close" ${o.close} title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
+        <div class="plc-detail-head">${o.poster ? `<div class="plc-detail-poster" style="background-image:url('${cssUrl(o.poster)}')"></div>` : ''}
+          <div class="plc-detail-ttl">${eb ? `<div class="plc-eyebrow"${col ? ` style="color:${col}"` : ''}>${ic ? `<ha-icon icon="${esc(ic)}"></ha-icon> ` : ''}${esc(eb)}</div>` : ''}
+            <h2 class="plc-big">${esc(o.title || '')}</h2>${o.sub ? `<div class="plc-info-sub">${esc(o.sub)}</div>` : ''}
+            ${facts ? `<div class="plc-rates">${facts}</div>` : ''}</div></div></div>
+      <div class="plc-detail-body">${o.status ? `<div class="plc-cal-chips">${o.status}</div>` : ''}${o.body || ''}</div></div>`;
+  },
+  /** Rating pills: every source Plex has (TMDB / IMDb / Rotten Tomatoes), else the audience ★. */
+  _ratingPills(it) {
+    const out = (it.ratings || []).map((r) => (r.source === 'Rotten Tomatoes'
+      ? `<span class="plc-rate big" title="Rotten Tomatoes ${r.kind}">${r.kind === 'audience' ? '🍿' : r.fresh ? '🍅' : '🤢'} ${Math.round(r.value * 10)}%</span>`
+      : `<span class="plc-rate big" title="${esc(r.source)} ${r.kind}"><b>${esc(r.source)}</b> ${Number(r.value).toFixed(1)}</span>`));
+    if (!out.length && it.rating) out.push(`<span class="plc-rate big" title="Rating"><b>★</b> ${Number(it.rating).toFixed(1)}</span>`);
+    return out;
   },
 
   /** "Open show" for an episode (or season): jumps to the show's details. */
@@ -5409,15 +5438,13 @@ Object.assign(PlexCenterCard.prototype, {
     const when = `${(ev.all_day ? parseYmd(ev.at) : new Date(ev.at)).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}${this._calTime(ev) ? ` · ${this._calTime(ev)}` : ''}`;
     const chips = [ev.watched && ['Watched', '#22c55e'], ev.has_file ? ['Available', '#22c55e'] : ev.monitored ? (evDay(ev) <= ymd(new Date()) ? ['Missing', '#f59e0b'] : ['Monitored', '#818cf8']) : ['Not monitored', '#9ca3af'],
       badge && [badge, c]].filter(Boolean).map(([t, col]) => `<span class="plc-cal-chip" style="--c:${col}">${esc(t)}</span>`).join('');
-    const meta = [ev.year, ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : '', ev.certification, (ev.genres || []).join(', ')].filter(Boolean).join(' · ');
-    this._sheet(`<div class="plc-cq">${ev.fanart ? `<div class="plc-cq-art" style="background-image:url('${cssUrl(ev.fanart)}')"></div>` : ''}
-      <div class="plc-detail-body"><div class="plc-cq-head">${ev.poster ? `<div class="plc-cq-poster" style="background-image:url('${cssUrl(ev.poster)}')"></div>` : ''}
-        <div><div class="plc-eyebrow" style="color:${c}"><ha-icon icon="${icon}"></ha-icon> ${esc(label === 'Episodes' ? 'Episode' : label)} · ${esc(when)}</div>
-          <h2 class="plc-big">${esc(ev.title)}</h2>${ev.kind === 'episode' ? `<div class="plc-meta">${esc([sxe(ev), ev.episode_title].filter(Boolean).join(' · '))}</div>` : ''}
-          <div class="plc-cal-chips">${chips}</div></div></div>
-        ${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${ev.overview ? `<div>${esc(ev.overview)}</div>` : ''}
+    const meta = [ev.year, ev.network || ev.studio, ev.certification, (ev.genres || []).join(', ')].filter(Boolean).join(' · ');
+    this._sheet(this._infoHtml({ cls: 'plc-cq', art: ev.fanart || ev.poster, poster: ev.poster, close: 'data-close-sheet',
+      eyebrow: [`${label === 'Episodes' ? 'Episode' : label} · ${when}`, icon, c], title: ev.title,
+      sub: ev.kind === 'episode' ? [sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : '', runtime: ev.runtime ? fmtRun(ev.runtime * 60) : '', status: chips,
+      body: `${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${ev.overview ? `<div>${esc(ev.overview)}</div>` : ''}
         <div class="plc-btns"><span data-calplex></span><button class="plc-btn" data-caltrailer><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>
-          <button class="plc-btn" data-close-sheet>Close</button></div></div></div>`, null, false);
+          <button class="plc-btn" data-close-sheet>Close</button></div>` }), null, false);
     this._calQuickEv = ev;
     if (ev.plex_key || ev.plex_show) {   // known in Plex from the calendar's marks
       this._calHit = ev.plex_key && ev.kind === 'movie' ? { key: ev.plex_key, type: 'movie', title: ev.title }
