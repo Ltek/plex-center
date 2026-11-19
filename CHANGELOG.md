@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.19.83
+
+**Fixed**
+- Home showed *not a valid option at 'watched_pct'* and no Continue watching, Next Episode or Recently Added when
+  the card was newer than the running integration (Home Assistant not restarted after the update). The card asks
+  the old way then; restart Home Assistant to get Next Episode and the watched %.
+
 ## v2026.11.19.82
 
 **New**

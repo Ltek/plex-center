@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.82
+// Version: v2026.11.19.83
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.82';
+const BUILD_NUMBER = 'v2026.11.19.83';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -2561,7 +2561,9 @@ class PlexCenterCard extends HTMLElement {
     if (peek(key)) paint(peek(key));
     if (homeVisible(this._c, 'continue') || homeVisible(this._c, 'next') || recentIds.length) {
       const size = Math.min(100, Math.max(Number(cfg(this._c, 'max')) || 12, ...recentIds.map((id) => secStyle(this._c, id).max * (secStyle(this._c, id).kind === 'both' ? 1 : 3))));
-      cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'hubs', { tv: tv.id, size, watched_pct: pct }))
+      // an integration not restarted since the update doesn't know watched_pct yet: ask without it
+      cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'hubs', { tv: tv.id, size, watched_pct: pct })
+        .catch((e) => { if (/watched_pct/.test(e?.message || '')) return ws(this._hass, 'hubs', { tv: tv.id, size }); throw e; }))
         .then((h) => { if (main.isConnected && this._v.tab === 'home' && this._tv()?.id === tv.id) paint(h); })
         .catch((e) => { const c = main.querySelector('[data-sec="continue"]'); if (c) c.innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; });
     }
