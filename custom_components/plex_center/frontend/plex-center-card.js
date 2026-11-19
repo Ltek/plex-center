@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.89
+// Version: v2026.11.19.90
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.89';
+const BUILD_NUMBER = 'v2026.11.19.90';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -513,6 +513,7 @@ const DEFAULTS = {
   surprise_style: 'icon',
   surprise_icon: 'mdi:auto-fix',
   surprise_label: 'Surprise me',
+  surprise_countdown: true,
   lock: false,
   now_playing: 'auto',
   watching_tvs: 'all',
@@ -1760,9 +1761,9 @@ const CARD_CSS = `
 .plc-ring circle { fill: none; stroke-width: 4; }
 .plc-ring .bg { stroke: rgba(255,255,255,.25); }
 .plc-ring .fg { stroke: var(--plc-a); stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
-.plc-ring-n { position: relative; font-size: 2.4em; font-weight: 800; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.8); }
-.plc-ring.paused .plc-ring-n { font-size: 0; }
-.plc-ring.paused .plc-ring-n::before { content: '❚❚'; font-size: 22px; letter-spacing: -2px; }
+.plc-ring-t { position: relative; display: flex; flex-direction: column; align-items: center; line-height: 1; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+.plc-ring-n { font-size: 2.2em; font-weight: 800; }
+.plc-ring-c { font-size: .72em; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-top: 3px; opacity: .9; }
 .plc-cast { color: var(--secondary-text-color); font-size: .85em; }
 .plc-npfull { position: fixed; inset: 0; z-index: 10; overflow-y: auto; padding: 12px 14px calc(14px + env(safe-area-inset-bottom, 0px));
   background: var(--card-background-color, var(--ha-card-background, #111)); display: flex; flex-direction: column; gap: 12px; }
@@ -3469,30 +3470,22 @@ Object.assign(PlexCenterCard.prototype, {
     try { it = await ws(this._hass, 'random', { tv: this._tv().id, library: lib }); } catch (e) { this._toast(e?.message || e); return; }
     if (!it) { this._toast('Nothing to pick from.'); return; }
     const TOTAL = 5000, C = 2 * Math.PI * 26;
-    let left = TOTAL, paused = false;
-    const ring = `<button class="plc-ring" data-surprisepause title="Pause"><svg viewBox="0 0 60 60"><circle class="bg" cx="30" cy="30" r="26"></circle>
-      <circle class="fg" cx="30" cy="30" r="26" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="0"></circle></svg><span class="plc-ring-n">${TOTAL / 1000}</span></button>`;
+    const countdown = cfg(this._c, 'surprise_countdown') !== false;
+    let left = TOTAL;
+    const ring = !countdown ? '' : `<button class="plc-ring" data-surprisecancel title="Cancel the countdown"><svg viewBox="0 0 60 60"><circle class="bg" cx="30" cy="30" r="26"></circle>
+      <circle class="fg" cx="30" cy="30" r="26" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="0"></circle></svg><span class="plc-ring-t"><span class="plc-ring-n">${TOTAL / 1000}</span><span class="plc-ring-c">Cancel</span></span></button>`;
     const paint = () => this._sheet(this._infoHtml({ ...this._infoHead(it, `Surprise · ${it.type === 'show' ? 'TV show' : it.type === 'episode' ? 'Episode' : 'Movie'}`), cls: 'plc-cq', close: 'data-close-sheet', overlay: ring,
       body: `<div class="plc-meta">${esc([it.year, it.content_rating, (it.genres || []).join(', ')].filter(Boolean).join(' · '))}</div>
       ${it.summary ? `<div>${esc(it.summary)}</div>` : ''}
       <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Play now</button>
-      <button class="plc-btn" data-surprisepause><ha-icon icon="mdi:pause"></ha-icon><span>Pause</span></button>
-      <button class="plc-btn" data-surprise>Something else</button><button class="plc-btn" data-close-sheet>Not tonight</button></div>` }), it, false);
+      <button class="plc-btn" data-surprise><ha-icon icon="mdi:auto-fix"></ha-icon>Find New Surprise</button></div>` }), it, false);
     paint();
     clearInterval(this._count);
+    if (!countdown) return;
     const TICK = 100;
-    this._surprisePause = () => {
-      paused = !paused;
-      const sheet = this._root.querySelector('.plc-sheet');
-      sheet?.querySelector('.plc-ring')?.classList.toggle('paused', paused);
-      sheet?.querySelectorAll('[data-surprisepause]').forEach((b) => { b.title = paused ? 'Continue' : 'Pause'; });
-      const btn = sheet?.querySelector('.plc-btn[data-surprisepause]');
-      if (btn) btn.innerHTML = `<ha-icon icon="mdi:${paused ? 'play-outline' : 'pause'}"></ha-icon><span>${paused ? 'Continue' : 'Pause'}</span>`;
-    };
     this._count = setInterval(() => {
       const r = this._root.querySelector('.plc-ring');
       if (!r) { clearInterval(this._count); return; }
-      if (paused) return;
       left -= TICK;
       if (left <= 0) { clearInterval(this._count); this._closeSheet(); this._play(it, it.type === 'show' ? 'next' : 'play'); return; }
       r.querySelector('.fg').setAttribute('stroke-dashoffset', (C * (1 - left / TOTAL)).toFixed(2));
@@ -3794,7 +3787,7 @@ Object.assign(PlexCenterCard.prototype, {
     if ((el = t('[data-qplay]'))) { e.stopPropagation(); this._quickPlay(this._item(el.dataset.qplay), el.hasAttribute('data-direct')); return; }
     if ((el = t('[data-qrestart]'))) { e.stopPropagation(); const { item } = this._item(el.dataset.qrestart); if (item) this._play(item, 'restart'); return; }
     if ((el = t('[data-sheetplay]'))) { const it = this._sheetItem; this._closeSheet(true); if (it) this._play(it, el.dataset.sheetplay === 'restart' ? 'restart' : (it.type === 'show' ? 'next' : 'play')); return; }
-    if (t('[data-surprisepause]')) { this._surprisePause?.(); return; }
+    if ((el = t('[data-surprisecancel]'))) { clearInterval(this._count); el.remove(); return; }
     if (t('[data-surprise]')) { this._surprise(); return; }
     if ((el = t('[data-close-sheet]')) && (e.target === el || el.tagName === 'BUTTON')) { this._closeSheet(); return; }
     if ((el = t('[data-tv]'))) { const tv = this._tvs().find((x) => x.id === el.dataset.tv); if (tv) this._setTv(tv); return; }
@@ -4457,7 +4450,8 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._c('stagger_rotate') ? `${this._slider('stagger_gap', 'Time between sections', 1, 15, ' s')}<p class="plce-hint">${esc(this._staggerNote())}</p>` : ''}
         <div class="plce-group">Surprise me</div>
         ${this._check('surprise', 'Surprise me button')}
-        ${this._c('surprise') ? `${this._select('surprise_style', 'Surprise me shows', [['icon', 'Icon only'], ['both', 'Icon and text'], ['text', 'Text only']])}
+        ${this._c('surprise') ? `${this._check('surprise_countdown', 'Countdown: plays the pick after 5 seconds unless cancelled')}
+          ${this._select('surprise_style', 'Surprise me shows', [['icon', 'Icon only'], ['both', 'Icon and text'], ['text', 'Text only']])}
           ${this._c('surprise_style') !== 'icon' ? this._text('surprise_label', 'Text', DEFAULTS.surprise_label) : ''}
           ${this._c('surprise_style') !== 'text' ? `<div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-icon="surprise_icon" value="${esc(this._c('surprise_icon'))}"></plce-icon-pick></div>` : ''}` : ''}
         <p class="plce-hint">Extra cards under the rows: <code>home_cards:</code> with any card configs, in YAML.</p>`)}`;

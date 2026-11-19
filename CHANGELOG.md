@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.19.90
+
+**Changed**
+- **Surprise me:** the countdown ring says **Cancel**; tapping it stops the countdown and leaves the pick on screen.
+  Pause / Continue are gone. **Something else** is now **Find New Surprise**, and **Not tonight** is gone (close
+  with the X).
+
+**Added**
+- Setting **Countdown** under Every screen → Surprise me (`surprise_countdown`, on by default). Off: no ring, and
+  nothing plays until you tap Play now.
+
 ## v2026.11.19.89
 
 **Changed**
