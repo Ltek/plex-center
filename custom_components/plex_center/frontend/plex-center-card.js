@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.17.81
+// Version: v2026.11.19.82
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.17.81';
+const BUILD_NUMBER = 'v2026.11.19.82';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -236,7 +236,7 @@ const DEFAULT_HEADER_PHONE = [
   { id: 'achips', section: 'library', row: 2, align: 'left', hidden: true }, { id: 'watchchip', section: 'library', row: 1, align: 'right', hidden: true }];
 const ALIGNS = ['left', 'center', 'right'];
 const PLACES = ['library', 'player', 'footer', 'popover'];
-const HOME_BUILTIN = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['recent', 'Recently Added'], ['soon', 'Coming Soon']];
+const HOME_BUILTIN = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['next', 'Next Episode'], ['recent', 'Recently Added'], ['soon', 'Coming Soon']];
 const SEC_TYPE_TITLE = { recent: 'Recently Added', upcoming: 'Coming Soon', plexhub: 'Plex row' };
 const SEC_TYPE_ICON = { recent: 'mdi:plex', upcoming: 'mdi:calendar-clock', plexhub: 'mdi:star-shooting-outline', sensor: 'mdi:view-carousel' };
 const SEC_KIND = { recent: 'recent', upcoming: 'soon', plexhub: 'hub' };
@@ -265,7 +265,7 @@ const SCREEN_DEFAULTS = Object.fromEntries(SCREENS.flatMap(([sc]) => Object.entr
 
 // ---------------------------------------------------------------------------------------------------- item look
 /** Kinds of item, each with its own look per screen type (Appearance → Rows; the Calendar's in its panel for now). */
-const ITEM_KINDS = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['recent', 'Recently Added'], ['soon', 'Coming Soon'],
+const ITEM_KINDS = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['next', 'Next Episode'], ['recent', 'Recently Added'], ['soon', 'Coming Soon'],
   ['hub', 'Plex rows'], ['library', 'Library grid'], ['calendar', 'Calendar']];
 /** The text lines of an item: [id, label, default size px, default weight]. */
 const LOOK_LINES = [['title', 'Title', 15, '700'], ['info', 'Episode / release info', 12, '600'], ['when', 'Air date and time', 12, '400'], ['meta', 'Network / studio · runtime', 11, '400'],
@@ -521,6 +521,7 @@ const DEFAULTS = {
   hold_ms: 2000,
   np_power: false,
   watching_apps: true,
+  watched_pct: 95,
   watching_resume: 'keep',
   watching_forget_h: 12,
   watching_resume_apps: false,
@@ -973,6 +974,7 @@ function homeSections(c) {
 function homeOrder(c) {
   const all = homeSections(c).map(([id]) => id);
   const want = (c.home_order || []).filter((id) => all.includes(id));
+  if (!want.includes('next') && want.includes('continue') && all.includes('next')) want.splice(want.indexOf('continue') + 1, 0, 'next');   // 2026.11.19: Next Episode after Continue watching
   return [...want, ...all.filter((id) => !want.includes(id))];
 }
 const homeVisible = (c, id) => !(c.home_hidden || []).includes(id);
@@ -1153,6 +1155,8 @@ const CARD_CSS = `
 .plc-sess.resume { opacity: .9; border: 1px dashed color-mix(in srgb, var(--warning-color, #ff9800) 60%, transparent); cursor: pointer; }
 .plc-sess.resume .plc-sess-art.app ha-icon { color: var(--warning-color, #ff9800); }
 .plc-resume-st { color: var(--warning-color, #ff9800); }
+.plc-chip.plc-openshow { margin: 6px 0 2px; }
+.plc-side-info .plc-chip.plc-openshow { align-self: center; }
 .plc-resume-btns { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 .plc-resume-btns .plc-btn { padding: 4px 12px; min-height: 30px; }
 .plc-select, .plc-search { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--divider-color, #444); background: var(--plc-bg2);
@@ -2534,20 +2538,30 @@ class PlexCenterCard extends HTMLElement {
     this._paintPlexHubs();
     this._renderExtraCards();
     const tv = this._tv();
-    const key = `hubs:${tv.id}`;
+    const pct = Math.min(100, Math.max(50, Number(cfg(this._c, 'watched_pct')) || 95));
+    const key = `hubs:${tv.id}:${pct}`;
     const recentIds = homeOrder(this._c).filter((id) => secType(this._c, id) === 'recent' && homeVisible(this._c, id) && !secStyle(this._c, id).s.source);
     homeOrder(this._c).filter((id) => secType(this._c, id) === 'recent' && homeVisible(this._c, id) && secStyle(this._c, id).s.source).forEach((id) => this._paintRecent(id));
     const paint = (h) => {
       const c = main.querySelector('[data-sec="continue"]');
       this._lists.set('continue', h.continue || []);
       if (c) { if (h.continue?.length) this._paintContinue(c, h.continue); else c.remove(); }
+      const nx = main.querySelector('[data-sec="next"]'), next = h.next || [];
+      this._lists.set('next', next);
+      if (nx) {
+        const st = secStyle(this._c, 'next');
+        if (!next.length) nx.remove();
+        else sig(nx, JSON.stringify([JSON.stringify(st.s), this._c._screen, JSON.stringify(lookOwn(this._c, 'next')), this._v.secOpen?.next, next.map((x) => [x.key, x.watched])]),
+          () => this._fill('next', nx, 'Next Episode', next.length, next.slice(0, st.max), 'next'));
+      }
       this._recent = h.recent || [];
       for (const id of recentIds) this._paintRecent(id);
+      this._paintUpcoming();   // drop what just turned out to be in Plex
     };
     if (peek(key)) paint(peek(key));
-    if (homeVisible(this._c, 'continue') || recentIds.length) {
+    if (homeVisible(this._c, 'continue') || homeVisible(this._c, 'next') || recentIds.length) {
       const size = Math.min(100, Math.max(Number(cfg(this._c, 'max')) || 12, ...recentIds.map((id) => secStyle(this._c, id).max * (secStyle(this._c, id).kind === 'both' ? 1 : 3))));
-      cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'hubs', { tv: tv.id, size }))
+      cached(this._hass, key, REFRESH_MS, () => ws(this._hass, 'hubs', { tv: tv.id, size, watched_pct: pct }))
         .then((h) => { if (main.isConnected && this._v.tab === 'home' && this._tv()?.id === tv.id) paint(h); })
         .catch((e) => { const c = main.querySelector('[data-sec="continue"]'); if (c) c.innerHTML = `<div class="plc-msg err">${esc(e?.message || e)}</div>`; });
     }
@@ -2616,6 +2630,24 @@ class PlexCenterCard extends HTMLElement {
     return pool;
   }
 
+  /** Keys of what is already in Plex (Recently Added, Continue watching, Next Episode): movies by title, episodes by show + SxE. */
+  _plexKeys() {
+    const low = (x) => String(x || '').trim().toLowerCase(), out = new Set();
+    for (const it of [...(this._recent || []), ...(this._lists.get('continue') || []), ...(this._lists.get('next') || [])]) {
+      if (it.type === 'movie') out.add(`mv:${low(it.title)}`);
+      else if (it.type === 'episode' && it.season != null) out.add(`ep:${low(it.show)}:${Number(it.season)}:${Number(it.episode)}`);
+    }
+    return out;
+  }
+  /** A Coming Soon item that is already in Plex. */
+  _alreadyIn(keys, { type, title, season, episode, number }) {
+    const low = (x) => String(x || '').trim().toLowerCase();
+    if (type === 'movie') return keys.has(`mv:${low(title)}`);
+    const m = /S(\d+)\s*E(\d+)/i.exec(String(number || '')) || /(\d+)x(\d+)/.exec(String(number || ''));
+    const sn = season ?? (m ? Number(m[1]) : null), en = episode ?? (m ? Number(m[2]) : null);
+    return sn != null && en != null && keys.has(`ep:${low(title)}:${Number(sn)}:${Number(en)}`);
+  }
+
   _sensorKinds(ids) {
     const auto = upcomingSensors(this._hass, { upcoming_sensors: ids });
     return ids.map((id) => auto.find((x) => x.id === id) || { id, kind: 'both' });
@@ -2631,7 +2663,9 @@ class PlexCenterCard extends HTMLElement {
       const arrOk = Object.values(this._conf?.arr || {}).some(Boolean);
       if (arrOk && (st.s.source === 'arr' || !sensors.length)) { this._paintUpcomingArr(id, sec, st); continue; }
       if (!sensors.length) { sec.remove(); continue; }
-      const pool = this._sensorItems(sensors).sort((a, b) => String(a.airdate).localeCompare(String(b.airdate)));
+      const have = this._plexKeys();   // already in Plex (linked, or in Recently Added / Continue / Next): not coming soon
+      const pool = this._sensorItems(sensors).filter((x) => !x.key && !this._alreadyIn(have, { type: x.type, title: x.title, number: x.umc?.number }))
+        .sort((a, b) => String(a.airdate).localeCompare(String(b.airdate)));
       const mine = this._byKind(id, pool), items = mine.slice(0, st.max);
       this._lists.set(id, items);
       sig(sec, JSON.stringify([JSON.stringify(this._c.home_style?.[id] || {}), cfg(this._c, 'image_style'), this._v.secOpen?.[id], this._v.secKind?.[id],
@@ -2646,9 +2680,11 @@ class PlexCenterCard extends HTMLElement {
     try { res = await cached(this._hass, `cal:soon:${ymd(start)}`, 300000, () => ws(this._hass, 'calendar', { start: start.toISOString(), end: addDays(start, 60).toISOString() })); }
     catch { return; }
     if (!sec.isConnected) return;
-    const now = Date.now(), seen = new Set(), pool = [];
+    const now = Date.now(), seen = new Set(), pool = [], have = this._plexKeys();
     for (const ev of res.events || []) {
       if (!ev.all_day && new Date(ev.at).getTime() < now - 3 * 3600 * 1000) continue;   // already aired
+      // already in the system (downloaded, in Plex, or in Recently Added / Continue / Next): not coming soon
+      if (ev.has_file || ev.plex_key || this._alreadyIn(have, { type: ev.kind === 'movie' ? 'movie' : 'episode', title: ev.title, season: ev.season, episode: ev.episode })) continue;
       const k = ev.kind === 'episode' ? `tv:${ev.tvdb || ev.title}` : `mv:${ev.tmdb || ev.title}`;
       if (seen.has(k)) continue;
       seen.add(k);
@@ -2825,7 +2861,7 @@ class PlexCenterCard extends HTMLElement {
         ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div><div class="plc-meta">${esc(left)}</div>` : ''}
         <div class="plc-btns"><button class="plc-btn main" data-qplay="continue|${i}" data-direct><ha-icon icon="mdi:play"></ha-icon>Resume${it.offset ? ` ${fmtTime(it.offset)}` : ''}</button>
           <button class="plc-btn" data-qrestart="continue|${i}"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>
-          <button class="plc-btn" data-cwmark="${i}" title="Mark as watched"><ha-icon icon="mdi:check"></ha-icon>Mark watched</button></div>
+          <button class="plc-btn" data-cwmark="${i}" title="Mark as watched"><ha-icon icon="mdi:check"></ha-icon>Mark watched</button>${this._openShowHtml(it)}</div>
         <div class="plc-pager"><button class="plc-icon-btn" data-hero="-1" title="Previous"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
           ${i + 1} / ${items.length}<button class="plc-icon-btn" data-hero="1" title="Next"><ha-icon icon="mdi:chevron-right"></ha-icon></button></div></div></div>`;
   }
@@ -3100,6 +3136,7 @@ Object.assign(PlexCenterCard.prototype, {
           ${it.type !== 'show' && (it.offset || it.watched) ? '<button class="plc-btn" data-play="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>' : ''}` : ''}
           <button class="plc-btn" data-trailergo title="${it.trailer_key || it.trailer ? '' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer${it.trailer_key || it.trailer ? '' : ' (YouTube search)'}</button>
           ${it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<button class="plc-btn" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div>
+          ${this._openShowHtml(it)}
         ${it.type === 'show' ? '<div class="plc-eps" data-eps><div class="plc-msg">Loading seasons…</div></div>' : ''}</div></div>`;
     if (it.type === 'show') this._paintSeasons(it);
     if (key && !peek(key)) {
@@ -3224,6 +3261,18 @@ Object.assign(PlexCenterCard.prototype, {
     this._renderDetail(); this._renderNP(true);
   },
 
+  /** "Open show" for an episode (or season): jumps to the show's details. */
+  _openShowHtml(it, cls = 'plc-btn') {
+    const key = it && (it.type === 'episode' || it.type === 'season') ? it.show_key : null;
+    return key ? `<button class="${cls} plc-openshow" data-openshow="${esc(key)}" data-showtitle="${esc(it.show || '')}"><ha-icon icon="mdi:television-classic"></ha-icon>Open show</button>` : '';
+  },
+  _openShow(key, title) {
+    if (this._root.querySelector('.plc-sheet')) this._closeSheet(true);
+    if (this._v.npFull) { this._v.npFull = false; this._renderNP(true); }
+    this._lists.set('openshow', [{ key: String(key), type: 'show', title: title || '' }]);
+    this._openDetail({ list: 'openshow', i: 0 });
+  },
+
   /** A ▶ tap: in-progress titles ask Resume / Start over; "ask each time" asks for the TV; a show plays its next episode. */
   _quickPlay(r, direct) {
     const it = r.item;
@@ -3234,7 +3283,7 @@ Object.assign(PlexCenterCard.prototype, {
       this._sheet(`<div class="plc-detail-body"><h2 class="plc-big">${esc(it.show || it.title)}</h2>${this._pickHtml(it) || `<div class="plc-meta">${esc(tvLabel(this._tv()))}</div>`}
         <div class="plc-btns"><button class="plc-btn main" data-sheetplay="play"><ha-icon icon="mdi:play"></ha-icon>Resume ${fmtTime(it.offset)}</button>
         <button class="plc-btn" data-sheetplay="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>
-        <button class="plc-btn" data-close-sheet>Cancel</button></div></div>`, it);
+        ${this._openShowHtml(it)}<button class="plc-btn" data-close-sheet>Cancel</button></div></div>`, it);
       return;
     }
     this._play(it, it.type === 'show' ? 'next' : 'play');
@@ -3448,7 +3497,7 @@ Object.assign(PlexCenterCard.prototype, {
         ${move ? '<button class="plc-chip plc-np-move" data-movemenu title="Move to a different TV"><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>' : ''}
         ${cfg(this._c, 'np_power') ? `<span class="plc-np-power">${this._powerHtml(np)}</span>` : ''}</div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
-        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>`;
+        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-meta">${esc(np.sub)}</div>` : ''}${(() => { const sx = np.live && this._sessionFor(np.tv); return sx ? this._openShowHtml(sx, 'plc-chip') : ''; })()}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>`;
   },
 
   /** Now playing for a TV that's off (or just woken) with something to resume. */
@@ -3460,7 +3509,7 @@ Object.assign(PlexCenterCard.prototype, {
         <button class="plc-icon-btn plc-np-x" data-npx title="Close"><ha-icon icon="mdi:close"></ha-icon></button></div>
       <div class="plc-side-info"><div class="plc-eyebrow">${off ? 'TV is off' : 'Ready to resume'} · ${esc(tvLabel(np.tv))}</div>
         <h2 class="plc-big">${esc(r.show || r.title || r.app || 'Paused')}</h2>${sub ? `<div class="plc-meta">${esc(sub)}</div>` : ''}
-        <div class="plc-meta">${esc(this._pausedAt(r))}</div>
+        <div class="plc-meta">${esc(this._pausedAt(r))}</div>${(() => { const d = r.kind === 'plex' && peek(`item:${np.tv.id}:${r.key}`); return d ? this._openShowHtml(d, 'plc-chip') : ''; })()}
         ${r.kind === 'app' ? `<p class="plc-meta">Opens ${esc(r.app || 'the app')} and presses Play; if the TV closed it, pick the title in its Continue watching row.</p>` : ''}
         <div class="plc-btns"><button class="plc-btn main" data-resume="${esc(np.tv.id)}"><ha-icon icon="mdi:power"></ha-icon>${off ? 'Turn on and resume' : 'Resume'}</button>
           <button class="plc-btn" data-resumex="${esc(np.tv.id)}"><ha-icon icon="mdi:close"></ha-icon>Forget it</button></div></div></div>`;
@@ -3528,6 +3577,7 @@ Object.assign(PlexCenterCard.prototype, {
   _onClick(e) {
     const t = (sel) => e.target.closest?.(sel);
     let el;
+    if ((el = t('[data-openshow]'))) { e.stopPropagation(); this._closeMenu?.(); this._openShow(el.dataset.openshow, el.dataset.showtitle); return; }
     const menu = this._root.querySelector('.plc-menu');
     if (menu) {
       const inMenu = !!t('.plc-menu'), sameBtn = this._menuAnchor && this._menuAnchor.contains(e.target);
@@ -4218,6 +4268,7 @@ class PlexCenterCardEditor extends HTMLElement {
   _panelFor(id) {
     if (id === 'watching') return 'sec-watching';
     if (id === 'continue') return 'sec-continue';
+    if (id === 'next') return 'sec-next';
     const t = secType(this._config, id);
     return ['recent', 'upcoming', 'plexhub'].includes(t) ? `row-${id}` : '';
   }
@@ -4733,7 +4784,10 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-gh">Sections</div>
       <div class="plce-row plce-wrap plce-addrow"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>
       ${this._panel('sec-watching', 'mdi:account-eye', 'Watching now', this._watchBody())}
-      ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', this._profile(`${this._secStyleBody('continue', 'visual')}${this._secStyleBody('continue', 'rest')}`, 'row:continue'))}
+      ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', `${this._profile(`${this._secStyleBody('continue', 'visual')}${this._secStyleBody('continue', 'rest')}`, 'row:continue')}
+        ${this._everyScreen(`${this._slider('watched_pct', 'Counts as watched at', 50, 100, ' %')}<p class="plce-hint">An episode or movie watched this far leaves Continue watching; for a show, the episode after it moves to <b>Next Episode</b>. Continue watching shows each show's latest episode in progress.</p>`)}`)}
+      ${this._panel('sec-next', 'mdi:skip-next-circle-outline', 'Next Episode', `${this._profile(`${this._secStyleBody('next', 'visual')}${this._secStyleBody('next', 'rest')}`, 'row:next')}
+        ${this._everyScreen('<p class="plce-hint">For each show you are watching, the next episode you haven\'t started (it is in Plex, so it isn\'t in Coming Soon). Shows with an episode in progress are in Continue watching instead.</p>')}`)}
       ${this._rowPanels()}
       ${this._panel('library', 'mdi:bookshelf', 'Library', this._libraryPanel())}
       ${this._panel('calendar', 'mdi:calendar-month', 'Calendar', this._calendarBody())}
@@ -5297,6 +5351,7 @@ Object.assign(PlexCenterCard.prototype, {
     if (ev.plex_key || ev.plex_show) {   // known in Plex from the calendar's marks
       this._calHit = ev.plex_key && ev.kind === 'movie' ? { key: ev.plex_key, type: 'movie', title: ev.title }
         : { key: ev.plex_show || ev.plex_key, type: 'show', title: ev.title };
+      if (ev.kind === 'episode' && ev.plex_show) this._root.querySelector('.plc-cq [data-caltrailer]')?.insertAdjacentHTML('beforebegin', this._openShowHtml({ type: 'episode', show_key: ev.plex_show, show: ev.title }));
       const slot = this._root.querySelector('.plc-cq [data-calplex]'), tgt = this._target();
       this._root.querySelector('.plc-cq .plc-btns')?.insertAdjacentHTML('beforebegin', `<div class="plc-meta plc-target">Play on ${this._pickChip()}</div>`);
       if (slot) slot.outerHTML = `<button class="plc-btn main" data-calplay><ha-icon icon="mdi:${tgt === 'local' ? 'open-in-new' : 'play'}"></ha-icon>${tgt === 'local' ? 'Open on this device'
@@ -5310,6 +5365,7 @@ Object.assign(PlexCenterCard.prototype, {
       const slot = this._root.querySelector('.plc-cq [data-calplex]');
       if (!hit || !slot) return;
       this._calHit = hit;
+      if (hit.type === 'show') this._root.querySelector('.plc-cq [data-caltrailer]')?.insertAdjacentHTML('beforebegin', this._openShowHtml({ type: 'episode', show_key: hit.key, show: hit.title }));
       const tgt = this._target();
       this._root.querySelector('.plc-cq .plc-btns')?.insertAdjacentHTML('beforebegin', `<div class="plc-meta plc-target">Play on ${this._pickChip()}</div>`);
       slot.outerHTML = `<button class="plc-btn main" data-calplay><ha-icon icon="mdi:${tgt === 'local' ? 'open-in-new' : 'play'}"></ha-icon>${tgt === 'local' ? 'Open on this device'

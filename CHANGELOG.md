@@ -1,5 +1,22 @@
 # Changelog
 
+## v2026.11.19.82
+
+**New**
+- **Next Episode** section on Home (right after Continue watching): for each show you're watching, the next
+  episode you haven't started. It's in Plex, so it isn't in Coming Soon. Shows with an episode in progress stay in
+  Continue watching. Its own panel in the editor (Screen Profile like the other rows).
+- **Counts as watched at** (Continue watching → Every screen, 95 % by default): an episode or movie watched this far
+  leaves Continue watching; for a show, the episode after it moves to Next Episode.
+- **Open show** on every episode: its details, the Continue watching banner, the Resume / Start over popup, Now
+  playing (and its *TV is off* panel) and the Calendar's quick look. It opens the show's seasons and episodes.
+
+**Changed**
+- **Continue watching** shows each show once, with its latest episode in progress, and leaves out anything past the
+  watched %.
+- **Coming Soon** leaves out what's already in Plex: downloaded (Sonarr / Radarr), linked to Plex, or in Recently
+  Added, Continue watching or Next Episode.
+
 ## v2026.11.17.81
 
 **Fixed**

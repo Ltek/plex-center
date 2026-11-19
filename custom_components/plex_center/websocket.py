@@ -98,6 +98,78 @@ def tv_state(hass: HomeAssistant, tv: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _safe(fn) -> list:
+    if fn is None:
+        return []
+    try:
+        return list(fn() or [])
+    except Exception:  # noqa: BLE001 - an older server without On Deck
+        return []
+
+
+def _progress(item) -> float:
+    dur, off = getattr(item, "duration", None) or 0, getattr(item, "viewOffset", None) or 0
+    return 100.0 * off / dur if dur else 0.0
+
+
+def _next_episode(ep):
+    """The episode after this one (the next in its season, else the next season's first), unwatched; or None."""
+    try:
+        eps = [e for e in ep.show().episodes() if getattr(e, "parentIndex", None) is not None and getattr(e, "index", None) is not None]
+    except Exception:  # noqa: BLE001
+        return None
+    eps.sort(key=lambda e: (e.parentIndex, e.index))
+    after = [e for e in eps if (e.parentIndex, e.index) > (ep.parentIndex, ep.index) and e.parentIndex > 0]
+    return next((e for e in after if not getattr(e, "viewCount", 0)), None)
+
+
+def split_continue(items: list, pct: float, next_of) -> tuple[list, list]:
+    """Plex's Continue Watching + On Deck → (continue, next).
+
+    continue: movies and episodes in progress below `pct` %, one per show (its latest episode);
+    next: per show without one in progress, the next episode not started yet (an episode watched past `pct` %
+    counts as watched: the one after it). Order kept as Plex gives it (most recent first).
+    """
+    seen: set[str] = set()
+    cont, nxt, shows_cont, shows_next = [], [], {}, {}
+    for it in items:
+        key = str(getattr(it, "ratingKey", ""))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        t, prog = getattr(it, "type", None), _progress(it)
+        watched = bool(getattr(it, "viewCount", 0)) and not getattr(it, "viewOffset", 0)
+        if t == "movie":
+            if 0 < prog < pct and not watched:
+                cont.append(it)
+            continue
+        if t != "episode":
+            continue
+        show = str(getattr(it, "grandparentRatingKey", "") or getattr(it, "grandparentTitle", ""))
+        order = (getattr(it, "parentIndex", 0) or 0, getattr(it, "index", 0) or 0)
+        if prog >= pct:
+            it = next_of(it)          # watched, as far as the card is concerned: the one after it is next
+            if it is None:
+                continue
+            prog, order = 0.0, (getattr(it, "parentIndex", 0) or 0, getattr(it, "index", 0) or 0)
+        if prog > 0 and not watched:
+            if show not in shows_cont or order > shows_cont[show][0]:
+                shows_cont[show] = (order, it)
+        elif not getattr(it, "viewCount", 0):
+            if show not in shows_next or order < shows_next[show][0]:
+                shows_next[show] = (order, it)
+    for it in items:   # keep Plex's order (most recent first)
+        if getattr(it, "type", None) != "episode":
+            continue
+        show = str(getattr(it, "grandparentRatingKey", "") or getattr(it, "grandparentTitle", ""))
+        if show in shows_cont and shows_cont[show][1] not in cont:
+            cont.append(shows_cont[show][1])
+        elif show in shows_next and show not in shows_cont and shows_next[show][1] not in nxt:
+            nxt.append(shows_next[show][1])
+    rank = {id(x): i for i, x in enumerate(items)}
+    return sorted(cont, key=lambda x: rank.get(id(x), len(items))), nxt
+
+
 # ------------------------------------------------------------------------------------------- commands
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/config", vol.Optional("entry_id"): str})
@@ -227,7 +299,8 @@ async def ws_letters(hass: HomeAssistant, connection, msg) -> None:
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/hubs", vol.Optional("entry_id"): str, vol.Optional("tv"): str,
-                                  vol.Optional("library"): str, vol.Optional("size", default=20): vol.All(int, vol.Range(min=1, max=100))})
+                                  vol.Optional("library"): str, vol.Optional("size", default=20): vol.All(int, vol.Range(min=1, max=100)),
+                                  vol.Optional("watched_pct", default=95): vol.All(vol.Coerce(float), vol.Range(min=50, max=100))})
 @websocket_api.async_response
 async def ws_hubs(hass: HomeAssistant, connection, msg) -> None:
     """Continue Watching and Recently Added for the TV's user (whole server, or one library)."""
@@ -236,15 +309,21 @@ async def ws_hubs(hass: HomeAssistant, connection, msg) -> None:
     sign = _signer(hass, entry.runtime_data.conn.server_id)
     n = msg["size"]
 
+    pct = msg.get("watched_pct", 95)
+
     def fetch(server):
         if msg.get("library"):
             sec = _section(server, msg["library"])
             cont, recent = sec.continueWatching(), sec.recentlyAdded(maxresults=n)
+            deck = _safe(getattr(sec, "onDeck", None))
         else:
             cont = server.continueWatching()
             recent = [i for s in _sections(server) for i in s.recentlyAdded(maxresults=n)]
             recent.sort(key=lambda i: getattr(i, "addedAt", None) or datetime.min, reverse=True)
-        return {"continue": [item_dict(i, sign) for i in cont[:n]], "recent": [item_dict(i, sign) for i in recent[:n]]}
+            deck = _safe(getattr(server.library, "onDeck", None))
+        cw, nxt = split_continue([*cont, *deck], pct, lambda ep: _next_episode(ep))
+        return {"continue": [item_dict(i, sign) for i in cw[:n]], "next": [item_dict(i, sign) for i in nxt[:n]],
+                "recent": [item_dict(i, sign) for i in recent[:n]]}
 
     await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
 

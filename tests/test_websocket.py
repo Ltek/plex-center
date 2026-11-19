@@ -193,3 +193,25 @@ async def test_details_badges_ratings_next_episode_and_letters(ws):
     assert details(EP1)["next"]["key"] == "715101"
     m = await ws(type="plex_center/letters", tv="living_room_tv", library="2")
     assert m["result"]["letters"] == [{"letter": "B", "size": 1, "start": 0}, {"letter": "T", "size": 2, "start": 1}]
+
+
+def test_split_continue_next_episode():
+    """Continue: in progress below the watched %, the latest per show; Next: the next unstarted episode per show."""
+    from custom_components.plex_center.websocket import split_continue
+
+    def ep(key, show, season, n, offset=0, views=0):
+        return NS(ratingKey=key, type="episode", grandparentRatingKey=show, grandparentTitle=str(show), parentIndex=season, index=n,
+                  duration=1000, viewOffset=offset, viewCount=views)
+
+    a2, a3 = ep(1, "A", 1, 2, offset=300), ep(2, "A", 1, 3, offset=200)        # two in progress: keep the latest (S1E3)
+    b5 = ep(3, "B", 2, 5, offset=970)                                          # 97 %: watched -> its next episode
+    b6 = ep(4, "B", 2, 6)
+    c1 = ep(5, "C", 1, 1)                                                      # not started: next episode
+    film_done = NS(ratingKey=6, type="movie", duration=1000, viewOffset=960, viewCount=0)
+    film = NS(ratingKey=7, type="movie", duration=1000, viewOffset=400, viewCount=0)
+    a4 = ep(8, "A", 1, 4)                                                      # A is in progress: not in Next
+    cont, nxt = split_continue([a2, b5, film_done, a3, c1, film, a4], 95, lambda e: b6 if e is b5 else None)
+    assert [x.ratingKey for x in cont] == [2, 7]
+    assert [x.ratingKey for x in nxt] == [4, 5]
+    cont, nxt = split_continue([b5], 98, lambda e: b6)                        # 97 % < 98 %: still continue
+    assert [x.ratingKey for x in cont] == [3] and nxt == []
