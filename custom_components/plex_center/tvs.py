@@ -10,7 +10,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
-from .const import PLEX_PKG, PREVIEW_MAX_S, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER
+from .const import TV_CAST, PLEX_PKG, PREVIEW_MAX_S, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER
 
 OFF_STATES = ("off", "standby")
 GONE_STATES = ("unavailable", "unknown")
@@ -64,7 +64,7 @@ def detect_tvs(hass: HomeAssistant, users: list[dict[str, Any]] | None = None) -
     the TV's name.
     """
     pipups, adbs, plexes = players(hass, "pipup"), players(hass, "androidtv"), players(hass, "plex")
-    remotes = players(hass, "androidtv_remote")
+    remotes, casts = players(hass, "androidtv_remote"), players(hass, "cast")
     used: set[str] = set()
 
     def pick(cands: list[str], anchor: str, name: str) -> str | None:
@@ -90,6 +90,9 @@ def detect_tvs(hass: HomeAssistant, users: list[dict[str, Any]] | None = None) -
         if remote := pick(remotes, anchor, name):
             tv[TV_REMOTE] = remote
             used.add(remote)
+        if cast := pick(casts, anchor, name):
+            tv[TV_CAST] = cast
+            used.add(cast)
         if plex := pick(plexes, anchor, name):
             tv[TV_PLEX] = plex
             used.add(plex)
@@ -106,22 +109,22 @@ def detect_tvs(hass: HomeAssistant, users: list[dict[str, Any]] | None = None) -
 
 
 def fill_remotes(hass: HomeAssistant, tvs: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
-    """TVs set up before Plex Center knew Android TV Remote: add each one's player (same area, else its name
-    in the entity id). Returns the new list, or None when nothing changed."""
-    remotes = players(hass, "androidtv_remote")
-    used = {tv.get(TV_REMOTE) for tv in tvs}
-    out, changed = [], False
-    for tv in tvs:
-        tv = dict(tv)
-        if not tv.get(TV_REMOTE):
+    """TVs set up before Plex Center knew Android TV Remote / Cast: add each one's players (same area, else its
+    name in the entity id). Returns the new list, or None when nothing changed."""
+    out, changed = [dict(tv) for tv in tvs], False
+    for field, integ in ((TV_REMOTE, "androidtv_remote"), (TV_CAST, "cast")):
+        cands = players(hass, integ)
+        used = {tv.get(field) for tv in out}
+        for tv in out:
+            if tv.get(field):
+                continue
             anchor = tv.get(TV_PIPUP) or tv.get(TV_ADB)
             area, k = (area_of(hass, anchor) if anchor else None), _key(tv.get(TV_NAME) or "")
-            hit = next((r for r in remotes if r not in used and area and area_of(hass, r) == area), None) \
-                or next((r for r in remotes if r not in used and len(k) >= 3 and k in norm(r)), None)
+            hit = next((r for r in cands if r not in used and area and area_of(hass, r) == area), None) \
+                or next((r for r in cands if r not in used and len(k) >= 3 and k in norm(r)), None)
             if hit:
-                tv[TV_REMOTE], changed = hit, True
+                tv[field], changed = hit, True
                 used.add(hit)
-        out.append(tv)
     return out if changed else None
 
 

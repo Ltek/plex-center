@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.19.91
+
+**Added**
+- **Posters for other apps** (HBO Max, Prime Video, ...) in Now playing and Watching now. The title comes from the
+  first player that reports one: **PiPup**, then **ADB** (its attributes, else the app's media session, read at
+  most every 30 s), then **Cast**. The poster and fanart come from the first source that knows the title: your
+  **Plex library**, **Plex Discover**, **Radarr**, **Sonarr**. A source that isn't working is skipped. Found
+  posters are kept a day; an unknown title is asked again after an hour.
+- Each TV can have its **Cast player** (found automatically by area or name; also in the TV's settings).
+- Websocket `plex_center/app_media`.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.19.90
 
 **Changed**

@@ -30,6 +30,7 @@
           "adb": "Android TV (ADB) player",
           "plex_client": "Plex player of this TV",
           "remote": "Android TV Remote player of this TV",
+          "cast": "Cast player of this TV",
           "route": "Play with"
         },
         "data_description": {
@@ -39,6 +40,7 @@
           "adb": "The Android TV (ADB) integration's media player. Used to play when there is no PiPup (no exact seek), and for the TV's screenshot when nothing plays.",
           "plex_client": "The Plex integration's player for this TV's Plex app. Gives the poster and episode while something plays. Plex Web and Plex HTPC can also be played on directly through it.",
           "remote": "Optional. The Android TV Remote integration's player: Plex Center reads the TV's power from it and turns the TV on and off with its Power key (never a deep sleep).",
+          "cast": "Optional. The Google Cast integration's player: what another app (HBO Max, Prime Video...) plays, when PiPup and ADB don't say.",
           "route": "Automatic: Plex remote control when the player accepts it (Plex Web, HTPC), else PiPup when its clicks allow Plex, else ADB. Pick one only if Automatic chooses wrongly."
         }
       },

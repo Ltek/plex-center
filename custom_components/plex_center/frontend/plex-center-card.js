@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.90
+// Version: v2026.11.19.91
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.90';
+const BUILD_NUMBER = 'v2026.11.19.91';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1820,17 +1820,33 @@ function plexLive(hass, tv) {
 const realOn = (hass, tv) => tvPower(hass, tv) !== false && (!!plexLive(hass, tv) || [tv.pipup, tv.adb].some((id) => id && isRealPlayback(hass.states[id])));
 const tvLabel = (tv) => tv?.name || tv?.id || 'TV';
 
-/** Now playing on a TV, from its players' states (the Plex player supplies the poster and episode). */
+/** Cache key for what another app plays on a TV: changes with the app and the title its players report. null for
+ *  Plex (the Plex player has the poster) and when nothing plays. */
+function appMetaKey(hass, tv) {
+  if (!tv || !hass) return null;
+  const live = [tv.pipup, tv.adb, tv.cast].map((id) => id && hass.states[id]).filter((st) => isRealPlayback(st));
+  if (!live.length || plexLive(hass, tv)) return null;
+  const app = live.map((st) => st.attributes.app_id || st.attributes.app_name).find(Boolean) || '';
+  if (/plex/i.test(app)) return null;
+  return `appmeta:${tv.id}:${app}:${live.map((st) => st.attributes.media_series_title || st.attributes.media_title).find(Boolean) || ''}`;
+}
+
+/** Now playing on a TV, from its players' states (the Plex player supplies the poster and episode; for other apps
+ *  the integration's lookup does: Plex library, Plex Discover, Radarr, Sonarr). */
 function nowPlaying(hass, tv) {
   if (!tv) return null;
   const p = tv.pipup && hass.states[tv.pipup], x = plexLive(hass, tv), a = tv.adb && hass.states[tv.adb], power = tvPower(hass, tv);
-  const src = power === false ? null : [p, x, a].find((s) => isRealPlayback(s));
+  const c = tv.cast && hass.states[tv.cast];
+  const src = power === false ? null : [p, x, a, c].find((s) => isRealPlayback(s));
   if (src) {
     const meta = x ? x.attributes : {};
     const at = src.attributes, series = meta.media_series_title;
-    return { tv, live: true, on: power, st: src, title: series || at.media_title || meta.media_title || 'Playing',
-      sub: series ? `S${meta.media_season} · E${meta.media_episode}${meta.media_title ? ` · ${meta.media_title}` : ''}` : (at.app_name || ''),
-      art: meta.entity_picture || (src === a ? null : at.entity_picture) || null };
+    const k = !x && appMetaKey(hass, tv), am = k ? peek(k) : null, found = am?.meta;
+    const app = am?.app || (at.app_name && !String(at.app_name).includes('.') ? at.app_name : '') || at.app_name || '';
+    return { tv, live: true, on: power, st: src, title: series || (found?.title || am?.title) || at.media_title || meta.media_title || 'Playing',
+      sub: series ? `S${meta.media_season} · E${meta.media_episode}${meta.media_title ? ` · ${meta.media_title}` : ''}`
+        : [am?.episode, found?.year, app].filter(Boolean).join(' · '),
+      art: meta.entity_picture || found?.poster || (src === a ? null : at.entity_picture) || null, fanart: found?.art || null, found: found || null };
   }
   const r = tv.remote && hass.states[tv.remote];
   const on = power === false ? null : [p, a, r].find((s) => s && !['off', 'unavailable', 'standby', 'unknown'].includes(s.state));
@@ -3678,6 +3694,15 @@ Object.assign(PlexCenterCard.prototype, {
       .catch((err) => this._toast(`${action}: ${err?.message || err}`));
   },
 
+  /** Ask the integration what other apps play (title + poster), once per app and title; repaint when it answers. */
+  _appMetaFetch() {
+    for (const tv of this._tvs()) {
+      const k = appMetaKey(this._hass, tv), hit = k && CACHE.get(k);
+      if (!k || hit?.pending || (hit && (hit.data || Date.now() - hit.ts < 60000))) continue;   // nothing found: ask again after a minute
+      cached(this._hass, k, 6 * 3600000, () => ws(this._hass, 'app_media', { tv: tv.id }).catch(() => null), { force: !!hit })
+        .then((d) => { if (d) { this._renderNP(true); this._appSig = null; this._updateStates(); } }).catch(() => {});
+    }
+  },
   _updateStates() {
     if (!this._root) return;
     const psig = JSON.stringify(this._tvs().map((t) => [t.id, tvPower(this._hass, t), realOn(this._hass, t)]));
@@ -3687,6 +3712,7 @@ Object.assign(PlexCenterCard.prototype, {
       const el = this._root.querySelector(`[data-dot="${tv.id}"]`);
       if (el) el.className = `plc-dot ${this._dotCls(tv)}`;
     }
+    this._appMetaFetch();
     this._renderNP();
     const asig = JSON.stringify(this._appSessions().map((x) => [x._tv, x.title, x.player, x.player_state, x.poster]));
     if (asig !== this._appSig) { this._appSig = asig; this._paintWatching(); }

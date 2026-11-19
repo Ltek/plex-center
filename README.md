@@ -40,6 +40,7 @@ Added and Coming Soon, with the Now playing panel.
 | **[PiPup](https://github.com/mhoogenbosch/PiPup)** app 0.32+ on the TV, with **[ha-pipup](https://github.com/mhoogenbosch/ha-pipup)** 1.32+ | playing on Android / Google TVs, pause, seek, Stop, Home (recommended) |
 | or the **[Android TV (ADB)](https://www.home-assistant.io/integrations/androidtv/)** integration | the same without PiPup (no exact seek) |
 | optional: **[Android TV Remote](https://www.home-assistant.io/integrations/androidtv_remote/)** integration | the TV's power state, and turning it on and off (found automatically) |
+| optional: **[Google Cast](https://www.home-assistant.io/integrations/cast/)** integration | what other apps play, when PiPup and ADB don't say (found automatically) |
 | optional: Plex Web / Plex HTPC | played on directly through Plex's own remote control |
 | optional: **upcoming-media sensors** (Radarr / Sonarr) | the *Coming Soon* sections, found automatically |
 | optional: **[Sonarr](https://www.home-assistant.io/integrations/sonarr/)** / **[Radarr](https://www.home-assistant.io/integrations/radarr/)** integrations | the **Calendar** page (upcoming episodes; movies in cinemas, digital, Blu-ray). Plex Center reuses their address and API key; the key stays in Home Assistant |
