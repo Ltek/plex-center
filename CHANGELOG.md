@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.19.92
+
+**Fixed**
+- **Next Episode** no longer shows an episode that's already watched: each pick is re-read from Plex, and one that
+  was watched since gives way to the episode after it.
+
+**Changed**
+- **Next Episode** also lists new episodes of shows you watch, which Plex leaves off On Deck (season premieres,
+  shows you haven't watched for weeks): for each show in Recently Added that you've watched some of, the first
+  unwatched episode after the last one you watched. Shows you haven't started stay in Recently Added only.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.19.91
 
 **Added**

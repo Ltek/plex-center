@@ -217,6 +217,29 @@ def test_split_continue_next_episode():
     assert [x.ratingKey for x in cont] == [3] and nxt == []
 
 
+def test_next_episode_rechecked_and_new_episodes_of_watched_shows():
+    from custom_components.plex_center.websocket import next_from_recent, verify_next
+
+    def ep(key, show, season, n, views=0, offset=0, eps=None):
+        e = NS(ratingKey=key, type="episode", grandparentRatingKey=show, parentIndex=season, index=n, viewCount=views, viewOffset=offset)
+        e.show = lambda: NS(episodes=lambda: eps or [])
+        return e
+
+    stale, now_watched, after = ep(1, "A", 1, 3), ep(1, "A", 1, 3, views=1), ep(2, "A", 1, 4)
+    keep = ep(3, "B", 1, 1)
+    out = verify_next(lambda keys: [now_watched, keep], [stale, keep], lambda e: after if e is now_watched else None)
+    assert [x.ratingKey for x in out] == [2, 3], "a pick watched since: the one after it"
+    assert [x.ratingKey for x in verify_next(lambda k: (_ for _ in ()).throw(RuntimeError()), [stale], lambda e: None)] == [1], "Plex fails: kept"
+
+    c = [ep(10, "C", 1, 1, views=1), ep(11, "C", 1, 2, views=1), ep(12, "C", 2, 1)]       # watched S1; S2E1 new (season premiere)
+    c[2].show = lambda: NS(episodes=lambda: c)
+    d = [ep(20, "D", 1, 1), ep(21, "D", 1, 2)]                                           # never started: not Next
+    d[1].show = lambda: NS(episodes=lambda: d)
+    got = next_from_recent([c[2], d[1], ep(30, "A", 1, 9)], {"A"}, 5)
+    assert [x.ratingKey for x in got] == [12]
+    assert next_from_recent([c[2]], set(), 0) == []
+
+
 def test_recently_added_tv_gives_episodes_newest_per_show():
     from custom_components.plex_center.websocket import _recent_in
 

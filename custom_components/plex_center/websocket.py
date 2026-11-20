@@ -191,6 +191,56 @@ def split_continue(items: list, pct: float, next_of) -> tuple[list, list]:
     return sorted(cont, key=lambda x: rank.get(id(x), len(items))), nxt
 
 
+def _show_of(it) -> str:
+    return str(getattr(it, "grandparentRatingKey", "") or getattr(it, "grandparentTitle", ""))
+
+
+def verify_next(fetch_fresh, items: list, next_of) -> list:
+    """Next Episode picks re-read from Plex (hub entries can be stale): a pick that is watched now gives way to the
+    episode after it; one per show."""
+    keys = [str(getattr(i, "ratingKey", "")) for i in items if getattr(i, "ratingKey", None)]
+    try:
+        fresh = {str(f.ratingKey): f for f in fetch_fresh(keys)} if keys else {}
+    except Exception:  # noqa: BLE001 - keep Plex's list
+        fresh = {}
+    out, shows = [], set()
+    for it in items:
+        f = fresh.get(str(getattr(it, "ratingKey", "")), it)
+        if getattr(f, "viewCount", 0) and not getattr(f, "viewOffset", 0):
+            f = next_of(f)
+        if f is None or _show_of(f) in shows:
+            continue
+        shows.add(_show_of(f))
+        out.append(f)
+    return out
+
+
+def next_from_recent(recent: list, have: set[str], limit: int) -> list:
+    """New episodes of shows you watch (Plex leaves some off On Deck: season premieres, shows not watched for weeks):
+    per show in Recently Added that you've watched some of, the first unwatched episode after the last watched one."""
+    out = []
+    for ep in recent:
+        if len(out) >= limit:
+            break
+        if getattr(ep, "type", None) != "episode" or getattr(ep, "viewCount", 0) or (show := _show_of(ep)) in have:
+            continue
+        have.add(show)
+        try:
+            eps = [e for e in ep.show().episodes() if getattr(e, "parentIndex", None) is not None and getattr(e, "index", None) is not None
+                   and e.parentIndex > 0]
+        except Exception:  # noqa: BLE001
+            continue
+        watched = [(e.parentIndex, e.index) for e in eps if getattr(e, "viewCount", 0)]
+        if not watched:
+            continue          # a show you haven't started: Recently Added only
+        last = max(watched)
+        nxt = min((e for e in eps if (e.parentIndex, e.index) > last and not getattr(e, "viewCount", 0)
+                   and not getattr(e, "viewOffset", 0)), key=lambda e: (e.parentIndex, e.index), default=None)
+        if nxt is not None:
+            out.append(nxt)
+    return out
+
+
 # ------------------------------------------------------------------------------------------- commands
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/config", vol.Optional("entry_id"): str})
@@ -343,6 +393,8 @@ async def ws_hubs(hass: HomeAssistant, connection, msg) -> None:
             recent.sort(key=lambda i: getattr(i, "addedAt", None) or datetime.min, reverse=True)
             deck = _safe(getattr(server.library, "onDeck", None))
         cw, nxt = split_continue([*cont, *deck], pct, lambda ep: _next_episode(ep))
+        nxt = verify_next(lambda keys: server.fetchItems(f"/library/metadata/{','.join(keys)}"), nxt, _next_episode)
+        nxt += next_from_recent(recent, {_show_of(i) for i in [*cw, *nxt] if getattr(i, "type", None) == "episode"}, max(0, n - len(nxt)))
         return {"continue": [item_dict(i, sign) for i in cw[:n]], "next": [item_dict(i, sign) for i in nxt[:n]],
                 "recent": [item_dict(i, sign) for i in recent[:n]]}
 
