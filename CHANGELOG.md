@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.20.94
+
+**Changed**
+- **Coming Soon details** (nothing to play): Trailer and Open show sit on the first text row under the fanart,
+  right-aligned, instead of on two rows of their own. Episode numbers read "S31 · E134".
+
 ## v2026.11.20.93
 
 **Changed**

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.20.93
+// Version: v2026.11.20.94
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.20.93';
+const BUILD_NUMBER = 'v2026.11.20.94';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1441,6 +1441,7 @@ const CARD_CSS = `
 .plc-eps [data-eplist] { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; }
 .plc-target { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .plc-target .plc-sp { flex: 1; }
+.plc-firstrow { gap: 8px; }
 .plc-target .plc-act ha-icon { --mdc-icon-size: 16px; }
 .plc.phone .plc-eps { max-height: none; }
 .plc-ep { display: flex; align-items: center; gap: 8px; padding: 7px 4px; border-bottom: 1px solid var(--divider-color, #333); font-size: .9em; }
@@ -3193,26 +3194,28 @@ Object.assign(PlexCenterCard.prototype, {
     const soon = it.ev ? this._calInfo(it.ev) : it.umc ? (() => {   // upcoming-media sensor items
       const u = it.umc, d = it.airdate ? new Date(it.airdate) : null, rt = Number.parseInt(u.runtime, 10);
       return { eyebrow: [d && !Number.isNaN(d.getTime()) ? d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'Coming soon'],
-        title: it.title, sub: u.episode || '', se: u.number || '', runtime: rt ? fmtRun(rt * 60) : '', status: '',
+        title: it.title, sub: u.episode || '', se: String(u.number || '').replace(/^S0*(\d+)E0*(\d+)$/i, 'S$1 · E$2'), runtime: rt ? fmtRun(rt * 60) : '', status: '',
         meta: [u.year, u.studio, u.genres].filter(Boolean).join(' · ') };
     })() : null;
     const eyebrow = isEp ? ['Episode'] : it.type === 'show' ? ['TV show'] : it.type === 'movie' ? ['Movie'] : null;
     const sub = isEp ? (it.show ? it.title : '') : (it.type === 'show' && it.episodes ? `${it.episodes} episodes${it.watched_episodes ? ` · ${it.watched_episodes} watched` : ''}` : '');
     const se = isEp && it.season != null ? `S${it.season} · E${it.episode}` : '';
+    const inline = !playable && !this._canPick(it);   // nothing to play (Coming Soon): the buttons sit on the first text row
+    const acts = `<button class="plc-chip plc-act" data-trailergo title="${it.trailer_key || it.trailer ? 'Trailer' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>
+          ${it.key && it.type === 'show' ? `<button class="plc-chip plc-act" data-markall="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check-all'}"></ha-icon>${it.watched ? 'Mark all unwatched' : 'Mark all watched'}</button>`
+            : it.key && ['movie', 'episode'].includes(it.type) ? `<button class="plc-chip plc-act" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}`;
     slot.innerHTML = `<div class="plc-detail">${this._infoHtml({ art: img, poster: it.poster, close: 'data-close',
       eyebrow: soon ? soon.eyebrow : eyebrow, title: soon ? soon.title : (it.show || it.title), sub: soon ? soon.sub : sub, se: soon ? soon.se : se,
       rating: this._ratingPills(it), runtime: soon ? soon.runtime : it.duration ? fmtRun(it.duration) : '', badges: it.badges, status: soon?.status,
-      body: `${soon ? (soon.meta ? `<div class="plc-meta">${esc(soon.meta)}</div>` : '') : `${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${umc}`}
+      body: `${inline ? `<div class="plc-meta plc-target plc-firstrow">${esc(soon ? soon.meta || '' : meta || '')}<span class="plc-sp"></span>${acts}${this._openShowHtml(it, 'plc-chip plc-act')}</div>${soon ? '' : umc}`
+        : `${soon ? (soon.meta ? `<div class="plc-meta">${esc(soon.meta)}</div>` : '') : `${meta ? `<div class="plc-meta">${esc(meta)}</div>` : ''}${umc}`}`}
         ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div>` : ''}${ends}
         ${summary ? `<div>${esc(summary)}</div>` : ''}
         ${it.cast?.length ? `<div class="plc-cast">${esc(it.cast.join(', '))}</div>` : ''}
-        <div class="plc-meta plc-target">${this._canPick(it) ? `Play on ${this._pickChip()}` : ''}<span class="plc-sp"></span>
-          <button class="plc-chip plc-act" data-trailergo title="${it.trailer_key || it.trailer ? 'Trailer' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>
-          ${it.key && it.type === 'show' ? `<button class="plc-chip plc-act" data-markall="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check-all'}"></ha-icon>${it.watched ? 'Mark all unwatched' : 'Mark all watched'}</button>`
-            : it.key && ['movie', 'episode'].includes(it.type) ? `<button class="plc-chip plc-act" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div>
-        <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:${this._target() === 'local' ? 'open-in-new' : 'play'}"></ha-icon>${this._target() === 'local' ? 'Open on this device' : `${esc(resume)} on ${esc(tvLabel(this._target()))}`}</button>
+        ${inline ? '' : `<div class="plc-meta plc-target">${this._canPick(it) ? `Play on ${this._pickChip()}` : ''}<span class="plc-sp"></span>${acts}</div>`}
+        ${inline ? '' : `<div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:${this._target() === 'local' ? 'open-in-new' : 'play'}"></ha-icon>${this._target() === 'local' ? 'Open on this device' : `${esc(resume)} on ${esc(tvLabel(this._target()))}`}</button>
           ${it.type !== 'show' && (it.offset || it.watched) ? '<button class="plc-btn" data-play="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>' : ''}` : ''}
-          ${this._openShowHtml(it)}</div>
+          ${this._openShowHtml(it)}</div>`}
         ${it.type === 'show' ? '<div class="plc-eps" data-eps><div class="plc-msg">Loading seasons…</div></div>' : ''}` })}</div>`;
     if (it.type === 'show') this._paintSeasons(it);
     if (key && !peek(key)) {
