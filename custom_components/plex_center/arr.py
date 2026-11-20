@@ -45,6 +45,20 @@ def _image(images: list | None, kind: str) -> str | None:
     return None
 
 
+def _rating(r: Any) -> float | None:
+    """Radarr: {tmdb: {value}, imdb: {value}, ...}; Sonarr: {value, votes}. 0 = no rating."""
+    if not isinstance(r, dict):
+        return None
+    for src in (r.get("tmdb"), r.get("imdb"), r):
+        try:
+            v = float((src or {}).get("value") or 0)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            return round(v, 1)
+    return None
+
+
 def episode_event(ep: dict[str, Any]) -> dict[str, Any] | None:
     series = ep.get("series") or {}
     when = ep.get("airDateUtc") or ep.get("airDate")
@@ -56,7 +70,7 @@ def episode_event(ep: dict[str, Any]) -> dict[str, Any] | None:
         "title": series.get("title") or ep.get("title") or "?", "episode_title": ep.get("title"),
         "season": season, "episode": number, "overview": ep.get("overview") or series.get("overview"),
         "runtime": ep.get("runtime") or series.get("runtime"), "network": series.get("network"), "year": series.get("year"),
-        "genres": (series.get("genres") or [])[:4], "certification": series.get("certification"),
+        "genres": (series.get("genres") or [])[:4], "certification": series.get("certification"), "rating": _rating(series.get("ratings")),
         "poster": _image(series.get("images"), "poster"), "fanart": _image(series.get("images"), "fanart"),
         "tvdb": series.get("tvdbId"), "imdb": series.get("imdbId"), "has_file": bool(ep.get("hasFile")),
         "monitored": bool(ep.get("monitored", True)),
@@ -71,7 +85,7 @@ def movie_events(m: dict[str, Any]) -> list[dict[str, Any]]:
     base = {
         "kind": "movie", "title": m.get("title") or "?", "year": m.get("year"), "overview": m.get("overview"),
         "runtime": m.get("runtime"), "studio": m.get("studio"), "genres": (m.get("genres") or [])[:4],
-        "certification": m.get("certification"), "poster": _image(m.get("images"), "poster"),
+        "certification": m.get("certification"), "rating": _rating(m.get("ratings")), "poster": _image(m.get("images"), "poster"),
         "fanart": _image(m.get("images"), "fanart"), "tmdb": m.get("tmdbId"), "imdb": m.get("imdbId"),
         "has_file": bool(m.get("hasFile")), "monitored": bool(m.get("monitored", True)),
         "trailer": m.get("youTubeTrailerId") or None,

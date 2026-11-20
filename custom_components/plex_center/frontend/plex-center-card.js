@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.20.97
+// Version: v2026.11.20.98
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.20.97';
+const BUILD_NUMBER = 'v2026.11.20.98';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -2766,6 +2766,7 @@ class PlexCenterCard extends HTMLElement {
     catch { return; }
     if (!sec.isConnected) return;
     const now = Date.now(), seen = new Set(), pool = [], have = this._plexKeys();
+    const own = ['title_text', 'line1_text', 'line2_text', 'line3_text', 'line4_text'].some((k) => this._c[k]);
     for (const ev of res.events || []) {
       if (!ev.all_day && new Date(ev.at).getTime() < now - 3 * 3600 * 1000) continue;   // already aired
       // already in the system (downloaded, in Plex, or in Recently Added / Continue / Next): not coming soon
@@ -2780,14 +2781,15 @@ class PlexCenterCard extends HTMLElement {
         ...(ev.kind === 'episode' ? { show: ev.title, show_key: ev.plex_show || undefined, season: ev.season, episode: ev.episode } : {}),
         trailer: ev.trailer ? `https://www.youtube.com/watch?v=${ev.trailer}` : null, airdate: ev.at, summary: ev.overview || '', year: ev.year, ev,
         umc: { title: ev.title, episode: ev.episode_title || '', number: sxe(ev), airdate: ev.at, release: ev.kind === 'movie' ? `${rel} $date` : (ev.all_day ? '$day, $date' : '$day, $date $time'),
-          runtime: ev.runtime || '', genres: (ev.genres || []).join(', '), studio: ev.network || ev.studio || '', rating: '', summary: ev.overview || '', year: ev.year },
+          runtime: ev.runtime || '', genres: (ev.genres || []).join(', '), studio: ev.network || ev.studio || '', rating: ev.rating ? String(ev.rating) : '', summary: ev.overview || '', year: ev.year },
         flag: !!badge,
-        lines: [ev.title, ev.kind === 'episode' ? [badge, sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : rel, [day, time].filter(Boolean).join(' · '),
+        lines: own ? null : [ev.title, ev.kind === 'episode' ? [badge, sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : rel, [day, time].filter(Boolean).join(' · '),
           [ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : ''].filter(Boolean).join(' · ')] });
     }
+    if (own) for (const x of pool) x.lines = umcLines(x.umc, {}, this._c);   // the card's own line templates (Row text)
     const mine = this._byKind(id, pool), items = mine.slice(0, st.max);
     this._lists.set(id, items); (this._full ||= {})[id] = mine;
-    sig(sec, JSON.stringify(['arr', JSON.stringify(this._c.home_style?.[id] || {}), cfg(this._c, 'image_style'), this._v.secOpen?.[id], this._v.secKind?.[id],
+    sig(sec, JSON.stringify(['arr', JSON.stringify(this._c.home_style?.[id] || {}), own, cfg(this._c, 'image_style'), this._v.secOpen?.[id], this._v.secKind?.[id],
       JSON.stringify(this._kinds(id)), items.map((x) => [x.title, x.poster, x.lines])]), () => { this._fill(id, sec, SEC_TYPE_TITLE.upcoming, mine.length, items, id); });
   }
 

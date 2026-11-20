@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.20.98
+
+**Changed**
+- **Coming Soon from Sonarr / Radarr** follows the card's own Row text (`title_text`, `line1_text` … `line4_text`,
+  with `$release`, `$rating`, `$runtime`, `$genres` …) when the card sets any of them; otherwise it keeps its
+  built-in lines.
+- Sonarr / Radarr entries carry a **rating** (TMDB, else IMDb), for `$rating`.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.20.97
 
 **Added**
