@@ -1,5 +1,10 @@
 # Plex Center (Ltek)
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="custom_components/plex_center/brand/dark_logo.png">
+  <img src="custom_components/plex_center/brand/logo.png" alt="Plex Center" width="200">
+</picture>
+
 Browse your Plex library on a Home Assistant dashboard and play on your TVs, the way you would with the remote.
 Each TV shows the libraries, Continue Watching and watched marks of the Plex Home user its Plex app uses.
 

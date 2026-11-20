@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.20.103
+
+**Added**
+- **Brand images** in `custom_components/plex_center/brand/` (icon, logo, their dark and @2x versions): Home
+  Assistant shows them for Plex Center (Settings → Devices & services, the integration's page).
+- README: the logo at the top (light and dark).
+
+Restart Home Assistant after updating so it picks up the images.
+
 ## v2026.11.20.102
 
 **Added**
