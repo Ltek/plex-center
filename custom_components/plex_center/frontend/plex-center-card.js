@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.20.100
+// Version: v2026.11.20.101
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.20.100';
+const BUILD_NUMBER = 'v2026.11.20.101';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -861,7 +861,7 @@ const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phon
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
-  border_color: 'str', flag: 'bool' };
+  border_color: 'str', flag: 'bool', flag_style: ['corner', 'info'] };
 /** A Home row's settings shared by every screen type: what the row is (its source). Everything else is per screen. */
 const SEC_SHARED = new Set(['source', 'sensors', 'library', 'hub']);
 /** 2026.11.16.53: rows' settings become screen profiles (sec_styles['<id>:<screen>']); only the source stays in home_style. */
@@ -933,7 +933,7 @@ function secStyle(c, id) {
       return wide && !(s.show ?? s.max) ? Math.max(1, Math.round(n / 2)) : n; })(),
     scroll: !!s.scroll, auto, scroll_dir: s.scroll_dir || ((s.layout || 'row') === 'list' ? 'up' : 'left'),
     speed: Number(s.speed ?? (auto === 'scroll' && s.layout !== 'banner' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
-    flag: s.flag ?? cfg(c, 'flag'), list_w: Number(s.list_w ?? 340), type, s,
+    flag: s.flag ?? cfg(c, 'flag'), flag_style: s.flag_style || 'corner', list_w: Number(s.list_w ?? 340), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
     get max() { return this.total; } };
 }
@@ -1479,6 +1479,7 @@ const CARD_CSS = `
 .plc.side .plc-wrap { grid-template-columns: minmax(260px, 32%) minmax(0, 1fr); }
 .plc-content { min-width: 0; display: flex; flex-direction: column; }
 .plc-side { align-self: start; position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; }
+.plc-side[hidden] { display: none; }
 .plc-side-card { position: relative; border-radius: calc(var(--plc-r) + 6px); overflow: hidden; background: #0b0b0b; color: #fff; }
 .plc.side.fit .plc-wrap { height: calc(100dvh - var(--plc-offset, 80px)); min-height: 360px; }
 .plc.side.fit .plc-side { position: static; height: 100%; min-height: 0; overflow: hidden; }
@@ -1530,6 +1531,7 @@ const CARD_CSS = `
 .plc-li-text { position: relative; padding: 10px 14px; max-width: 64%; display: flex; flex-direction: column; gap: 0; line-height: 1.3; }
 .plc-li .plc-t { margin: 0; -webkit-line-clamp: 1; color: var(--plc-title-c, #d3d3d3); }
 .plc-li .plc-s { color: var(--plc-line-c, #9a9a9a); }
+.plc-li-info { position: absolute; top: 8px; right: 8px; z-index: 2; --mdc-icon-size: 22px; color: var(--plc-flag-c, var(--plc-a)); filter: drop-shadow(0 1px 3px rgba(0,0,0,.8)); }
 .plc-li-flag { position: absolute; top: 0; right: 0; width: 0; height: 0; border-style: solid; border-width: 0 46px 46px 0;
   border-color: transparent var(--plc-flag-c, var(--plc-a)) transparent transparent; }
 .plc-li.poster { display: grid; grid-template-columns: calc(var(--plc-li-h, 144px) * 2 / 3) minmax(0, 1fr); min-height: var(--plc-li-h, 0); }
@@ -2786,7 +2788,7 @@ class PlexCenterCard extends HTMLElement {
         trailer: ev.trailer ? `https://www.youtube.com/watch?v=${ev.trailer}` : null, airdate: ev.at, summary: ev.overview || '', year: ev.year, ev,
         umc: { title: ev.title, episode: ev.episode_title || '', number: sxe(ev), airdate: ev.at, release: ev.kind === 'movie' ? `${rel} $date` : (ev.all_day ? '$day, $date' : '$day, $date $time'),
           runtime: ev.runtime || '', genres: (ev.genres || []).join(', '), studio: ev.network || ev.studio || '', rating: ev.rating ? `★ ${ev.rating}` : '', summary: ev.overview || '', year: ev.year },
-        flag: !!badge,
+        flag: !!badge, flag_text: badge,
         lines: own ? null : [ev.title, ev.kind === 'episode' ? [badge, sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : rel, [day, time].filter(Boolean).join(' · '),
           [ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : ''].filter(Boolean).join(' · ')] });
     }
@@ -3011,7 +3013,8 @@ class PlexCenterCard extends HTMLElement {
         const qp = it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<span class="plc-play" data-qplay="${esc(listId)}|${j}" role="button" title="Play"><ha-icon icon="mdi:play"></ha-icon></span>` : '';
         return `<button class="plc-li${fan ? '' : ' poster'}" data-open="${esc(listId)}|${j}"><div class="plc-li-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
           <div class="plc-li-text">${st.look?.fields ? rowFieldsHtml(st.look, rowVals(it, this._c)) : `<div class="plc-t">${esc(lines[0] || it.title)}</div>${lines.slice(1).map((l, n) => (l ? `<div class="plc-s l${n + 1}">${esc(l)}</div>` : '')).join('')}`}</div>
-          ${flagOn && it.flag ? '<span class="plc-li-flag"></span>' : ''}${qp}</button>`;
+          ${flagOn && it.flag ? (st.flag_style === 'info' ? `<ha-icon class="plc-li-info" icon="mdi:information-outline" title="${esc(it.flag_text || 'New')}"></ha-icon>`
+            : `<span class="plc-li-flag" title="${esc(it.flag_text || 'New')}"></span>`) : ''}${qp}</button>`;
       }).join('')}</div>`;
     } else {
       body = `<div class="plc-row plc-fade${fan ? ' fanart' : ''}">${sel.map(([it, j]) => this._tile({ ...it, flag: flagOn && it.flag }, listId, j,
@@ -4658,7 +4661,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${st.scroll || st.auto !== 'off' ? sl('total', id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner' ? 'Titles to rotate through' : 'Items to load', st.show, 100, st.total, '') : ''}`)}
       ${sub('lines', 'Text Lines', this._fieldsBody(id))}
       ${sub('shape', 'Content Visuals', `${this._lookBody(id, 'visual')}${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}
-        ${st.flag ? col('flag_color', '"New" flag colour', '#0099cc') : ''}${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}
+        ${st.flag ? `${sel('flag_style', 'Flag shows as', [['corner', 'A corner'], ['info', 'An info icon (i)']])}${col('flag_color', '"New" flag colour', '#0099cc')}` : ''}${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}
         ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
         ${list ? `${col('item_bg', 'Item background', '#0d0d0d', true)}${col('border_color', 'Item border', '#000000', true)}` : ''}`)}
 `;

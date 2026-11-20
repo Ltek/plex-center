@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.20.101
+
+**Added**
+- Section setting **Flag shows as**: a corner (as before) or an **info icon** (i). The flag's reason (New season,
+  Premiere, Finale, New) shows when you point at it.
+
+**Fixed**
+- The hidden Now playing column no longer adds 16 px above the first section.
+
 ## v2026.11.20.100
 
 **Added**
