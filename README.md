@@ -120,7 +120,15 @@ know your devices: your own automation or script turns them on and off and check
   status to show ready (120 s by default), then wakes the TV and plays. If the room isn't ready in time, it says so
   and doesn't play. Without a status entity, it sets the power entity on and goes on.
 - **Turn off** sets the power entity off, then puts the TV in standby.
+- While the status shows its **starting** value (default `starting`), Plex Center waits without setting the power
+  entity again; on its **failure** value (default `error`) it stops waiting and shows the room's `error`
+  attribute. The card shows the room's progress while it starts.
+- **The room turns the TV off** (option): Turn off only sets the power entity off.
 - While the status shows ready, the TV counts as on.
+
+With [AV Scenes](https://github.com/mkshb/hass-av-scenes): Room power = the room's **Select**, on value = the
+activity's name (for example `Movie`), off value = `idle`; Room status = the room's **Sensor**, ready value
+`active` (starting and failure values are AV Scenes' defaults).
 
 ```yaml
 template:

@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.20.97
+
+**Added**
+- **Room hook:** a **starting** value (default `starting`): while the room is already starting, Plex Center waits
+  without setting the power entity again. A **failure** value (default `error`): Plex Center stops waiting at
+  once and shows the room's error (its `error` attribute) instead of waiting out the timeout. Ready, starting and
+  failure values can list several states, separated by commas.
+- **The room turns the TV off** (per TV): Turn off only sets the power entity off.
+- The card shows the room's progress while it starts (Play, Resume, Turn on), for example
+  "Theater: starting · 3 / 7".
+- README: setting up a room with AV Scenes.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.20.96
 
 **Added**

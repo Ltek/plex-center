@@ -37,7 +37,10 @@
           "power_off": "Its off value",
           "status_entity": "Room status (optional)",
           "ready_value": "Its ready value",
-          "ready_wait": "Wait for ready"
+          "ready_wait": "Wait for ready",
+          "busy_value": "Its starting value",
+          "fail_value": "Its failure value",
+          "room_off": "The room turns the TV off"
         },
         "data_description": {
           "name": "Shown on the card's TV picker, and used by the plex_center.play and plex_center.control actions.",
@@ -52,8 +55,11 @@
           "power_on": "For an input_select / select: the option that means on (for example Movie). Others: leave empty.",
           "power_off": "For an input_select / select: the option that means off. Others: leave empty.",
           "status_entity": "An entity that shows when the room is ready (for example a template binary_sensor that is on when every device is). Before playing, Plex Center waits for it; while it shows ready, the TV counts as on.",
-          "ready_value": "The status entity's ready state. Default: on.",
-          "ready_wait": "How long to wait for the room to be ready before giving up."
+          "ready_value": "The status entity's ready state (several: separate with commas). Default: on. AV Scenes' sensor: active.",
+          "ready_wait": "How long to wait for the room to be ready before giving up.",
+          "busy_value": "While the status shows this, the room is already starting: Plex Center waits without setting the power entity again. Default: starting.",
+          "fail_value": "When the status shows this, Plex Center stops waiting and shows the room's error. Default: error.",
+          "room_off": "Turning the TV off only sets the power entity off; your room's automation (for example AV Scenes) turns the TV off in its own order."
         }
       },
       "detect": {

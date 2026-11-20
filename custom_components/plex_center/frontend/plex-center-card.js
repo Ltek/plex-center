@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.20.96
+// Version: v2026.11.20.97
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.20.96';
+const BUILD_NUMBER = 'v2026.11.20.97';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1811,9 +1811,24 @@ const peek = (key) => CACHE.get(key)?.data;
 
 /** Is the TV itself on? From PiPup / ADB / Android TV Remote, never the Plex player: Plex keeps a paused session
  *  long after the TV is turned off. null = no way to tell (only a Plex player). */
+const stateVals = (text, def) => String(text || def).split(',').map((v) => v.trim()).filter(Boolean);
+/** The TV's room status entity shows ready (null: the TV has none). */
+function roomReady(hass, tv) {
+  const st = tv?.status_entity && hass?.states[tv.status_entity];
+  if (!tv?.status_entity) return null;
+  return !!st && stateVals(tv.ready_value, 'on').includes(st.state);
+}
+/** What a starting room says: "starting · 3 / 7 · Projector" from its status entity (AV Scenes' sensor attributes). */
+function roomProgress(hass, tv) {
+  const st = tv?.status_entity && hass?.states[tv.status_entity];
+  if (!st) return '';
+  const a = st.attributes || {}, cur = a.current_step, tot = a.total_steps;
+  const step = typeof cur === 'number' || /^\d+$/.test(String(cur ?? '')) ? `${cur}${tot ? ` / ${tot}` : ''}` : (cur ? String(cur) : '');
+  const pct = !step && a.step_progress_pct != null ? `${Math.round(Number(a.step_progress_pct))} %` : '';
+  return [st.state, step || pct, a.current_device || a.device || ''].filter(Boolean).join(' · ');
+}
 function tvPower(hass, tv) {
-  const room = tv?.status_entity && hass?.states[tv.status_entity];   // a room (theater) that says it's ready
-  if (room && room.state === String(tv.ready_value || 'on')) return true;
+  if (roomReady(hass, tv)) return true;   // a room (theater) that says it's ready
   const sts = [tv?.pipup, tv?.adb, tv?.remote].map((id) => id && hass?.states[id]).filter((x) => x && !['unavailable', 'unknown'].includes(x.state));
   if (!sts.length) return null;
   return sts.some((x) => !['off', 'standby'].includes(x.state));
@@ -2361,8 +2376,9 @@ class PlexCenterCard extends HTMLElement {
     if (tv.id !== this._tv()?.id) this._setTv(tv);
     this._v.npOpen = tv.id;
     this._toast(`Turning on ${tvLabel(tv)} and resuming…`);
+    const stop = this._roomWatch(tv);
     this._hass.callService('plex_center', 'resume', { tv: tv.id })
-      .then(() => this._fetchResumes(true)).catch((e) => this._toast(`Could not resume: ${e?.message || e}`));
+      .then(() => this._fetchResumes(true)).catch((e) => this._toast(`Could not resume: ${e?.message || e}`)).finally(stop);
   }
 
   /** The header's Watching now chip: its count follows the sessions. */
@@ -3314,8 +3330,22 @@ Object.assign(PlexCenterCard.prototype, {
     const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : (it.show || it.title);
     this._toast(`${mode === 'restart' ? 'Starting over' : 'Playing'} ${what} on ${tvLabel(tv)}…`);
     if (cfg(this._c, 'after_play') === 'nowplaying') this._showPlaying(tv);
+    const stop = this._roomWatch(tv);
     try { await this._hass.callService('plex_center', 'play', { tv: tv.id, key: String(it.key), mode }); }
     catch (e) { this._toast(`Could not start: ${e?.message || e}`); }
+    finally { stop(); }
+  },
+  /** While a TV's room (theater) starts, show its progress ("Theater: starting · 3 / 7"). Returns a stop function. */
+  _roomWatch(tv) {
+    if (!tv?.status_entity || roomReady(this._hass, tv)) return () => {};
+    let last = '';
+    const tick = () => {
+      if (roomReady(this._hass, tv)) return;
+      const p = roomProgress(this._hass, tv);
+      if (p && p !== last) { last = p; this._toast(`${tvLabel(tv)}: ${p}`); }
+    };
+    const t = setInterval(tick, 1500);
+    return () => clearInterval(t);
   },
 
   /** Mark a title watched / unwatched for the TV's Plex user, after a confirmation. */
@@ -3707,8 +3737,9 @@ Object.assign(PlexCenterCard.prototype, {
   _control(action, value) {
     const tv = this._tv();
     if (!tv) return;
+    const stop = action === 'power_on' ? this._roomWatch(tv) : () => {};
     this._hass.callService('plex_center', 'control', { tv: tv.id, action, ...(value != null ? { value: Number(value) } : {}) })
-      .catch((err) => this._toast(`${action}: ${err?.message || err}`));
+      .catch((err) => this._toast(`${action === 'power_on' ? 'Turn on' : action}: ${err?.message || err}`)).finally(stop);
   },
 
   /** Ask the integration what other apps play (title + poster), once per app and title; repaint when it answers. */

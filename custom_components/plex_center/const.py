@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "plex_center"
-VERSION = "2026.11.20.96"
+VERSION = "2026.11.20.97"
 
 CONF_SERVER_ID = "server_id"
 CONF_TVS = "tvs"
@@ -23,6 +23,9 @@ TV_POWER_OFF = "power_off"  # its "off" value (selects: the option; default off)
 TV_STATUS = "status_entity" # optional: says when the room is ready to play
 TV_READY = "ready_value"    # its ready state (default on)
 TV_READY_S = "ready_wait"   # seconds to wait for ready (default 120)
+TV_BUSY = "busy_value"      # its "starting" state(s): already on the way, don't set the power entity again (default starting)
+TV_FAIL = "fail_value"      # its failure state(s): stop waiting at once (default error)
+TV_ROOM_OFF = "room_off"    # turning off: only set the power entity off (the room turns the TV off itself)
 TV_ROUTE = "route"          # auto | pipup | adb | plex
 
 ROUTES = ["auto", "pipup", "adb", "plex"]

@@ -173,7 +173,12 @@ def room_ready(hass: HomeAssistant, tv: dict[str, Any]) -> bool | None:
     if not (ent := tv.get(TV_STATUS)):
         return None
     st = hass.states.get(ent)
-    return bool(st) and st.state == str(tv.get(TV_READY) or "on")
+    return bool(st) and st.state in values(tv.get(TV_READY), "on")
+
+
+def values(text: str | None, default: str) -> set[str]:
+    """A state value setting: one value or several separated by commas."""
+    return {v.strip() for v in str(text or default).split(",") if v.strip()}
 
 
 def tv_on(hass: HomeAssistant, tv: dict[str, Any]) -> bool | None:

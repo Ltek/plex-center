@@ -77,3 +77,58 @@ async def test_script_runs_only_when_off(hass):
 async def test_no_room_entities_nothing_changes(hass):
     await play.ensure_ready(hass, {"id": "lr", "name": "Living Room TV"})
     await asyncio.sleep(0)
+
+
+AVS = {"id": "th", "name": "Theater", "adb": "media_player.theater_shield", "power_entity": "select.theater_scene",
+       "power_on": "Movie", "power_off": "idle", "status_entity": "sensor.theater_activity", "ready_value": "active", "ready_wait": 5}
+
+
+async def test_already_starting_just_waits(hass):
+    log = []
+    hass.states.async_set("select.theater_scene", "starting")
+    hass.states.async_set("sensor.theater_activity", "starting")
+    _svc(hass, "select", "select_option", log)
+    hass.loop.call_later(0.05, lambda: hass.states.async_set("sensor.theater_activity", "active"))
+    await play.ensure_ready(hass, AVS, poll=0.02)
+    assert log == [], "not selected again while starting"
+
+
+async def test_failure_stops_at_once_with_the_rooms_error(hass):
+    hass.states.async_set("select.theater_scene", "idle")
+    hass.states.async_set("sensor.theater_activity", "idle")
+
+    def start(call):
+        hass.states.async_set("sensor.theater_activity", "starting")
+        hass.loop.call_later(0.05, lambda: hass.states.async_set("sensor.theater_activity", "error", {"error": "projector not ready after 60 s"}))
+    _svc(hass, "select", "select_option", [], start)
+    t0 = hass.loop.time()
+    with pytest.raises(HomeAssistantError, match="projector not ready"):
+        await play.ensure_ready(hass, {**AVS, "ready_wait": 30}, poll=0.02)
+    assert hass.loop.time() - t0 < 2, "didn't wait out the timeout"
+
+
+async def test_leftover_error_starts_again(hass):
+    log = []
+    hass.states.async_set("select.theater_scene", "error")
+    hass.states.async_set("sensor.theater_activity", "error", {"error": "old"})
+
+    def start(call):
+        log.append(call.data["option"])
+        hass.states.async_set("sensor.theater_activity", "starting")
+        hass.loop.call_later(0.05, lambda: hass.states.async_set("sensor.theater_activity", "active"))
+    hass.services.async_register("select", "select_option", start)
+    await play.ensure_ready(hass, AVS, poll=0.02)
+    assert log == ["Movie"]
+
+
+async def test_room_turns_the_tv_off(hass):
+    log = []
+    hass.states.async_set("select.theater_scene", "Movie")
+    hass.states.async_set("media_player.theater_shield", "playing")
+    _svc(hass, "select", "select_option", log)
+    _svc(hass, "androidtv", "adb_command", log)
+    await play.power_off(hass, {**AVS, "room_off": True})
+    assert [x[:2] for x in log] == [("select", "select_option")], "no ADB sleep: the room does it"
+    log.clear()
+    await play.power_off(hass, AVS)
+    assert [x[:2] for x in log] == [("select", "select_option"), ("androidtv", "adb_command")]

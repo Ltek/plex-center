@@ -12,9 +12,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (BTN_RESTART, BTN_WATCH, PLEX_PKG, TV_ADB, TV_NAME, TV_PIPUP, TV_PLEX, TV_POWER, TV_POWER_OFF, TV_POWER_ON,
-                    TV_READY, TV_READY_S, TV_REMOTE, TV_STATUS, TV_USER)
+                    TV_BUSY, TV_FAIL, TV_READY, TV_READY_S, TV_REMOTE, TV_ROOM_OFF, TV_STATUS, TV_USER)
 from .media import SAFE_LINK
-from .tvs import room_ready, route_for, tv_on, tv_playing
+from .tvs import room_ready, route_for, tv_on, tv_playing, values
 
 _LOGGER = logging.getLogger(__name__)
 _BUSY: set[str] = set()
@@ -100,19 +100,32 @@ async def ensure_ready(hass: HomeAssistant, tv: dict[str, Any], *, poll: float =
         if (tv_on(hass, tv) is False) if ent.split(".", 1)[0] in ON_ONLY else not _room_is(hass, tv, True):
             await set_room(hass, tv, True)
         return
-    if ent:
+    busy, fail = values(tv.get(TV_BUSY), "starting"), values(tv.get(TV_FAIL), "error")
+    state = lambda: (hass.states.get(tv[TV_STATUS]).state if hass.states.get(tv[TV_STATUS]) else None)  # noqa: E731
+    if ent and state() not in busy:   # already starting (by a wall button, another Play): just wait
         await set_room(hass, tv, True)
     wait = float(tv.get(TV_READY_S) or 120)
-    waited = 0.0
+    waited, moved = 0.0, state() not in fail   # a failure left over from last time doesn't count until it changes
     while waited < wait:
         await asyncio.sleep(poll)
         waited += poll
         if room_ready(hass, tv):
             await asyncio.sleep(min(2.0, poll * 2))   # let the TV's players catch up
             return
+        now = state()
+        if now in fail and (moved or waited >= 10):
+            raise HomeAssistantError(f"{_name(tv)} didn't start: {_room_error(hass, tv) or now}")
+        moved = moved or now not in fail
     st = hass.states.get(tv[TV_STATUS])
     raise HomeAssistantError(f"{_name(tv)} isn't ready after {int(wait)} s ({tv[TV_STATUS]} is {st.state if st else 'missing'}, "
                              f"waiting for {tv.get(TV_READY) or 'on'})")
+
+
+def _room_error(hass: HomeAssistant, tv: dict[str, Any]) -> str:
+    """The reason a room gives for a failed start (an `error` / `reason` attribute, e.g. AV Scenes' sensor)."""
+    st = hass.states.get(tv.get(TV_STATUS) or "")
+    at = st.attributes if st else {}
+    return str(at.get("error") or at.get("reason") or at.get("message") or "")
 
 
 # ------------------------------------------------------------------------------------------- power
@@ -139,6 +152,8 @@ async def power_off(hass: HomeAssistant, tv: dict[str, Any]) -> None:
     """
     adb, rem = tv.get(TV_ADB), tv.get(TV_REMOTE)
     room = await set_room(hass, tv, False)   # the room's automation turns its devices off
+    if room and tv.get(TV_ROOM_OFF):
+        return                                 # the room turns the TV off in its own order
     if _has(hass, adb):
         await _svc(hass, "androidtv", "adb_command", {"command": "input keyevent KEYCODE_SLEEP"}, adb)
     elif _has(hass, rem):
