@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.20.99
+
+**Fixed**
+- A section header with nothing in its centre no longer wraps its title at half the width.
+- A top bar with every item hidden takes no space (it drew a strip above the first section).
+- One ★ in `$rating` for Sonarr / Radarr entries (the ★ is part of the value, as for Plex and the sensors).
+
+**Changed**
+- An item's text lines sit closer together.
+
 ## v2026.11.20.98
 
 **Changed**

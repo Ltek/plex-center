@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.20.98
+// Version: v2026.11.20.99
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.20.98';
+const BUILD_NUMBER = 'v2026.11.20.99';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1150,6 +1150,7 @@ const CARD_CSS = `
 .plc button { font: inherit; color: inherit; cursor: pointer; }
 .plc ha-icon { --mdc-icon-size: 20px; }
 .plc-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.plc .plc-top:empty { display: none; }
 .plc-title { margin: 0; font-size: var(--plc-head-px, 20px); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .plc-sp { flex: 1; }
 .plc-tvs { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -1191,7 +1192,7 @@ const CARD_CSS = `
   display: flex; align-items: center; justify-content: center; }
 .plc-ci.big .plc-ci-poster { width: calc(var(--li-title-px) * 4.4); }
 .plc-ci.phone .plc-ci-poster { width: calc(var(--li-title-px) * 3.6); }
-.plc-ci-txt { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 22px; }
+.plc-ci-txt { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-right: 22px; line-height: 1.25; }
 .plc-ci-title { font-size: var(--li-title-px); font-weight: var(--li-title-w); color: var(--li-title-c, var(--primary-text-color)); overflow: hidden; text-overflow: ellipsis; }
 .plc-ci-info { font-size: var(--li-info-px); font-weight: var(--li-info-w); color: var(--li-info-c, var(--secondary-text-color)); }
 .plc-ci-info b, .plc-ci .plc-fv[data-f="badge"] { color: var(--c); font-weight: 700; }
@@ -1598,6 +1599,8 @@ const CARD_CSS = `
 .slots > .sl { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .slots > .sl.l { justify-content: flex-start; } .slots > .sl.c { justify-content: center; } .slots > .sl.r { justify-content: flex-end; }
 .plc-sec-tt { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
+.plc-sec-h.slots.noc, .plc-sec-bar.slots.noc { grid-template-columns: minmax(0, 1fr) 0 auto; }
+.plc-sec-tt .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .plc-sec-tt > ha-icon { align-self: center; }
 .slots .plc-kchips, .slots .plc-viewall { margin-left: 0; }
 .plc-viewall { margin-left: auto; border: none; background: none; color: var(--secondary-text-color); font-size: .9em; letter-spacing: .04em; }
@@ -2781,7 +2784,7 @@ class PlexCenterCard extends HTMLElement {
         ...(ev.kind === 'episode' ? { show: ev.title, show_key: ev.plex_show || undefined, season: ev.season, episode: ev.episode } : {}),
         trailer: ev.trailer ? `https://www.youtube.com/watch?v=${ev.trailer}` : null, airdate: ev.at, summary: ev.overview || '', year: ev.year, ev,
         umc: { title: ev.title, episode: ev.episode_title || '', number: sxe(ev), airdate: ev.at, release: ev.kind === 'movie' ? `${rel} $date` : (ev.all_day ? '$day, $date' : '$day, $date $time'),
-          runtime: ev.runtime || '', genres: (ev.genres || []).join(', '), studio: ev.network || ev.studio || '', rating: ev.rating ? String(ev.rating) : '', summary: ev.overview || '', year: ev.year },
+          runtime: ev.runtime || '', genres: (ev.genres || []).join(', '), studio: ev.network || ev.studio || '', rating: ev.rating ? `★ ${ev.rating}` : '', summary: ev.overview || '', year: ev.year },
         flag: !!badge,
         lines: own ? null : [ev.title, ev.kind === 'episode' ? [badge, sxe(ev), ev.episode_title].filter(Boolean).join(' · ') : rel, [day, time].filter(Boolean).join(' · '),
           [ev.network || ev.studio, ev.runtime ? `${ev.runtime} min` : ''].filter(Boolean).join(' · ')] });
@@ -2979,10 +2982,11 @@ class PlexCenterCard extends HTMLElement {
     if (more && st.view_all && !extraHead) slot.r.push(`<span class="plc-viewall" role="button" tabindex="0" data-viewsec="${esc(id)}">View all →</span>`);
     if (st.collapsible) slot.r.push(`${st.show_count ? `<span class="n">${esc(total ? count : 'None')}</span>` : ''}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon>`);
     else if (extraHead) slot.r.push(extraHead);
+    const noc = slot.c.length ? '' : ' noc';
     const slots = `<span class="sl l">${slot.l.join('')}</span><span class="sl c">${slot.c.join('')}</span><span class="sl r">${slot.r.join('')}</span>`;
     const head = st.collapsible
-      ? `<button class="plc-sec-bar slots ${hcls}${total ? ' has' : ''}" data-secbar="${esc(id)}">${slots}</button>`
-      : `<div class="plc-sec-h slots ${hcls}">${slots}</div>`;
+      ? `<button class="plc-sec-bar slots${noc} ${hcls}${total ? ' has' : ''}" data-secbar="${esc(id)}">${slots}</button>`
+      : `<div class="plc-sec-h slots${noc} ${hcls}">${slots}</div>`;
     const page = st.auto === 'fade' ? this._fadePage?.[id] || 0 : 0;
     const body = this._sectionItems(st, items, listId, page);
     const mode = st.auto === 'scroll' ? 'scroll auto' : st.auto === 'fade' ? 'limit fadeset' : st.scroll ? 'scroll' : 'limit';
