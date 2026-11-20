@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.20.102
+
+**Added**
+- **Flags that say what they mean:** "Flag shows as" can be **Icons** or **Labels** for Premiere, New season,
+  Finale (season / series / midseason), Trailer and New, each turned on or off per section, with an icon size.
+  Tapping the **Trailer** flag plays the trailer at once (on the selected TV, or this device). The corner flag and
+  the poster badge name the reason too ("New season" instead of "New").
+- **Coming Soon → Movie releases** (Sonarr / Radarr): pick In cinemas, Digital and Disc. With more than one picked,
+  the keyword **`$type`** gives the release type (empty with one, so it isn't repeated).
+
 ## v2026.11.20.101
 
 **Added**
