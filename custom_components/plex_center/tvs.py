@@ -10,7 +10,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
-from .const import TV_CAST, PLEX_PKG, PREVIEW_MAX_S, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER
+from .const import TV_CAST, TV_READY, TV_STATUS, PLEX_PKG, PREVIEW_MAX_S, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER
 
 OFF_STATES = ("off", "standby")
 GONE_STATES = ("unavailable", "unknown")
@@ -168,9 +168,19 @@ def route_for(hass: HomeAssistant, tv: dict[str, Any]) -> str | None:
     return "open" if has(pip) else None
 
 
+def room_ready(hass: HomeAssistant, tv: dict[str, Any]) -> bool | None:
+    """The TV's status entity (a room such as a theater): True when it shows the ready value, None without one."""
+    if not (ent := tv.get(TV_STATUS)):
+        return None
+    st = hass.states.get(ent)
+    return bool(st) and st.state == str(tv.get(TV_READY) or "on")
+
+
 def tv_on(hass: HomeAssistant, tv: dict[str, Any]) -> bool | None:
     """Is the TV itself on? From its own players (PiPup, ADB, Android TV Remote), never the Plex client:
     Plex keeps a paused session for a long time after the TV is turned off. None = no way to tell."""
+    if room_ready(hass, tv):
+        return True
     states = [hass.states.get(e) for e in (tv.get(TV_PIPUP), tv.get(TV_ADB), tv.get(TV_REMOTE)) if e]
     states = [s for s in states if s and s.state not in GONE_STATES]
     if not states:

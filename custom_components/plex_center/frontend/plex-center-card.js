@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.20.94
+// Version: v2026.11.20.95
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.20.94';
+const BUILD_NUMBER = 'v2026.11.20.95';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1812,6 +1812,8 @@ const peek = (key) => CACHE.get(key)?.data;
 /** Is the TV itself on? From PiPup / ADB / Android TV Remote, never the Plex player: Plex keeps a paused session
  *  long after the TV is turned off. null = no way to tell (only a Plex player). */
 function tvPower(hass, tv) {
+  const room = tv?.status_entity && hass?.states[tv.status_entity];   // a room (theater) that says it's ready
+  if (room && room.state === String(tv.ready_value || 'on')) return true;
   const sts = [tv?.pipup, tv?.adb, tv?.remote].map((id) => id && hass?.states[id]).filter((x) => x && !['unavailable', 'unknown'].includes(x.state));
   if (!sts.length) return null;
   return sts.some((x) => !['off', 'standby'].includes(x.state));

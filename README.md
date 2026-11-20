@@ -107,6 +107,29 @@ data:
   watched: true        # for the TV's Plex user
 ```
 
+## Rooms with several devices (a theater)
+
+A TV can have a **Room power** entity and a **Room status** entity (in the TV's settings). Plex Center doesn't
+know your devices: your own automation or script turns them on and off and checks them.
+
+- **Room power**: an `input_boolean`, `input_select`, `select`, `switch`, `script` or `scene` your automation
+  watches. For a select, set its on value (for example `Movie`) and off value.
+- **Room status**: an entity that shows when everything is ready, for example a template binary sensor that is on
+  only when every device is. Set its ready value if it isn't `on`.
+- **Play, Resume and Turn on:** if the status isn't ready, Plex Center sets the power entity on, waits for the
+  status to show ready (120 s by default), then wakes the TV and plays. If the room isn't ready in time, it says so
+  and doesn't play. Without a status entity, it sets the power entity on and goes on.
+- **Turn off** sets the power entity off, then puts the TV in standby.
+- While the status shows ready, the TV counts as on.
+
+```yaml
+template:
+  - binary_sensor:
+      - name: Theater ready
+        state: >
+          {{ is_state('media_player.theater_shield', 'on') and is_state('media_player.jvc_projector', 'on') }}
+```
+
 ## Notes
 
 - **Stop** sends Back, which leaves the Plex player for the title's page (the new Plex app ignores the Stop key).

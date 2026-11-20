@@ -21,6 +21,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER, TV_CAST, VERSION
 from .media import details, image_url, item_dict
+from .play import can_power_off
 from .tvs import real_playback, route_for, tv_on
 
 _LOGGER = logging.getLogger(__name__)
@@ -270,8 +271,8 @@ async def ws_config(hass: HomeAssistant, connection, msg) -> None:
             except Exception as err:  # noqa: BLE001
                 libraries[user] = {"error": str(err)}
         tvs.append({"id": tv[TV_ID], "name": tv[TV_NAME], "user": user, "route_setting": tv.get(TV_ROUTE, "auto"),
-                    **{k: tv[k] for k in (TV_PIPUP, TV_ADB, TV_PLEX, TV_REMOTE, TV_CAST) if tv.get(k)},
-                    "power_off": bool(tv.get(TV_ADB) or tv.get(TV_REMOTE)), **tv_state(hass, tv)})
+                    **{k: tv[k] for k in (TV_PIPUP, TV_ADB, TV_PLEX, TV_REMOTE, TV_CAST, "status_entity", "ready_value") if tv.get(k)},
+                    "power_off": can_power_off(tv), **tv_state(hass, tv)})
     reg = er.async_get(hass)
     found = {p for p in (e.platform for e in reg.entities.values()) if p in INTEGRATIONS}
     upcoming = sorted(s.entity_id for s in hass.states.async_all("sensor") if isinstance(s.attributes.get("data"), (list, str))

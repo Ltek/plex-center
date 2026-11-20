@@ -10,9 +10,10 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import BTN_RESTART, BTN_WATCH, PLEX_PKG, TV_ADB, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_USER
+from .const import (BTN_RESTART, BTN_WATCH, PLEX_PKG, TV_ADB, TV_NAME, TV_PIPUP, TV_PLEX, TV_POWER, TV_POWER_OFF, TV_POWER_ON,
+                    TV_READY, TV_READY_S, TV_REMOTE, TV_STATUS, TV_USER)
 from .media import SAFE_LINK
-from .tvs import route_for, tv_on, tv_playing
+from .tvs import room_ready, route_for, tv_on, tv_playing
 
 _LOGGER = logging.getLogger(__name__)
 _BUSY: set[str] = set()
@@ -42,10 +43,68 @@ async def _svc(hass: HomeAssistant, domain: str, service: str, data: dict[str, A
     await hass.services.async_call(domain, service, {**data, "entity_id": entity_id}, blocking=True)
 
 
+# ------------------------------------------------------------------------------------------- room power (optional)
+
+SELECTS = ("input_select", "select")
+ON_ONLY = ("script", "scene")
+
+
+def _room_value(tv: dict[str, Any], on: bool) -> str:
+    return str(tv.get(TV_POWER_ON if on else TV_POWER_OFF) or ("on" if on else "off"))
+
+
+def _room_is(hass: HomeAssistant, tv: dict[str, Any], on: bool) -> bool:
+    st = hass.states.get(tv.get(TV_POWER) or "")
+    return bool(st) and st.state == _room_value(tv, on)
+
+
+async def set_room(hass: HomeAssistant, tv: dict[str, Any], on: bool) -> bool:
+    """Set the TV's power entity on / off (your automation turns the room's devices on or off). False if it can't."""
+    ent = tv.get(TV_POWER)
+    if not ent or not hass.states.get(ent):
+        return False
+    domain = ent.split(".", 1)[0]
+    if domain in SELECTS:
+        await hass.services.async_call(domain, "select_option", {"entity_id": ent, "option": _room_value(tv, on)}, blocking=True)
+    elif domain in ON_ONLY:
+        if not on:
+            return False
+        await hass.services.async_call(domain, "turn_on", {"entity_id": ent}, blocking=True)
+    else:
+        await hass.services.async_call("homeassistant", "turn_on" if on else "turn_off", {"entity_id": ent}, blocking=True)
+    return True
+
+
+async def ensure_ready(hass: HomeAssistant, tv: dict[str, Any], *, poll: float = 1.0) -> None:
+    """Before playing or turning on: if the TV has a status entity that isn't ready, set its power entity on and wait
+    until the status says ready (up to ready_wait seconds). Without a status entity, just set the power entity on."""
+    ready, ent = room_ready(hass, tv), tv.get(TV_POWER)
+    if ready or (ready is None and not ent):
+        return
+    if ready is None:   # no status entity: set the power entity on (unless it already is), then go on
+        if (tv_on(hass, tv) is False) if ent.split(".", 1)[0] in ON_ONLY else not _room_is(hass, tv, True):
+            await set_room(hass, tv, True)
+        return
+    if ent:
+        await set_room(hass, tv, True)
+    wait = float(tv.get(TV_READY_S) or 120)
+    waited = 0.0
+    while waited < wait:
+        await asyncio.sleep(poll)
+        waited += poll
+        if room_ready(hass, tv):
+            await asyncio.sleep(min(2.0, poll * 2))   # let the TV's players catch up
+            return
+    st = hass.states.get(tv[TV_STATUS])
+    raise HomeAssistantError(f"{_name(tv)} isn't ready after {int(wait)} s ({tv[TV_STATUS]} is {st.state if st else 'missing'}, "
+                             f"waiting for {tv.get(TV_READY) or 'on'})")
+
+
 # ------------------------------------------------------------------------------------------- power
 
 async def power_on(hass: HomeAssistant, tv: dict[str, Any]) -> None:
-    """Turn the TV on: PiPup, then Android TV Remote, then ADB's wake key."""
+    """Turn the TV on: its room first (power / status entities), then PiPup, Android TV Remote or ADB's wake key."""
+    await ensure_ready(hass, tv)
     pip, rem, adb = tv.get(TV_PIPUP), tv.get(TV_REMOTE), tv.get(TV_ADB)
     if _has(hass, pip):
         await _svc(hass, "media_player", "turn_on", {}, pip)
@@ -64,16 +123,18 @@ async def power_off(hass: HomeAssistant, tv: dict[str, Any]) -> None:
     Plex: on TCL Google TVs PiPup's turn off is a deep sleep that nothing but the remote wakes from.
     """
     adb, rem = tv.get(TV_ADB), tv.get(TV_REMOTE)
+    room = await set_room(hass, tv, False)   # the room's automation turns its devices off
     if _has(hass, adb):
         await _svc(hass, "androidtv", "adb_command", {"command": "input keyevent KEYCODE_SLEEP"}, adb)
     elif _has(hass, rem):
         await _svc(hass, "media_player", "turn_off", {}, rem)
-    else:
+    elif not room:
         raise HomeAssistantError(f"{_name(tv)} can only be turned off with its remote (Plex Center needs its ADB or Android TV Remote player)")
 
 
 def can_power_off(tv: dict[str, Any]) -> bool:
-    return bool(tv.get(TV_ADB) or tv.get(TV_REMOTE))
+    room = tv.get(TV_POWER)
+    return bool(tv.get(TV_ADB) or tv.get(TV_REMOTE) or (room and room.split(".", 1)[0] not in ON_ONLY))
 
 
 async def wake(hass: HomeAssistant, tv: dict[str, Any], tries: int = 40) -> bool:
@@ -132,6 +193,7 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
         raise HomeAssistantError("Still starting the last title on this TV")
     _BUSY.add(key)
     try:
+        await ensure_ready(hass, tv)   # a room (theater) first: its power entity, then wait for its status
         if route == "plex":
             payload = {"plex_key": int(item["key"]), **({"username": tv[TV_USER]} if tv.get(TV_USER) else {}),
                        **({"offset": 0} if mode == "restart" else {"resume": True})}

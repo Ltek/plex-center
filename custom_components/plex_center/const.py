@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "plex_center"
-VERSION = "2026.11.20.94"
+VERSION = "2026.11.20.95"
 
 CONF_SERVER_ID = "server_id"
 CONF_TVS = "tvs"
@@ -17,6 +17,12 @@ TV_ADB = "adb"              # media_player of the Android TV (ADB) integration
 TV_PLEX = "plex_client"     # media_player of the Plex integration for this TV's Plex app
 TV_REMOTE = "remote"        # media_player of the Android TV Remote integration (power on / off, power state)
 TV_CAST = "cast"            # media_player of the Google Cast integration (what another app plays)
+TV_POWER = "power_entity"   # optional: what turns the room on / off (input_boolean, input_select, select, switch, script, scene)
+TV_POWER_ON = "power_on"    # its "on" value (selects: the option; default on)
+TV_POWER_OFF = "power_off"  # its "off" value (selects: the option; default off)
+TV_STATUS = "status_entity" # optional: says when the room is ready to play
+TV_READY = "ready_value"    # its ready state (default on)
+TV_READY_S = "ready_wait"   # seconds to wait for ready (default 120)
 TV_ROUTE = "route"          # auto | pipup | adb | plex
 
 ROUTES = ["auto", "pipup", "adb", "plex"]

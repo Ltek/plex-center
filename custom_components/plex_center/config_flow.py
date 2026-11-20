@@ -16,6 +16,7 @@ from homeassistant.helpers import selector
 from homeassistant.util import slugify
 
 from .const import CONF_SERVER_ID, CONF_TVS, DOMAIN, ROUTES, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER, TV_CAST
+from .const import TV_POWER, TV_POWER_OFF, TV_POWER_ON, TV_READY, TV_READY_S, TV_STATUS
 from .plex import PlexConnections, plex_servers
 from .tvs import detect_tvs, route_for
 
@@ -72,14 +73,27 @@ def _tv_schema(tv: dict[str, Any], users: list[dict[str, Any]]) -> vol.Schema:
         vol.Optional(TV_REMOTE, description=sug(TV_REMOTE)): ent("androidtv_remote"),
         vol.Optional(TV_CAST, description=sug(TV_CAST)): ent("cast"),
         vol.Required(TV_ROUTE, default=tv.get(TV_ROUTE, "auto")): selector.SelectSelector(selector.SelectSelectorConfig(options=ROUTES, translation_key="route")),
+        vol.Optional(TV_POWER, description=sug(TV_POWER)): selector.EntitySelector(selector.EntitySelectorConfig(
+            domain=["input_boolean", "input_select", "select", "switch", "script", "scene"])),
+        vol.Optional(TV_POWER_ON, description=sug(TV_POWER_ON)): str,
+        vol.Optional(TV_POWER_OFF, description=sug(TV_POWER_OFF)): str,
+        vol.Optional(TV_STATUS, description=sug(TV_STATUS)): selector.EntitySelector(),
+        vol.Optional(TV_READY, description=sug(TV_READY)): str,
+        vol.Optional(TV_READY_S, default=int(tv.get(TV_READY_S) or 120)): selector.NumberSelector(selector.NumberSelectorConfig(
+            min=10, max=900, step=5, unit_of_measurement="s", mode="box")),
     })
 
 
 def _clean(data: dict[str, Any], tv_id: str) -> dict[str, Any]:
     tv = {TV_ID: tv_id, TV_NAME: data[TV_NAME].strip() or tv_id, TV_USER: "" if data.get(TV_USER) in (None, "__owner__") else data[TV_USER]}
-    for k in (TV_PIPUP, TV_ADB, TV_PLEX, TV_REMOTE, TV_CAST):
+    for k in (TV_PIPUP, TV_ADB, TV_PLEX, TV_REMOTE, TV_CAST, TV_POWER, TV_STATUS):
         if data.get(k):
             tv[k] = data[k]
+    for k in (TV_POWER_ON, TV_POWER_OFF, TV_READY):
+        if str(data.get(k) or "").strip():
+            tv[k] = str(data[k]).strip()
+    if (tv.get(TV_POWER) or tv.get(TV_STATUS)) and data.get(TV_READY_S) and int(data[TV_READY_S]) != 120:
+        tv[TV_READY_S] = int(data[TV_READY_S])
     if data.get(TV_ROUTE) and data[TV_ROUTE] != "auto":
         tv[TV_ROUTE] = data[TV_ROUTE]
     return tv

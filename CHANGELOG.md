@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.20.95
+
+**Added**
+- **Rooms with several devices** (a theater): each TV can have a **Room power** entity (input_boolean,
+  input_select, select, switch, script or scene) and a **Room status** entity. Before Play, Resume or Turn on,
+  Plex Center sets the power entity on and waits until the status shows ready (120 s by default, per TV), then
+  wakes the TV and plays; it says so if the room isn't ready in time. Turn off sets the power entity off. While
+  the status shows ready, the TV counts as on. Your own automation turns the devices on and checks them.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.20.94
 
 **Changed**

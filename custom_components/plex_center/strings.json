@@ -31,7 +31,13 @@
           "plex_client": "Plex player of this TV",
           "remote": "Android TV Remote player of this TV",
           "cast": "Cast player of this TV",
-          "route": "Play with"
+          "route": "Play with",
+          "power_entity": "Room power (optional)",
+          "power_on": "Its on value",
+          "power_off": "Its off value",
+          "status_entity": "Room status (optional)",
+          "ready_value": "Its ready value",
+          "ready_wait": "Wait for ready"
         },
         "data_description": {
           "name": "Shown on the card's TV picker, and used by the plex_center.play and plex_center.control actions.",
@@ -41,7 +47,13 @@
           "plex_client": "The Plex integration's player for this TV's Plex app. Gives the poster and episode while something plays. Plex Web and Plex HTPC can also be played on directly through it.",
           "remote": "Optional. The Android TV Remote integration's player: Plex Center reads the TV's power from it and turns the TV on and off with its Power key (never a deep sleep).",
           "cast": "Optional. The Google Cast integration's player: what another app (HBO Max, Prime Video...) plays, when PiPup and ADB don't say.",
-          "route": "Automatic: Plex remote control when the player accepts it (Plex Web, HTPC), else PiPup when its clicks allow Plex, else ADB. Pick one only if Automatic chooses wrongly."
+          "route": "Automatic: Plex remote control when the player accepts it (Plex Web, HTPC), else PiPup when its clicks allow Plex, else ADB. Pick one only if Automatic chooses wrongly.",
+          "power_entity": "For a room with several devices (a theater): an input_boolean, input_select, select, switch, script or scene that your automation uses to turn them all on and off. Plex Center sets it on before playing or turning the TV on, and off when you turn the TV off.",
+          "power_on": "For an input_select / select: the option that means on (for example Movie). Others: leave empty.",
+          "power_off": "For an input_select / select: the option that means off. Others: leave empty.",
+          "status_entity": "An entity that shows when the room is ready (for example a template binary_sensor that is on when every device is). Before playing, Plex Center waits for it; while it shows ready, the TV counts as on.",
+          "ready_value": "The status entity's ready state. Default: on.",
+          "ready_wait": "How long to wait for the room to be ready before giving up."
         }
       },
       "detect": {
