@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.20.99
+// Version: v2026.11.20.100
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.20.99';
+const BUILD_NUMBER = 'v2026.11.20.100';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1098,14 +1098,14 @@ function formatDate(input, format = 'mm/dd/yy') {
     .replace(new RegExp(mark + '(?=\\d)', 'g'), '/').replace(new RegExp(mark, 'g'), '');
 }
 
-const KEYWORDS = /\$title|\$episode|\$genres|\$number|\$rating|\$release|\$runtime|\$studio|\$day|\$date|\$time|\$aired|\$tmdb_id|\$empty/g;
+const KEYWORDS = /\$title|\$episode|\$genres|\$number|\$se\b|\$rating|\$release|\$runtime|\$studio|\$day|\$date|\$time|\$aired|\$tmdb_id|\$empty/g;
 
 /** Title + line 1–4 of an item: $keywords replaced; a '-'-separated part whose keyword is empty is dropped. */
 function umcLines(item, defaults, c, now = Date.now()) {
   const keys = umcKeys(item, c, now);
   const tpl = [c.title_text || defaults.title_default || '$title', c.line1_text || defaults.line1_default || '$episode',
     c.line2_text || defaults.line2_default || '$release', c.line3_text || defaults.line3_default || '$rating - $runtime',
-    c.line4_text || defaults.line4_default || '$number - $studio'];
+    c.line4_text || defaults.line4_default || '$number - $studio', c.line5_text || defaults.line5_default || '$empty'];
   return tpl.map((t) => {
     const parts = String(t).replace(/ - /g, '-').split('-')
       .map((p) => p.replace(KEYWORDS, (k) => (keys[k] == null ? '\u0001' : keys[k])))
@@ -1127,6 +1127,7 @@ function umcKeys(item, c, now = Date.now()) {
     $title: item.title || null, $episode: item.episode || null,
     $genres: (Array.isArray(item.genres) ? item.genres.join(', ') : item.genres) || null,
     $number: item.number || null, $rating: item.rating || null,
+    $se: (() => { const m = /S0*(\d+)\s*[E·]\s*0*(\d+)/i.exec(String(item.number || '').replace(/ · E/, 'E')); return m ? `S${m[1]} E${m[2]}` : (item.number || null); })(),
     $release: String(item.release || '').replace('$date', formatDate(item.airdate, fmt)).replace('$year', formatDate(item.airdate, 'yy')) || null,
     $runtime: runtime || null, $studio: item.studio || null,
     $day: air && !isNaN(air) ? air.toLocaleDateString([], { weekday: days <= 7 ? 'long' : 'short' }) : null,
@@ -1388,7 +1389,7 @@ const CARD_CSS = `
 .lk-type .plc-ttype { display: block; }
 .lk-bordered .plc-poster, .lk-bordered .plc-sess, .lk-bordered .plc-lrow { border-left: 4px solid var(--plc-a); }
 .lk-nostatus .plc-watched { display: none; }
-.lk-hide-title .plc-t, .lk-hide-info .plc-s.l1, .lk-hide-when .plc-s.l2, .lk-hide-meta .plc-s.l3, .lk-hide-extra .plc-s.l4 { display: none; }
+.lk-hide-title .plc-t, .lk-hide-info .plc-s.l1, .lk-hide-when .plc-s.l2, .lk-hide-meta .plc-s.l3, .lk-hide-extra .plc-s.l4, .lk-hide-extra .plc-s.l5 { display: none; }
 .plc-poster.fade { background-color: #0d0d0d; }
 .plc-fadeimg { position: absolute; top: 0; right: 0; bottom: 0; width: var(--plc-fade-w, 62%); background: center / cover no-repeat; border-radius: inherit;
   -webkit-mask-image: linear-gradient(to right, transparent var(--plc-fade-s, 0%), rgb(0 0 0 / .04) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .15), rgb(0 0 0 / .15) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .3), rgb(0 0 0 / .35) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .45), rgb(0 0 0 / .6) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .6), rgb(0 0 0 / .82) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .75), rgb(0 0 0 / .95) calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%) * .9), #000 calc(var(--plc-fade-s, 0%) + var(--plc-fade-d, 45%)));
@@ -1526,7 +1527,7 @@ const CARD_CSS = `
 .plc.shadows .plc-li { box-shadow: 0 4px 12px rgba(0,0,0,.5); }
 .plc-li-img { position: absolute; top: 0; right: 0; bottom: 0; width: 60%; background: center / cover no-repeat;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 40%); mask-image: linear-gradient(to right, transparent, #000 40%); }
-.plc-li-text { position: relative; padding: 10px 14px; max-width: 64%; display: flex; flex-direction: column; gap: 3px; }
+.plc-li-text { position: relative; padding: 10px 14px; max-width: 64%; display: flex; flex-direction: column; gap: 0; line-height: 1.3; }
 .plc-li .plc-t { margin: 0; -webkit-line-clamp: 1; color: var(--plc-title-c, #d3d3d3); }
 .plc-li .plc-s { color: var(--plc-line-c, #9a9a9a); }
 .plc-li-flag { position: absolute; top: 0; right: 0; width: 0; height: 0; border-style: solid; border-width: 0 46px 46px 0;
@@ -1535,9 +1536,9 @@ const CARD_CSS = `
 .plc-s.l1 { font-weight: var(--plc-l1-w, 400); font-size: var(--plc-l1-px, var(--plc-line-px, 12px)); color: var(--plc-l1-c, var(--plc-line-c, var(--secondary-text-color))); }
 .plc-s.l2 { font-weight: var(--plc-l2-w, 400); font-size: var(--plc-l2-px, var(--plc-line-px, 12px)); color: var(--plc-l2-c, var(--plc-line-c, var(--secondary-text-color))); }
 .plc-s.l3 { font-weight: var(--plc-l3-w, 400); font-size: var(--plc-l3-px, var(--plc-line-px, 12px)); color: var(--plc-l3-c, var(--plc-line-c, var(--secondary-text-color))); }
-.plc-s.l4 { font-weight: var(--plc-l4-w, 400); font-size: var(--plc-l4-px, var(--plc-line-px, 12px)); color: var(--plc-l4-c, var(--plc-line-c, var(--secondary-text-color))); }
+.plc-s.l4, .plc-s.l5 { font-weight: var(--plc-l4-w, 400); font-size: var(--plc-l4-px, var(--plc-line-px, 12px)); color: var(--plc-l4-c, var(--plc-line-c, var(--secondary-text-color))); }
 .plc-li .plc-s.l1 { color: var(--plc-l1-c, var(--plc-line-c, #9a9a9a)); } .plc-li .plc-s.l2 { color: var(--plc-l2-c, var(--plc-line-c, #9a9a9a)); }
-.plc-li .plc-s.l3 { color: var(--plc-l3-c, var(--plc-line-c, #9a9a9a)); } .plc-li .plc-s.l4 { color: var(--plc-l4-c, var(--plc-line-c, #9a9a9a)); }
+.plc-li .plc-s.l3 { color: var(--plc-l3-c, var(--plc-line-c, #9a9a9a)); } .plc-li .plc-s.l4, .plc-li .plc-s.l5 { color: var(--plc-l4-c, var(--plc-line-c, #9a9a9a)); }
 .plc-sec-bar .name.caps, .plc-sec-h .name.caps { font-size: var(--plc-sec-px, 12px); font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--plc-a); }
 .plc-sec-h .name.plain { font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--primary-text-color); }
 .plc-sec-h > ha-icon { color: var(--plc-a); }
@@ -2769,7 +2770,7 @@ class PlexCenterCard extends HTMLElement {
     catch { return; }
     if (!sec.isConnected) return;
     const now = Date.now(), seen = new Set(), pool = [], have = this._plexKeys();
-    const own = ['title_text', 'line1_text', 'line2_text', 'line3_text', 'line4_text'].some((k) => this._c[k]);
+    const own = ['title_text', 'line1_text', 'line2_text', 'line3_text', 'line4_text', 'line5_text'].some((k) => this._c[k]);
     for (const ev of res.events || []) {
       if (!ev.all_day && new Date(ev.at).getTime() < now - 3 * 3600 * 1000) continue;   // already aired
       // already in the system (downloaded, in Plex, or in Recently Added / Continue / Next): not coming soon
@@ -4990,9 +4991,9 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._sub('ap-colors', 'Colors', Object.keys(COLOR_DEFS).filter((k) => !k.startsWith('card_') && !k.startsWith('page_')).map((k) => this._colorControl(k)).join(''))}
       ${this._sub('ap-page', 'Page menu', this._pageBody())}
 
-      ${this._sub('ap-rowtext', 'Row text (upcoming-media rows)', `<p class="plce-hint">Keywords: <code>$title $episode $number $release $date $day $time $aired $runtime $rating $genres $studio $empty</code>.
+      ${this._sub('ap-rowtext', 'Row text (upcoming-media rows)', `<p class="plce-hint">Keywords: <code>$title $episode $number $se $release $date $day $time $aired $runtime $rating $genres $studio $empty</code>.
         A part between <code>-</code> whose keyword is empty is left out. Blank = the sensor's default.</p>
-        ${['title_text', 'line1_text', 'line2_text', 'line3_text', 'line4_text'].map((k, i) => this._text(k, i ? `Line ${i}` : 'Title')).join('')}
+        ${['title_text', 'line1_text', 'line2_text', 'line3_text', 'line4_text', 'line5_text'].map((k, i) => this._text(k, i ? `Line ${i}` : 'Title')).join('')}
         ${this._text('date', 'Date format', 'mm/dd')}${this._select('clock', 'Clock', [['12', '12-hour'], ['24', '24-hour']])}`)}`;
   }
 

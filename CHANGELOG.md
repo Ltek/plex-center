@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.20.100
+
+**Added**
+- Row text **Line 5** (`line5_text`), shown in list rows like Line 4.
+- Keyword **`$se`**: the episode as "S2 E7".
+
+**Changed**
+- List rows' text lines sit closer together.
+
 ## v2026.11.20.99
 
 **Fixed**
