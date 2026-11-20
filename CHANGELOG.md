@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.20.93
+
+**Changed**
+- **Next Episode:** new episodes of shows you watch come first (newest first), then the rest of On Deck. Before,
+  they were added after On Deck and cut off when On Deck already filled the row.
+- **Mark watched / unwatched** must be held (2 s by default) instead of asking to confirm.
+
+**Added**
+- **Mark all watched / unwatched** on a show's details (held 3 s by default); it replaces Mark watched there.
+- Separate hold times under Pages: **Play** (`hold_ms`), **Mark watched** (`hold_mark_ms`) and **Mark all
+  watched** (`hold_markall_ms`). 0 for either Mark makes it a tap that asks to confirm, as before.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.19.92
 
 **Fixed**

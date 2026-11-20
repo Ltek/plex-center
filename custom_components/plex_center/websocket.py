@@ -241,6 +241,14 @@ def next_from_recent(recent: list, have: set[str], limit: int) -> list:
     return out
 
 
+def order_next(deck: list, new: list, recent_keys: set[str]) -> list:
+    """Next Episode order: episodes added recently first (newest first; new ones from Recently Added and On Deck picks
+    that are in it), then the rest of On Deck in Plex's order (most recently watched first)."""
+    fresh = [*new, *(x for x in deck if str(getattr(x, "ratingKey", "")) in recent_keys)]
+    fresh.sort(key=lambda x: getattr(x, "addedAt", None) or datetime.min, reverse=True)
+    return [*fresh, *(x for x in deck if x not in fresh)]
+
+
 # ------------------------------------------------------------------------------------------- commands
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/config", vol.Optional("entry_id"): str})
@@ -394,7 +402,8 @@ async def ws_hubs(hass: HomeAssistant, connection, msg) -> None:
             deck = _safe(getattr(server.library, "onDeck", None))
         cw, nxt = split_continue([*cont, *deck], pct, lambda ep: _next_episode(ep))
         nxt = verify_next(lambda keys: server.fetchItems(f"/library/metadata/{','.join(keys)}"), nxt, _next_episode)
-        nxt += next_from_recent(recent, {_show_of(i) for i in [*cw, *nxt] if getattr(i, "type", None) == "episode"}, max(0, n - len(nxt)))
+        nxt = order_next(nxt, next_from_recent(recent, {_show_of(i) for i in [*cw, *nxt] if getattr(i, "type", None) == "episode"}, len(recent)),
+                         {str(getattr(r, "ratingKey", "")) for r in recent})
         return {"continue": [item_dict(i, sign) for i in cw[:n]], "next": [item_dict(i, sign) for i in nxt[:n]],
                 "recent": [item_dict(i, sign) for i in recent[:n]]}
 

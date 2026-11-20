@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.19.92
+// Version: v2026.11.20.93
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.19.92';
+const BUILD_NUMBER = 'v2026.11.20.93';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -520,6 +520,8 @@ const DEFAULTS = {
   stagger_rotate: false,
   hold_play: true,
   hold_ms: 2000,
+  hold_mark_ms: 2000,       // Mark watched / unwatched (0: a tap, then confirm)
+  hold_markall_ms: 3000,    // a show's Mark all watched / unwatched (0: a tap, then confirm)
   np_power: false,
   watching_apps: true,
   watched_pct: 95,
@@ -1573,7 +1575,8 @@ const CARD_CSS = `
 /* auto-scroll moves a pixel or two at a time: snapping would pull it straight back */
 .plc-sec-body.auto .plc-row, .plc-sec-body.auto .plc-list { scroll-snap-type: none; scroll-behavior: auto; }
 .plc-sec-body.auto .plc-row::-webkit-scrollbar, .plc-sec-body.auto .plc-list::-webkit-scrollbar { display: none; }
-.plc-btn { position: relative; }
+.plc-btn, .plc-act, [data-cwmark] { position: relative; }
+.plc-act.plc-hold, [data-cwmark].plc-hold { overflow: hidden; }
 .plc-hold { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .plc-hold::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: rgb(255 255 255 / .35);
   animation: plc-holdfill var(--hold-ms, 2000ms) linear forwards; }
@@ -2011,19 +2014,25 @@ class PlexCenterCard extends HTMLElement {
     this._refresh(true);
   }
 
-  /** Hold to play: Play buttons start only after being held (an indicator fills while holding). Not in Now playing. */
+  /** Hold buttons: Play (hold_play / hold_ms), Mark watched (hold_mark_ms) and a show's Mark all watched
+   *  (hold_markall_ms) act only after being held (an indicator fills while holding). Play: not in Now playing. */
   _holdTarget(e) {
-    if (!cfg(this._c, 'hold_play')) return null;
-    const el = e.target.closest?.(HOLD_SEL);
-    return el && !el.closest('.plc-side, .plc-npfull') ? el : null;
+    for (const [sel, key, label] of HOLDS) {
+      const el = e.target.closest?.(sel);
+      if (!el) continue;
+      if (key === 'hold_ms' && (!cfg(this._c, 'hold_play') || el.closest('.plc-side, .plc-npfull'))) return null;
+      const ms = Number(cfg(this._c, key));
+      return ms > 0 ? { el, ms: Math.max(300, ms), label } : null;
+    }
+    return null;
   }
   _wireHold() {
     const cancel = () => { if (!this._hold) return; clearTimeout(this._hold.t); this._hold.el.classList.remove('plc-hold'); this._hold = null; };
     this._root.addEventListener('pointerdown', (e) => {
-      const el = this._holdTarget(e);
-      if (!el || e.button > 0) return;
+      const h = this._holdTarget(e);
+      if (!h || e.button > 0) return;
       cancel();
-      const ms = Math.max(300, Number(cfg(this._c, 'hold_ms')) || 2000);
+      const { el, ms } = h;
       el.style.setProperty('--hold-ms', `${ms}ms`); el.classList.add('plc-hold');
       this._hold = { el, t: setTimeout(() => { el.classList.remove('plc-hold'); this._hold = null; this._holdPass = el; this._holdAt = Date.now(); el.click(); }, ms) };
     });
@@ -2031,12 +2040,12 @@ class PlexCenterCard extends HTMLElement {
     this._root.addEventListener('contextmenu', (e) => { if (this._holdTarget(e)) e.preventDefault(); });
     // taps (not keyboard) on a Play button do nothing unless the hold finished
     this._root.addEventListener('click', (e) => {
-      const el = this._holdTarget(e);
-      if (!el) return;
-      if (this._holdPass === el) { this._holdPass = null; return; }
+      const h = this._holdTarget(e);
+      if (!h) return;
+      if (this._holdPass === h.el) { this._holdPass = null; return; }
       if (!e.detail) return;   // keyboard (Enter / Space): no hold needed
       e.stopImmediatePropagation(); e.preventDefault();
-      if (Date.now() - (this._holdAt || 0) > 800) this._toast(`Hold Play for ${Math.round((Number(cfg(this._c, 'hold_ms')) || 2000) / 100) / 10} s to start`);
+      if (Date.now() - (this._holdAt || 0) > 800) this._toast(`Hold ${h.label} for ${Math.round(h.ms / 100) / 10} s`);
     }, true);
   }
 
@@ -3085,6 +3094,7 @@ const STYLE_KEYS = ['search_width', 'screen_offset', 'poster_width', 'corner_rad
   'card_border_width', 'card_shadow', 'box_shadows', 'text_shadows', 'layout', ...Object.keys(COLOR_DEFS)];
 /** The buttons that start playback (held, when "Hold to play" is on). */
 const HOLD_SEL = '[data-play], [data-qplay], [data-qrestart], [data-sheetplay], [data-calplay], [data-resume]';
+const HOLDS = [['[data-markall]', 'hold_markall_ms', 'Mark all'], ['[data-mark], [data-cwmark]', 'hold_mark_ms', 'Mark watched'], [HOLD_SEL, 'hold_ms', 'Play']];
 /** Run after the browser has painted (so a CSS transition starts from the state just set). */
 const nextFrame = (fn) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => requestAnimationFrame(fn)) : setTimeout(fn, 30));
 /** Start loading the images in some HTML (background-image urls) before it is shown. */
@@ -3198,7 +3208,8 @@ Object.assign(PlexCenterCard.prototype, {
         ${it.cast?.length ? `<div class="plc-cast">${esc(it.cast.join(', '))}</div>` : ''}
         <div class="plc-meta plc-target">${this._canPick(it) ? `Play on ${this._pickChip()}` : ''}<span class="plc-sp"></span>
           <button class="plc-chip plc-act" data-trailergo title="${it.trailer_key || it.trailer ? 'Trailer' : 'No trailer known: searches YouTube'}"><ha-icon icon="mdi:movie-open-play"></ha-icon>Trailer</button>
-          ${it.key && ['movie', 'episode', 'show'].includes(it.type) ? `<button class="plc-chip plc-act" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div>
+          ${it.key && it.type === 'show' ? `<button class="plc-chip plc-act" data-markall="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check-all'}"></ha-icon>${it.watched ? 'Mark all unwatched' : 'Mark all watched'}</button>`
+            : it.key && ['movie', 'episode'].includes(it.type) ? `<button class="plc-chip plc-act" data-mark="${it.watched ? 0 : 1}"><ha-icon icon="mdi:${it.watched ? 'eye-off-outline' : 'check'}"></ha-icon>${it.watched ? 'Mark unwatched' : 'Mark watched'}</button>` : ''}</div>
         <div class="plc-btns">${playable ? `<button class="plc-btn main" data-play="${it.type === 'show' ? 'next' : 'play'}"><ha-icon icon="mdi:${this._target() === 'local' ? 'open-in-new' : 'play'}"></ha-icon>${this._target() === 'local' ? 'Open on this device' : `${esc(resume)} on ${esc(tvLabel(this._target()))}`}</button>
           ${it.type !== 'show' && (it.offset || it.watched) ? '<button class="plc-btn" data-play="restart"><ha-icon icon="mdi:restart"></ha-icon>Start over</button>' : ''}` : ''}
           ${this._openShowHtml(it)}</div>
@@ -3303,14 +3314,15 @@ Object.assign(PlexCenterCard.prototype, {
   },
 
   /** Mark a title watched / unwatched for the TV's Plex user, after a confirmation. */
-  _markWatched(it, watched) {
+  _markWatched(it, watched, holdKey = 'hold_mark_ms') {
     const tv = this._tv();
     if (!it?.key || !tv) return;
-    const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : (it.show || it.title);
-    if (!window.confirm(`Mark “${what}” as ${watched ? 'watched' : 'unwatched'} for ${tvLabel(tv)}?`)) return;
+    const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : it.type === 'show' ? `every episode of ${it.show || it.title}` : (it.show || it.title);
+    // held for the set time = confirmed; with no hold (0), ask
+    if (!(Number(cfg(this._c, holdKey)) > 0) && !window.confirm(`Mark “${what}” as ${watched ? 'watched' : 'unwatched'} for ${tvLabel(tv)}?`)) return;
     this._hass.callService('plex_center', 'mark', { tv: tv.id, key: String(it.key), watched }).then(() => {
       for (const k of [...CACHE.keys()]) if (/^(items|hubs|item|phub|search):/.test(k) && k.includes(`:${tv.id}:`) || k === `hubs:${tv.id}`) CACHE.delete(k);
-      this._toast(watched ? 'Marked as watched' : 'Marked as unwatched');
+      this._toast(it.type === 'show' ? (watched ? 'Marked every episode as watched' : 'Marked every episode as unwatched') : watched ? 'Marked as watched' : 'Marked as unwatched');
       if (this._v.detail) this._renderDetail();
       this._v.hero = 0;
       if (this._v.tab === 'home') this._renderMain();
@@ -3890,6 +3902,7 @@ Object.assign(PlexCenterCard.prototype, {
     if ((el = t('[data-play]'))) { if (this._detailItem) this._play(this._detailItem, el.dataset.play); return; }
     if (t('[data-trailergo]')) { this._playTrailer(this._detailItem); return; }
     if ((el = t('[data-cwmark]'))) { this._markWatched((this._lists.get('continue') || [])[Number(el.dataset.cwmark)], true); return; }
+    if ((el = t('[data-markall]'))) { this._markWatched(this._detailItem, el.dataset.markall === '1', 'hold_markall_ms'); return; }
     if ((el = t('[data-mark]'))) { this._markWatched(this._detailItem, el.dataset.mark === '1'); return; }
     if (t('[data-trailer]')) { if (this._detailItem?.trailer) this._trailer(this._detailItem.trailer); return; }
     if ((el = t('[data-np]'))) {
@@ -4417,7 +4430,9 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._config.tab_order ? '<button class="plce-add" data-treset>Back to the default order</button>' : ''}
       ${this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])])}
       ${this._check('hold_play', 'Hold to play: Play buttons start only after being held (not in Now playing)')}
-      ${this._c('hold_play') ? this._slider('hold_ms', 'Hold for', 500, 5000, ' ms') : ''}
+      ${this._c('hold_play') ? this._slider('hold_ms', 'Play: hold for', 500, 5000, ' ms') : ''}
+      ${this._slider('hold_mark_ms', 'Mark watched: hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
+      ${this._slider('hold_markall_ms', 'Mark all watched (a show): hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
       ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}
       ${this._check('jump_bar', 'A–Z jump bar beside A → Z libraries')}
       ${this._check('remember_view', 'Remember the tab, filters, sort and view on each device')}

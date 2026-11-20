@@ -240,6 +240,15 @@ def test_next_episode_rechecked_and_new_episodes_of_watched_shows():
     assert next_from_recent([c[2]], set(), 0) == []
 
 
+def test_next_order_new_first():
+    from datetime import datetime
+
+    from custom_components.plex_center.websocket import order_next
+    old1, old2 = NS(ratingKey=1, addedAt=datetime(2025, 1, 1)), NS(ratingKey=2, addedAt=datetime(2026, 11, 18))   # 2 was just added
+    new = NS(ratingKey=3, addedAt=datetime(2026, 11, 19))
+    assert [x.ratingKey for x in order_next([old1, old2], [new], {"2", "3"})] == [3, 2, 1]
+
+
 def test_recently_added_tv_gives_episodes_newest_per_show():
     from custom_components.plex_center.websocket import _recent_in
 
