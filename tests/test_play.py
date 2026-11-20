@@ -48,6 +48,26 @@ async def test_pipup_play_and_restart_fallback(hass, calls):
     assert [c[2].get("click") for c in calls[-2:]] == ["action-button-watchFromStart", "action-button-watch"]
 
 
+async def test_play_logs_each_step(hass, calls):
+    import logging
+    got = []
+
+    class H(logging.Handler):
+        def emit(self, record):
+            got.append(record.getMessage())
+    log = logging.getLogger("custom_components.plex_center.play")
+    h, old = H(), log.level
+    log.addHandler(h); log.setLevel(logging.DEBUG)
+    try:
+        _pip(hass)
+        await play.start(hass, {"name": "LR", "pipup": "media_player.pip"}, MOVIE)
+    finally:
+        log.removeHandler(h); log.setLevel(old)
+    lines = [m for m in got if "plex_center play on LR" in m]
+    assert "start" in lines[0] and "route pipup" in lines[0]
+    assert any("PiPup open + press watch" in x and "total" in x for x in lines) and "done" in lines[-1]
+
+
 async def test_pipup_sends_back_first_when_playing(hass, calls):
     _pip(hass, playing=True)
     with patch("asyncio.sleep"):

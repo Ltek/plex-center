@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -17,6 +18,20 @@ from .tvs import room_ready, route_for, tv_on, tv_playing
 
 _LOGGER = logging.getLogger(__name__)
 _BUSY: set[str] = set()
+
+
+class Steps:
+    """Debug log of a Play: one line per step with its time and the total (Enable debug logging on Plex Center)."""
+
+    def __init__(self, tv: dict[str, Any], what: str) -> None:
+        self.name, self.t0 = tv.get(TV_NAME) or tv.get("id") or "TV", time.monotonic()
+        self.t = self.t0
+        _LOGGER.debug("plex_center play on %s: start %s", self.name, what)
+
+    def mark(self, step: str) -> None:
+        now = time.monotonic()
+        _LOGGER.debug("plex_center play on %s: %-34s %5.1f s  (total %5.1f s)", self.name, step, now - self.t, now - self.t0)
+        self.t = now
 
 
 def _tap(button: str) -> str:
@@ -137,24 +152,30 @@ def can_power_off(tv: dict[str, Any]) -> bool:
     return bool(tv.get(TV_ADB) or tv.get(TV_REMOTE) or (room and room.split(".", 1)[0] not in ON_ONLY))
 
 
-async def wake(hass: HomeAssistant, tv: dict[str, Any], tries: int = 40) -> bool:
+async def wake(hass: HomeAssistant, tv: dict[str, Any], tries: int = 40, steps: Steps | None = None) -> bool:
     """Make the TV ready for a title: on, screensaver closed, no 'not responding' box. True if it was off."""
+    mark = steps.mark if steps else (lambda _s: None)
     was_off = tv_on(hass, tv) is False
     if was_off:
         await power_on(hass, tv)
+        mark("turn on sent")
         for _ in range(tries):          # up to ~20 s for its players to say on
             await asyncio.sleep(0.5)
             if tv_on(hass, tv):
                 break
+        mark("TV says on" if tv_on(hass, tv) else "TV still not on (gave up waiting)")
         await asyncio.sleep(2)
+        mark("settle after turning on")
     if not was_off and _playing(hass, tv):
         return was_off
     pip, adb = tv.get(TV_PIPUP), tv.get(TV_ADB)
     if _has(hass, adb):   # wake key closes the screensaver without pressing anything; then close system boxes
         await _svc(hass, "androidtv", "adb_command",
                    {"command": "input keyevent KEYCODE_WAKEUP; am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS"}, adb)
+        mark("ADB wake + close dialogs")
     elif _has(hass, pip):  # PiPup's turn on also closes the screensaver
         await _svc(hass, "media_player", "turn_on", {}, pip)
+        mark("PiPup turn on (wake)")
     return was_off
 
 
@@ -192,8 +213,11 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
     if key in _BUSY:
         raise HomeAssistantError("Still starting the last title on this TV")
     _BUSY.add(key)
+    steps = Steps(tv, f"{item.get('title') or item.get('key')} ({mode}, route {route})")
     try:
-        await ensure_ready(hass, tv)   # a room (theater) first: its power entity, then wait for its status
+        if tv.get(TV_POWER) or tv.get(TV_STATUS):
+            await ensure_ready(hass, tv)   # a room (theater) first: its power entity, then wait for its status
+            steps.mark("room ready")
         if route == "plex":
             payload = {"plex_key": int(item["key"]), **({"username": tv[TV_USER]} if tv.get(TV_USER) else {}),
                        **({"offset": 0} if mode == "restart" else {"resume": True})}
@@ -201,18 +225,26 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
 
             await _svc(hass, "media_player", "play_media", {"media_content_type": item.get("type") or "movie",
                                                             "media_content_id": "plex://" + json.dumps(payload)}, tv[TV_PLEX])
+            steps.mark("Plex remote: play_media")
         elif route in ("pipup", "open"):
             pip = tv[TV_PIPUP]
-            was_off = await wake(hass, tv)
+            was_off = await wake(hass, tv, steps=steps)
             if not was_off and _playing(hass, tv):   # the TV closed its apps in standby: nothing to leave
                 await _svc(hass, "pipup", "send_key", {"key": "back"}, pip)
                 await asyncio.sleep(1.5)
+                steps.mark("Back (something was playing)")
             data = {"package": PLEX_PKG, "uri": link}
             if route == "open":
                 await _svc(hass, "pipup", "launch_app", data, pip)
+                steps.mark("PiPup opened the title")
             else:
                 async def launch(button: str) -> None:
-                    await _svc(hass, "pipup", "launch_app", {**data, "click": button, "method": "ok", "wait": 45}, pip)
+                    try:
+                        await _svc(hass, "pipup", "launch_app", {**data, "click": button, "method": "ok", "wait": 45}, pip)
+                    except HomeAssistantError as err:
+                        steps.mark(f"PiPup open + press {button.rsplit('-', 1)[-1]} FAILED: {err}")
+                        raise
+                    steps.mark(f"PiPup open + press {button.rsplit('-', 1)[-1]}")
 
                 async def launch_retry(button: str) -> None:
                     try:
@@ -223,6 +255,7 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
                         # Plex opened behind the screensaver (or was slow to start): Home closes it, then once more
                         await _svc(hass, "pipup", "send_key", {"key": "home"}, pip)
                         await asyncio.sleep(2)
+                        steps.mark("Home (screensaver?), then retry")
                         try:
                             await launch(button)
                         except HomeAssistantError as err2:
@@ -242,19 +275,27 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
         else:  # adb
             adb = tv[TV_ADB]
             cmd = lambda c: _svc(hass, "androidtv", "adb_command", {"command": c}, adb)  # noqa: E731
-            was_off = await wake(hass, tv)
+            was_off = await wake(hass, tv, steps=steps)
             if not was_off and _playing(hass, tv):
                 await cmd("input keyevent KEYCODE_BACK")
                 await asyncio.sleep(1.5)
+                steps.mark("ADB Back (something was playing)")
             await cmd(f"input keyevent KEYCODE_WAKEUP; am start -a android.intent.action.VIEW -d '{link}' {PLEX_PKG}")
+            steps.mark("ADB open the title")
             await asyncio.sleep(7)
             if mode == "restart":
                 await cmd(f"{_tap(BTN_RESTART)} | grep -q tapped || input keyevent KEYCODE_DPAD_CENTER")
+                steps.mark("wait 7 s + ADB press Start over")
             else:
                 await cmd("input keyevent KEYCODE_DPAD_CENTER")
+                steps.mark("wait 7 s + ADB press OK")
                 await asyncio.sleep(10)
                 if not _playing(hass, tv):   # the page was still loading: one more OK
                     await cmd("input keyevent KEYCODE_DPAD_CENTER")
+                    steps.mark("wait 10 s, not playing: OK again")
+                else:
+                    steps.mark("wait 10 s: playing")
+        steps.mark("done")
         return route
     finally:
         _BUSY.discard(key)

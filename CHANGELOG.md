@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.20.96
+
+**Added**
+- **Play timing in the debug log:** one line per step of a Play (room, turn on, wake, Back, PiPup open + press
+  Watch, retries, ADB steps) with its time and the running total. Turn on Enable debug logging for Plex Center,
+  play something, and look for `plex_center play on <TV>`.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.20.95
 
 **Added**
