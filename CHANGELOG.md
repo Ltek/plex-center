@@ -1,5 +1,18 @@
 # Changelog
 
+## v2026.11.21.110
+
+**Fixed**
+- **Seek and the ±10 / ±30 buttons on the SHIELD** ("no media session" / "nothing is playing"): Plex on the SHIELD
+  doesn't tell Android what it plays, so PiPup can't seek. Plex Center then presses Fast forward / Rewind as many
+  times as it takes (the seek bar works out how far from where Plex says it is).
+
+**Added**
+- Per TV: **Plex's Skip forward / Skip back** (30 s / 10 s, Plex's defaults), how far one press skips; set them
+  to what the TV's Plex app uses (Plex: Settings → Player).
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.21.109
 
 **Fixed**

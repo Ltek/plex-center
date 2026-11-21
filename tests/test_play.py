@@ -259,3 +259,30 @@ async def test_pipup_wait_limit_is_followed(hass, calls):
         assert got == [20] and play.PIPUP_WAIT[0] == 20
     finally:
         play.PIPUP_WAIT[0] = old
+
+
+async def test_no_media_session_falls_back_to_skip_keys(hass, calls):
+    """Plex on the SHIELD publishes no media session: PiPup can't seek, so Fast forward / Rewind presses do it."""
+    from homeassistant.exceptions import HomeAssistantError
+    keys = []
+
+    async def no_session(call):
+        raise HomeAssistantError("Shield: media/seek failed (404): nothing is playing")
+
+    async def send_key(call):
+        keys.append(call.data["key"])
+    _pip(hass)
+    for svc in ("seek", "media_seek"):
+        hass.services.async_register("pipup" if svc == "seek" else "media_player", svc, no_session)
+    hass.services.async_register("pipup", "send_key", send_key)
+    hass.states.async_set("media_player.plex", "paused", {"media_position": 600, "media_duration": 3600})
+    tv = {"name": "Theater", "pipup": "media_player.pip", "plex_client": "media_player.plex"}
+    with patch("asyncio.sleep"):
+        await play.control(hass, tv, "skip", 30)
+        assert keys == ["fast_forward"], "+30 = one press (Plex's default 30 s)"
+        keys.clear(); await play.control(hass, tv, "skip", -10)
+        assert keys == ["rewind"]
+        keys.clear(); await play.control(hass, tv, "seek", 720)          # 600 → 720: 4 × 30 s
+        assert keys == ["fast_forward"] * 4
+        keys.clear(); await play.control(hass, {**tv, "skip_back": 30}, "seek", 300)   # back 300 s at 30 s a press
+        assert keys == ["rewind"] * 10

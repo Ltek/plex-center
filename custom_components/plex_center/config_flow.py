@@ -16,6 +16,7 @@ from homeassistant.helpers import selector
 from homeassistant.util import slugify
 
 from .const import CONF_SERVER_ID, CONF_TVS, DOMAIN, ROUTES, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER, TV_CAST
+from .const import TV_SKIP_BACK, TV_SKIP_FWD
 from .const import TV_BUSY, TV_FAIL, TV_POWER, TV_POWER_OFF, TV_POWER_ON, TV_READY, TV_READY_S, TV_ROOM_OFF, TV_STATUS
 from .plex import PlexConnections, plex_servers
 from .tvs import detect_tvs, route_for
@@ -84,6 +85,10 @@ def _tv_schema(tv: dict[str, Any], users: list[dict[str, Any]]) -> vol.Schema:
         vol.Optional(TV_READY_S, default=int(tv.get(TV_READY_S) or 120)): selector.NumberSelector(selector.NumberSelectorConfig(
             min=10, max=900, step=5, unit_of_measurement="s", mode="box")),
         vol.Optional(TV_ROOM_OFF, default=bool(tv.get(TV_ROOM_OFF))): bool,
+        vol.Optional(TV_SKIP_FWD, default=int(tv.get(TV_SKIP_FWD) or 30)): selector.NumberSelector(selector.NumberSelectorConfig(
+            min=5, max=600, step=5, unit_of_measurement="s", mode="box")),
+        vol.Optional(TV_SKIP_BACK, default=int(tv.get(TV_SKIP_BACK) or 10)): selector.NumberSelector(selector.NumberSelectorConfig(
+            min=5, max=600, step=5, unit_of_measurement="s", mode="box")),
     })
 
 
@@ -95,6 +100,9 @@ def _clean(data: dict[str, Any], tv_id: str) -> dict[str, Any]:
     for k in (TV_POWER_ON, TV_POWER_OFF, TV_READY, TV_BUSY, TV_FAIL):
         if str(data.get(k) or "").strip():
             tv[k] = str(data[k]).strip()
+    for k, d in ((TV_SKIP_FWD, 30), (TV_SKIP_BACK, 10)):
+        if data.get(k) and int(data[k]) != d:
+            tv[k] = int(data[k])
     if tv.get(TV_POWER) and data.get(TV_ROOM_OFF):
         tv[TV_ROOM_OFF] = True
     if (tv.get(TV_POWER) or tv.get(TV_STATUS)) and data.get(TV_READY_S) and int(data[TV_READY_S]) != 120:

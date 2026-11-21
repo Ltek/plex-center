@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "plex_center"
-VERSION = "2026.11.21.109"
+VERSION = "2026.11.21.110"
 
 CONF_SERVER_ID = "server_id"
 CONF_TVS = "tvs"
@@ -26,6 +26,8 @@ TV_READY_S = "ready_wait"   # seconds to wait for ready (default 120)
 TV_BUSY = "busy_value"      # its "starting" state(s): already on the way, don't set the power entity again (default starting)
 TV_FAIL = "fail_value"      # its failure state(s): stop waiting at once (default error)
 TV_ROOM_OFF = "room_off"    # turning off: only set the power entity off (the room turns the TV off itself)
+TV_SKIP_FWD = "skip_forward"  # seconds one Fast forward key skips in the TV's Plex app (Plex: Settings → Player; default 30)
+TV_SKIP_BACK = "skip_back"    # seconds one Rewind key skips back (default 10)
 TV_ROUTE = "route"          # auto | pipup | adb | plex
 
 ROUTES = ["auto", "pipup", "adb", "plex"]

@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (BTN_RESTART, BTN_WATCH, PLEX_PKG, TV_ADB, TV_NAME, TV_PIPUP, TV_PLEX, TV_POWER, TV_POWER_OFF, TV_POWER_ON,
-                    TV_BUSY, TV_FAIL, TV_READY, TV_READY_S, TV_REMOTE, TV_ROOM_OFF, TV_STATUS, TV_USER)
+                    TV_BUSY, TV_FAIL, TV_READY, TV_READY_S, TV_REMOTE, TV_ROOM_OFF, TV_SKIP_BACK, TV_SKIP_FWD, TV_STATUS, TV_USER)
 from .media import SAFE_LINK
 from .tvs import room_ready, route_for, tv_on, tv_playing, values
 
@@ -328,6 +328,42 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
         _BUSY.discard(key)
 
 
+def _no_session(err: Exception) -> bool:
+    """PiPup can't seek: the app publishes no media session (Plex on the SHIELD), or none is playing."""
+    return bool(re.search(r"no media session|nothing is playing", str(err), re.I))
+
+
+def position(hass: HomeAssistant, tv: dict[str, Any]) -> float | None:
+    """Where playback is now (seconds): from the TV's Plex player, else PiPup / ADB, moved on while playing."""
+    from datetime import datetime  # noqa: PLC0415
+
+    for ent in (tv.get(TV_PLEX), tv.get(TV_PIPUP), tv.get(TV_ADB)):
+        st = ent and hass.states.get(ent)
+        pos = st and st.attributes.get("media_position")
+        if st and pos is not None and st.state in ("playing", "paused", "buffering"):
+            pos = float(pos)
+            at = st.attributes.get("media_position_updated_at")
+            if st.state == "playing" and at:
+                try:
+                    when = at if isinstance(at, datetime) else datetime.fromisoformat(str(at))
+                    pos += max(0.0, (datetime.now(when.tzinfo) - when).total_seconds())
+                except (TypeError, ValueError):
+                    pass
+            return pos
+    return None
+
+
+async def _skip_keys(hass: HomeAssistant, tv: dict[str, Any], key, delta: float) -> None:
+    """Move by `delta` seconds with Fast forward / Rewind presses: each skips as far as the Plex app is set to."""
+    fwd, back = float(tv.get(TV_SKIP_FWD) or 30), float(tv.get(TV_SKIP_BACK) or 10)
+    step = fwd if delta > 0 else back
+    n = min(60, round(abs(delta) / step)) or (1 if abs(delta) >= step / 2 else 0)
+    for i in range(n):
+        await key("fast_forward" if delta > 0 else "rewind")
+        if i < n - 1:
+            await asyncio.sleep(0.35)
+
+
 VOLUME_ACTIONS = {"volume_up", "volume_down", "mute", "power_on", "power_off"}
 
 
@@ -404,7 +440,8 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
         if pip:
             await _svc(hass, "pipup", "send_key", {"key": k}, ent)
         else:
-            await _svc(hass, "androidtv", "adb_command", {"command": f"input keyevent KEYCODE_{k.upper()}"}, ent)
+            code = {"fast_forward": "MEDIA_FAST_FORWARD", "rewind": "MEDIA_REWIND"}.get(k, k.upper())
+            await _svc(hass, "androidtv", "adb_command", {"command": f"input keyevent KEYCODE_{code}"}, ent)
 
     if action in ("play", "pause", "play_pause"):
         await _svc(hass, "media_player", {"play": "media_play", "pause": "media_pause", "play_pause": "media_play_pause"}[action], {}, ent)
@@ -413,13 +450,26 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
     elif action == "home":
         await key("home")
     elif action == "seek":
-        if not pip:
-            raise HomeAssistantError("Exact seek needs PiPup on this TV")
-        await _svc(hass, "media_player", "media_seek", {"seek_position": max(0.0, float(value or 0))}, ent)
+        target = max(0.0, float(value or 0))
+        if pip:
+            try:
+                await _svc(hass, "media_player", "media_seek", {"seek_position": target}, ent)
+                return
+            except HomeAssistantError as err:
+                if not _no_session(err):
+                    raise
+        pos = position(hass, tv)
+        if pos is None:
+            raise HomeAssistantError(f"{_name(tv)}: can't seek, the Plex app isn't saying where it is")
+        await _skip_keys(hass, tv, key, target - pos)
     elif action == "skip":
         if pip:
-            await _svc(hass, "pipup", "seek", {"offset": float(value or 0)}, ent)
-        else:
-            await key("media_fast_forward" if float(value or 0) > 0 else "media_rewind")
+            try:
+                await _svc(hass, "pipup", "seek", {"offset": float(value or 0)}, ent)
+                return
+            except HomeAssistantError as err:
+                if not _no_session(err):
+                    raise
+        await _skip_keys(hass, tv, key, float(value or 0))
     else:
         raise HomeAssistantError(f"Unknown action {action}")
