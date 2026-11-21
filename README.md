@@ -145,6 +145,16 @@ template:
 
 ## Notes
 
+- **Other apps** (HBO Max, Prime Video …) show their poster when Plex Center can find the title, else the TV's
+  screen capture (PiPup's when it works, else ADB's), else the app's logo or its name. Protected video (Prime
+  Video) comes out black in a capture. Your own logos, by app id or name:
+
+  ```yaml
+  app_logos:
+    Prime Video: /local/logos/prime-video.png
+    com.disney.disneyplus: /local/logos/disney.png
+  ```
+
 - **Stop** sends Back, which leaves the Plex player for the title's page (the new Plex app ignores the Stop key).
 - Plex plays a 30-second preview on a title's page; Plex Center doesn't treat it as playback.
 - Works with the new Plex app for Android TV (2026), which no longer accepts remote control from Home Assistant.

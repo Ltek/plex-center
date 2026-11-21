@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.21.104
+// Version: v2026.11.21.105
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.21.104';
+const BUILD_NUMBER = 'v2026.11.21.105';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1829,6 +1829,11 @@ const CARD_CSS = `
 .plc-side-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--secondary-text-color); }
 .plc-side-ph ha-icon { --mdc-icon-size: 56px; opacity: .6; }
 .plc-side-ph span { font-weight: 600; }
+.plc-side-ph .plc-applogo { width: 46%; height: auto; max-height: 50%; object-fit: contain; }
+.plc-appword { font-size: 1.6em; font-weight: 800; letter-spacing: -.01em; text-align: center; padding: 0 8px; line-height: 1.1; }
+.plc-sess-logo { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 9px; text-align: center; }
+.plc-sess-logo .plc-applogo { width: 70%; height: auto; max-height: 45%; object-fit: contain; }
+.plc-sess-logo span { display: none; } .plc-sess-logo .plc-appword { display: block; font-size: 11px; }
 .plc-side-img { position: absolute; inset: 0; background: center / cover no-repeat; }
 .plc-np-x, .plc-np-move, .plc-np-power { position: absolute; z-index: 2; }
 .plc-np-x { top: 8px; right: 8px; }
@@ -1888,6 +1893,79 @@ function plexLive(hass, tv) {
 const realOn = (hass, tv) => tvPower(hass, tv) !== false && (!!plexLive(hass, tv) || [tv.pipup, tv.adb].some((id) => id && isRealPlayback(hass.states[id])));
 const tvLabel = (tv) => tv?.name || tv?.id || 'TV';
 
+/** Logos for an app playing with nothing to show (no poster, no screen capture). Icons: Simple Icons (CC0); the marks
+ *  belong to their owners. [name, colour, app ids / names, SVG path (24 × 24)]. */
+const APP_LOGOS = [
+  ['HBO Max', '#ffffff', ['com.wbd.stream', 'com.hbo.hbonow', 'hbomax', 'max'], 'M3.784 8.716c-.655 0-1.32.29-2.173.946v-.78H0v6.236h1.715V11.24c.749-.592 1.091-.78 1.372-.78.333 0 .551.209.551.729v3.928h1.715V11.23c.748-.582 1.081-.769 1.372-.769.333 0 .55.208.55.728v3.928H8.99v-4.53c0-1.403-.8-1.871-1.57-1.871-.654 0-1.32.27-2.192.936-.28-.697-.894-.936-1.444-.936zm8.689 0c-1.705 0-3.118 1.466-3.118 3.284 0 1.82 1.413 3.285 3.118 3.285.842 0 1.57-.312 2.131-.988v.82h1.632V8.883h-1.632v.822c-.561-.676-1.29-.988-2.131-.988zm4.064.166c.707 1.102 1.507 2.09 2.443 3.077a26.593 26.593 0 0 0-2.443 3.16h2.069a13.603 13.603 0 0 1 1.673-2.183 14.067 14.067 0 0 1 1.632 2.182H24a25.142 25.142 0 0 0-2.432-3.16A23.918 23.918 0 0 0 24 8.883h-2.047a14.65 14.65 0 0 1-1.674 2.11 13.357 13.357 0 0 1-1.674-2.11zm-3.804 1.279c1.018 0 1.84.82 1.84 1.84a1.837 1.837 0 0 1-1.84 1.839c-1.019 0-1.84-.82-1.84-1.84 0-1.018.821-1.84 1.84-1.84zm0 .415c-.78 0-1.414.633-1.414 1.423s.634 1.424 1.413 1.424c.78 0 1.414-.634 1.414-1.424s-.634-1.424-1.414-1.424z'],
+  ['Netflix', '#E50914', ['com.netflix.ninja', 'netflix'], 'm5.398 0 8.348 23.602c2.346.059 4.856.398 4.856.398L10.113 0H5.398zm8.489 0v9.172l4.715 13.33V0h-4.715zM5.398 1.5V24c1.873-.225 2.81-.312 4.715-.398V14.83L5.398 1.5z'],
+  ['YouTube', '#FF0000', ['com.google.android.youtube.tv', 'youtube'], 'M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z'],
+  ['Apple TV', '#ffffff', ['com.apple.atve.androidtv.appletv', 'appletv'], 'M20.57 17.735h-1.815l-3.34-9.203h1.633l2.02 5.987c.075.231.273.9.586 2.012l.297-.997.33-1.006 2.094-6.004H24zm-5.344-.066a5.76 5.76 0 0 1-1.55.207c-1.23 0-1.84-.693-1.84-2.087V9.646h-1.063V8.532h1.121V7.081l1.476-.602v2.062h1.707v1.113H13.38v5.805c0 .446.074.75.214.932.14.182.396.264.75.264.207 0 .495-.041.883-.115zm-7.29-5.343c.017 1.764 1.55 2.358 1.567 2.366-.017.042-.248.842-.808 1.658-.487.71-.99 1.418-1.79 1.435-.783.016-1.03-.462-1.93-.462-.89 0-1.17.445-1.913.478-.758.025-1.344-.775-1.838-1.484-.998-1.451-1.765-4.098-.734-5.88.51-.89 1.426-1.451 2.416-1.46.75-.016 1.468.512 1.93.512.461 0 1.327-.627 2.234-.536.38.016 1.452.157 2.136 1.154-.058.033-1.278.743-1.27 2.219M6.468 7.988c.404-.495.685-1.18.61-1.864-.585.025-1.294.388-1.723.883-.38.437-.71 1.138-.619 1.806.652.05 1.328-.338 1.732-.825Z'],
+  ['Paramount+', '#0064FF', ['com.cbs.ott', 'paramountplus', 'paramount'], 'M16.347 21.373c.057-.084.151-.314-.025-.74l-.53-1.428c-.073-.182.084-.293.19-.173 0 0 1.004 1.157 1.264 1.64l.495.822c.425.028 1.6.06 2.732.06a3.26 3.26 0 0 1-.316-.364c-1.93-2.392-3.154-3.724-3.166-3.737-.391-.426-.572-.508-.87-.643a4.82 4.82 0 0 1-.138-.065v.364c0 .047-.057.073-.086.022l-2.846-5.001a1.598 1.598 0 0 0-.508-.587l-.277-.194-1.354 3.123c.212 0 .354.216.27.409l-1.25 2.893h1.147c.443 0 .883.087 1.294.255l.302.125s-.913 1.878-.913 2.867c0 .181.028.362.075.534h2.104l-.096-.595s1.266.294 2.502.413M12 2.437c-6.627 0-12 5.373-12 12 0 2.669.873 5.133 2.346 7.126.503-.218.783-.542.983-.791l2.234-2.858a.467.467 0 0 1 .179-.138l.336-.146 3.674-4.659.534-.417 1.094-1.524a.482.482 0 0 1 .101-.102l.478-.347a.34.34 0 0 1 .398-.004l.578.407c.308.216.557.504.726.84l2.322 4.077c.051.09.09.129.182.174.454.227.732.268 1.33.913.277.304 1.495 1.666 3.203 3.784.236.318.538.588.963.783A11.948 11.948 0 0 0 24 14.437c0-6.627-5.373-12-12-12M3.236 15.1l-.778-.253-.48.662v-.818l-.778-.253.778-.253v-.818l.48.662.778-.253-.48.662Zm-.185 2.676-.252.778-.253-.778h-.818l.661-.481-.253-.777.663.48.66-.48-.252.777.662.481Zm.156-6.195.253.778-.661-.48-.663.48.253-.778-.66-.48h.817l.253-.778.252.777h.818Zm1.314-1.76L4.04 9.16l-.778.253.48-.661-.48-.663.778.254.48-.662v.818l.778.253-.777.252Zm2.045-2.862-.253.777-.252-.777h-.818l.662-.48-.253-.778.661.48.661-.48-.252.777.662.48Zm2.577-1.313-.48.661V5.49l-.779-.254.778-.253v-.817l.48.66.78-.253-.481.663.48.66zm3.265-.75.253.778-.661-.48-.662.48.252-.777-.66-.481h.818L12 3.637l.252.778h.818zm2.93.595v.816l-.481-.661-.777.252.48-.662-.48-.662.777.253.48-.66v.817l.779.252zm5.426 8.285.778.253.48-.662v.818l.778.253-.778.253v.818l-.48-.662-.778.253.48-.662zm-3.077-6.04-.253-.777h-.818l.662-.48-.253-.778.662.48.662-.48-.254.778.662.48h-.818zm1.792 2.086v-.818l-.777-.252.777-.253V7.68l.481.662.777-.254-.48.663.48.66-.777-.252zm1.469 1.278.253-.777.254.777h.816l-.66.481.252.778-.662-.48-.661.48.253-.778-.662-.48zm.506 6.676-.253.778-.253-.778h-.817l.662-.481-.253-.777.66.48.663-.48-.253.777.661.481zm-12.08-.615.76-1.588c.024-.048-.032-.108-.067-.067l-.664.668c-.313.329-.847 1.25-.95 1.421l-.808 1.335a.109.109 0 0 1 .1.162l-.739 1.238c-.18.309.145.523.189.452 1.157-1.868 1.832-1.719 1.832-1.719l.387-.897c.022-.047-.001-.1-.05-.12-.12-.05-.316-.27.01-.885z'],
+  ['Crunchyroll', '#FF5E00', ['com.crunchyroll.crunchyroid', 'crunchyroll'], 'M2.909 13.436C2.914 7.61 7.642 2.893 13.468 2.898c5.576.005 10.137 4.339 10.51 9.819q.021-.351.022-.706C24.007 5.385 18.64.006 12.012 0S.007 5.36 0 11.988 5.36 23.994 11.988 24q.412 0 .815-.027c-5.526-.338-9.9-4.928-9.894-10.538Zm16.284.155a4.1 4.1 0 0 1-4.095-4.103 4.1 4.1 0 0 1 2.712-3.855 8.95 8.95 0 0 0-4.187-1.037 9.007 9.007 0 1 0 8.997 9.016q-.001-.847-.15-1.651a4.1 4.1 0 0 1-3.278 1.63Z'],
+  ['Spotify', '#1ED760', ['com.spotify.tv.android', 'spotify'], 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z'],
+  ['Twitch', '#9146FF', ['tv.twitch.android.app', 'twitch'], 'M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z'],
+];
+/** Apps Simple Icons no longer carries: their name, in their colour. [name, colour, app ids / names] */
+const APP_WORDS = [
+  ['Prime Video', '#00A8E1', ['com.amazon.amazonvideo.livingroom', 'primevideo', 'amazonprimevideo', 'prime']],
+  ['Hulu', '#1CE783', ['com.hulu.livingroomplus', 'hulu']],
+  ['Disney+', '#3D7BFF', ['com.disney.disneyplus', 'disneyplus', 'disney']],
+  ['Peacock', '#ffffff', ['com.peacocktv.peacockandroid', 'peacock', 'peacocktv']],
+];
+const appKey = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9.]/g, '');
+/** What stands for an app with nothing else to show: your logo (app_logos: {<app id or name>: <image URL>}), else a
+ *  built-in logo, else its name in its colour. null for apps we don't know. */
+function appLogo(c, app, pkg) {
+  const keys = [appKey(pkg), appKey(app)].filter(Boolean);
+  const mine = c?.app_logos && typeof c.app_logos === 'object' ? Object.entries(c.app_logos).find(([k]) => keys.includes(appKey(k))) : null;
+  if (mine && /^(\/|https:\/\/)/.test(String(mine[1]))) return { url: String(mine[1]), name: app || '' };
+  const icon = APP_LOGOS.find(([, , ks]) => ks.some((k) => keys.includes(appKey(k))));
+  if (icon) return { name: icon[0], color: icon[1], path: icon[3] };
+  const word = APP_WORDS.find(([, , ks]) => ks.some((k) => keys.includes(appKey(k))));
+  return word ? { name: word[0], color: word[1] } : null;
+}
+/** The placeholder under a picture: the app's logo when known, else the TV icon and the app's name. */
+function appPh(logo, app, icon) {
+  if (logo?.url) return `<img class="plc-applogo" src="${esc(logo.url)}" alt="${esc(logo.name || app || '')}">`;
+  if (logo?.path) return `<svg class="plc-applogo" viewBox="0 0 24 24" role="img" aria-label="${esc(logo.name)}" style="color:${logo.color}"><path fill="currentColor" d="${logo.path}"/></svg><span>${esc(logo.name)}</span>`;
+  if (logo) return `<span class="plc-appword" style="color:${logo.color}">${esc(logo.name)}</span>`;
+  return `<ha-icon icon="${icon}"></ha-icon>${app ? `<span>${esc(app)}</span>` : ''}`;
+}
+/** Screen captures (PiPup's, ADB's): tested once in a while per player (loads, and isn't blank: protected video such as
+ *  Prime Video's comes out black). Returns the URL when the player's capture works, else null; a new test repaints. */
+const SHOTS = new Map(), SHOT_WATCH = new Set(), SHOT_MS = 30000;
+function shotOf(st) {
+  const url = st?.attributes?.entity_picture;
+  if (!url || !/^\/api\/media_player_proxy\//.test(url)) return url || null;   // not a capture: use it
+  const id = st.entity_id, hit = SHOTS.get(id), now = Date.now();
+  if (!hit || (now - hit.at > SHOT_MS && !hit.pending)) {
+    const rec = { at: now, ok: hit?.ok ?? null, pending: true };
+    SHOTS.set(id, rec);
+    testShot(url).then((ok) => { const was = rec.ok; Object.assign(rec, { ok, pending: false, at: Date.now() }); if (was !== ok) for (const f of SHOT_WATCH) f(); });
+  }
+  return SHOTS.get(id).ok ? url : null;
+}
+function testShot(url) {
+  return new Promise((done) => {
+    if (typeof Image !== 'function') { done(true); return; }
+    const img = new Image(), t = setTimeout(() => done(false), 8000);
+    img.onerror = () => { clearTimeout(t); done(false); };
+    img.onload = () => {
+      clearTimeout(t);
+      try {
+        const cv = document.createElement('canvas'); cv.width = 32; cv.height = 18;
+        const g = cv.getContext('2d');
+        if (!g || !img.naturalWidth) { done(!!img.naturalWidth || !g); return; }
+        g.drawImage(img, 0, 0, 32, 18);
+        const px = g.getImageData(0, 0, 32, 18).data;
+        let max = 0;
+        for (let i = 0; i < px.length; i += 4) max = Math.max(max, px[i], px[i + 1], px[i + 2]);
+        done(max > 40);   // all (nearly) black: protected video
+      } catch { done(true); }
+    };
+    img.src = url;
+  });
+}
 /** Cache key for what another app plays on a TV: changes with the app and the title its players report. null for
  *  Plex (the Plex player has the poster) and when nothing plays. */
 function appMetaKey(hass, tv) {
@@ -1901,7 +1979,7 @@ function appMetaKey(hass, tv) {
 
 /** Now playing on a TV, from its players' states (the Plex player supplies the poster and episode; for other apps
  *  the integration's lookup does: Plex library, Plex Discover, Radarr, Sonarr). */
-function nowPlaying(hass, tv) {
+function nowPlaying(hass, tv, cfgRef = null) {
   if (!tv) return null;
   const p = tv.pipup && hass.states[tv.pipup], x = plexLive(hass, tv), a = tv.adb && hass.states[tv.adb], power = tvPower(hass, tv);
   const c = tv.cast && hass.states[tv.cast];
@@ -1916,7 +1994,9 @@ function nowPlaying(hass, tv) {
     return { tv, live: true, on: power, st: src, title: known || app || 'Playing',
       sub: series ? `S${meta.media_season} · E${meta.media_episode}${meta.media_title ? ` · ${meta.media_title}` : ''}`
         : known ? [am?.episode, found?.year, app].filter(Boolean).join(' · ') : state,
-      art: meta.entity_picture || found?.poster || (src === a ? null : at.entity_picture) || null, fanart: found?.art || null, found: found || null };
+      // no poster: the TV's screen, PiPup's capture if it works, else ADB's; else the app's logo
+      art: meta.entity_picture || found?.poster || (x ? null : shotOf(p) || shotOf(a)) || (x && src !== a ? at.entity_picture : null) || null,
+      fanart: found?.art || null, found: found || null, logo: x ? null : appLogo(cfgRef, app, at.app_id || p?.attributes?.app_id || a?.attributes?.app_id) };
   }
   const r = tv.remote && hass.states[tv.remote];
   const on = power === false ? null : [p, a, r].find((s) => s && !['off', 'unavailable', 'standby', 'unknown'].includes(s.state));
@@ -1970,6 +2050,8 @@ class PlexCenterCard extends HTMLElement {
 
   connectedCallback() {
     if (!this._built && this._hass) this._build();
+    this._onShot ||= () => { this._npSig = null; this._appSig = null; if (this._root) this._updateStates(); };
+    SHOT_WATCH.add(this._onShot);
     if (!this._orient && typeof matchMedia === 'function') {
       this._orient = matchMedia('(orientation: portrait)');
       this._onOrient = () => { this._lsig = null; this._layout(); };
@@ -1988,6 +2070,7 @@ class PlexCenterCard extends HTMLElement {
   }
   disconnectedCallback() {
     this._detached = true;
+    if (this._onShot) SHOT_WATCH.delete(this._onShot);
     clearInterval(this._tick); clearInterval(this._poll); this._tick = this._poll = null;
     for (const t of Object.values(this._anim || {})) { clearInterval(t); clearTimeout(t); } this._anim = {}; clearTimeout(this._popTimer);
     if (this._onAnyScroll) document.removeEventListener('scroll', this._onAnyScroll, true);
@@ -2884,11 +2967,11 @@ class PlexCenterCard extends HTMLElement {
     if (!this._hass) return [];
     const plex = peek('sessions') || [];
     return this._tvs().flatMap((tv) => {
-      const np = nowPlaying(this._hass, tv);
+      const np = nowPlaying(this._hass, tv, this._c);
       const app = np?.st?.attributes?.app_name || '';
       if (!np?.live || /plex/i.test(app) || plex.some((x) => this._tvForSession(x)?.id === tv.id)) return [];
       const at = np.st.attributes || {}, dur = Number(at.media_duration) || 0, pos = livePosition(np.st);
-      return [{ _tv: tv.id, _app: true, type: 'app', key: `app:${tv.id}`, title: np.title, poster: np.art || undefined,
+      return [{ _tv: tv.id, _app: true, type: 'app', key: `app:${tv.id}`, title: np.title, poster: np.art || undefined, logo: np.logo || undefined, app_name: app,
         player: [tvLabel(tv), app].filter(Boolean).join(' · '), player_state: np.st.state === 'paused' ? 'paused' : 'playing',
         progress: dur && pos != null ? Math.round((pos / dur) * 100) : 0 }];
     });
@@ -2920,7 +3003,7 @@ class PlexCenterCard extends HTMLElement {
       if (x._resume) return this._resumeCardHtml(x);
       const tv = tvFor(x);
       return `
-      <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}>${x._app ? `<div class="plc-sess-art app"><ha-icon icon="mdi:television-play"></ha-icon>${x.poster ? `<i style="background-image:url('${cssUrl(x.poster)}')"></i>` : ''}</div>`
+      <${tv ? `button class="plc-sess tap${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}" data-sesstv="${esc(tv.id)}" title="Controls for ${esc(tvLabel(tv))}"` : `div class="plc-sess${wlk.image && wlk.image !== 'poster' ? ' fan' : ''}"`}${fanBg(x)}>${x._app ? `<div class="plc-sess-art app">${x.logo ? `<span class="plc-sess-logo">${appPh(x.logo, x.app_name)}</span>` : '<ha-icon icon="mdi:television-play"></ha-icon>'}${x.poster ? `<i style="background-image:url('${cssUrl(x.poster)}')"></i>` : ''}</div>`
         : `<div class="plc-sess-art"${x.poster ? ` style="background-image:url('${cssUrl(x.poster)}')"` : ''}></div>`}
         <div style="min-width:0">${fieldLines('watching', wlk, { title: x.show || x.title, number: x.type === 'episode' && x.season != null && x.episode != null ? `S${x.season} · E${x.episode}` : '',
           eptitle: x.type === 'episode' ? x.title : '', year: x.type === 'episode' ? '' : x.year, viewer: [x.user, x.player || x.device].filter(Boolean).join(' · '),
@@ -3614,7 +3697,7 @@ Object.assign(PlexCenterCard.prototype, {
 
   _renderNP(force = false) {
     const tv = this._tv();
-    const np = nowPlaying(this._hass, tv);
+    const np = nowPlaying(this._hass, tv, this._c);
     const mode = this._npMode();
     const panel = mode === 'panel' && this._panelVisible(np);
     const dup = this._v.tab === 'home' && watchOn(this._c, 'home') && !!this._sessionFor(tv);
@@ -3729,7 +3812,7 @@ Object.assign(PlexCenterCard.prototype, {
     const move = others.length > 1 && !cfg(this._c, 'lock') && np.live && this._sessionFor(np.tv);
     // the icon (and app) sit under the picture: when the TV has no picture or it doesn't load (a 404 from another app), they show
     const app = np.st?.attributes?.app_name || '';
-    return `<div class="plc-side-card"><div class="plc-side-art"><div class="plc-side-ph"><ha-icon icon="mdi:${np.live ? 'television-play' : 'television'}"></ha-icon>${app ? `<span>${esc(app)}</span>` : ''}</div>
+    return `<div class="plc-side-card"><div class="plc-side-art"><div class="plc-side-ph">${appPh(np.live ? np.logo : null, app, `mdi:${np.live ? 'television-play' : 'television'}`)}</div>
         ${np.art ? `<div class="plc-side-img" style="background-image:url('${cssUrl(np.art)}')"></div>` : ''}
         <button class="plc-icon-btn plc-np-x" data-npx title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
         ${move ? '<button class="plc-chip plc-np-move" data-movemenu title="Move to a different TV"><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>' : ''}
@@ -5402,7 +5485,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 

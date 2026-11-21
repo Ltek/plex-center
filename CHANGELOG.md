@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.21.105
+
+**Changed**
+- **Other apps without a poster:** Plex Center tests the TV's screen captures and uses PiPup's when it loads and
+  isn't blank (protected video such as Prime Video's comes out black), else ADB's. With neither, it shows the app's
+  logo (HBO Max, Netflix, YouTube, Apple TV, Paramount+, Crunchyroll, Spotify, Twitch; from Simple Icons) or its
+  name in its colour (Prime Video, Hulu, Disney+, Peacock), in Now playing and Watching now.
+
+**Added**
+- `app_logos`: your own logo for an app, by its app id or name (`Prime Video: /local/prime.png`).
+
 ## v2026.11.21.104
 
 **Fixed**
