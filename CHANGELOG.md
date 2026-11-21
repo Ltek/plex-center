@@ -1,5 +1,17 @@
 # Changelog
 
+## v2026.11.21.107
+
+**Fixed**
+- **"Custom element doesn't exist: plex-center-card" / a 404 for the card while Home Assistant starts:** the card
+  was served only once Plex Center had loaded, so a dashboard opened (or the Companion App reconnecting) during
+  HA's start got a 404. Plex Center now keeps a copy in `<config>/www/plex_center/` and its Dashboard resource
+  points at `/local/plex_center/plex-center-card.js`, which HA serves from the start. (If `www` didn't exist, it
+  is made now and used from the next start.)
+- Plex Center no longer waits for the Plex, PiPup, Android TV and Tautulli integrations before it loads.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.21.106
 
 **Added**

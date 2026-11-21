@@ -6,8 +6,8 @@ from unittest.mock import patch
 from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.setup import async_setup_component
 
-from custom_components.plex_center import _register_card, _register_resource
-from custom_components.plex_center.const import CARD_URL, VERSION
+from custom_components.plex_center import _register_card, _register_resource, copy_to_www
+from custom_components.plex_center.const import CARD_URL, LOCAL_CARD_URL, VERSION
 
 
 async def test_resource_created_once_updated_in_place_duplicates_removed(hass: Any) -> None:
@@ -30,7 +30,7 @@ async def test_resource_created_once_updated_in_place_duplicates_removed(hass: A
 async def test_register_card_uses_the_resource_and_no_extra_js(hass: Any) -> None:
     assert await async_setup_component(hass, "http", {})
     assert await async_setup_component(hass, "lovelace", {})
-    with patch("homeassistant.components.frontend.add_extra_js_url") as add:
+    with patch("homeassistant.components.frontend.add_extra_js_url") as add, patch("custom_components.plex_center.copy_to_www", return_value=False):
         await _register_card(hass)
     urls = [i["url"] for i in hass.data[LOVELACE_DATA].resources.async_items()]
     assert len(urls) == 1 and urls[0].startswith(f"{CARD_URL}?v={VERSION}&m=")
@@ -41,7 +41,29 @@ async def test_yaml_mode_falls_back_to_extra_js(hass: Any) -> None:
     assert await async_setup_component(hass, "http", {})
     assert await async_setup_component(hass, "lovelace", {"lovelace": {"mode": "yaml", "resources": []}})
     assert not await _register_resource(hass, f"{CARD_URL}?v=1")
-    with patch("homeassistant.components.frontend.add_extra_js_url") as add:
+    with patch("homeassistant.components.frontend.add_extra_js_url") as add, patch("custom_components.plex_center.copy_to_www", return_value=False):
         await _register_card(hass)
     add.assert_called_once()
     assert add.call_args.args[1].startswith(f"{CARD_URL}?v={VERSION}&m=")
+
+
+async def test_card_from_www_when_it_is_served(hass: Any) -> None:
+    """With a copy in www, the resource is /local/... (served while HA starts); the old resource is replaced, not doubled."""
+    assert await async_setup_component(hass, "http", {})
+    assert await async_setup_component(hass, "lovelace", {})
+    await hass.data[LOVELACE_DATA].resources.async_create_item({"res_type": "module", "url": f"{CARD_URL}?v=old"})
+    with patch("custom_components.plex_center.copy_to_www", return_value=True):
+        await _register_card(hass)
+    urls = [i["url"] for i in hass.data[LOVELACE_DATA].resources.async_items()]
+    assert len(urls) == 1 and urls[0].startswith(f"{LOCAL_CARD_URL}?v={VERSION}&m=")
+
+
+def test_copy_to_www(tmp_path) -> None:
+    js = tmp_path / "plex-center-card.js"
+    js.write_text("// Version: v1\n")
+    www = tmp_path / "www"
+    assert copy_to_www(str(www), js) is False, "www made now: served from the next start"
+    assert (www / "plex_center" / "plex-center-card.js").read_text() == "// Version: v1\n"
+    js.write_text("// Version: v2\n")
+    assert copy_to_www(str(www), js) is True
+    assert (www / "plex_center" / "plex-center-card.js").read_text() == "// Version: v2\n"

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "plex_center"
-VERSION = "2026.11.21.106"
+VERSION = "2026.11.21.107"
 
 CONF_SERVER_ID = "server_id"
 CONF_TVS = "tvs"
@@ -36,3 +36,4 @@ BTN_RESTART = "action-button-watchFromStart"
 PREVIEW_MAX_S = 60          # Plex plays a 30 s preview on a title page
 
 CARD_URL = "/plex_center/plex-center-card.js"
+LOCAL_CARD_URL = "/local/plex_center/plex-center-card.js"   # a copy in www: served from HA's start, before Plex Center loads

@@ -13,7 +13,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CARD_URL, CONF_SERVER_ID, CONF_TVS, DOMAIN, VERSION
+from .const import CARD_URL, LOCAL_CARD_URL, CONF_SERVER_ID, CONF_TVS, DOMAIN, VERSION
 from .plex import PlexConnections
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,7 +57,14 @@ async def _register_card(hass: HomeAssistant) -> None:
         bust = int(js.stat().st_mtime)
     except OSError:
         bust = 0
-    url = f"{CARD_URL}?v={VERSION}&m={bust}"
+    # A copy in www (/local) is there as soon as HA serves files, before integrations load: a dashboard opened while HA
+    # starts (or the Companion App reconnecting) gets the card instead of a 404 / "Custom element doesn't exist".
+    try:
+        local = await hass.async_add_executor_job(copy_to_www, hass.config.path("www"), js)
+    except Exception as err:  # noqa: BLE001 - the integration's own path still works
+        _LOGGER.debug("Plex Center card not copied to www: %s", err)
+        local = False
+    url = f"{LOCAL_CARD_URL if local else CARD_URL}?v={VERSION}&m={bust}"
     data = hass.data.setdefault(f"{DOMAIN}_card", {})
     try:
         from homeassistant.components import frontend  # noqa: PLC0415
@@ -90,6 +97,23 @@ async def _register_card(hass: HomeAssistant) -> None:
         _LOGGER.warning("Plex Center card not registered: %s", err)
 
 
+def copy_to_www(www: str, js: Path) -> bool:
+    """Copy the card to <config>/www/plex_center/ (only when it changed). True when /local serves it now: HA serves
+    www only if the folder was there when it started, so a www made here counts from the next start."""
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+
+    served = os.path.isdir(www)
+    dst_dir = os.path.join(www, "plex_center")
+    dst = os.path.join(dst_dir, js.name)
+    os.makedirs(dst_dir, exist_ok=True)
+    if not os.path.isfile(dst) or Path(dst).read_bytes() != js.read_bytes():
+        tmp = dst + ".tmp"
+        shutil.copyfile(js, tmp)
+        os.replace(tmp, dst)
+    return served
+
+
 async def _register_resource(hass: HomeAssistant, url: str) -> bool:
     """Add or update the card's Dashboard resource. False when resources can't be edited (YAML mode, no Lovelace)."""
     try:
@@ -104,7 +128,7 @@ async def _register_resource(hass: HomeAssistant, url: str) -> bool:
     if not res.loaded:
         await res.async_load()
         res.loaded = True
-    ours = [i for i in res.async_items() if str(i.get("url", "")).split("?", 1)[0] == CARD_URL]
+    ours = [i for i in res.async_items() if str(i.get("url", "")).split("?", 1)[0] in (CARD_URL, LOCAL_CARD_URL)]
     if not ours:
         await res.async_create_item({"res_type": "module", "url": url})
         _LOGGER.info("Added the Plex Center card as a dashboard resource: %s", url)
