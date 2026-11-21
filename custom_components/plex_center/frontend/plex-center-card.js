@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.21.107
+// Version: v2026.11.21.108
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.21.107';
+const BUILD_NUMBER = 'v2026.11.21.108';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1831,6 +1831,11 @@ const CARD_CSS = `
 .plc-side-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--secondary-text-color); }
 .plc-side-ph ha-icon { --mdc-icon-size: 56px; opacity: .6; }
 .plc-side-ph span { font-weight: 600; }
+.plc-np-status { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 18px; border-radius: 999px; font-size: 1.1em; font-weight: 700;
+  color: #fff; background: color-mix(in srgb, #22c55e 30%, rgba(0,0,0,.6)); border: 1px solid color-mix(in srgb, #22c55e 70%, transparent); }
+.plc-np-status.paused { background: color-mix(in srgb, #f59e0b 25%, rgba(0,0,0,.6)); border-color: color-mix(in srgb, #f59e0b 70%, transparent); }
+.plc-side-ph .plc-np-status ha-icon { --mdc-icon-size: 24px; opacity: 1; color: #22c55e; }
+.plc-side-ph .plc-np-status.paused ha-icon { color: #f59e0b; }
 .plc-side-ph .plc-applogo { width: 46%; height: auto; max-height: 50%; object-fit: contain; }
 .plc-appword { font-size: 1.6em; font-weight: 800; letter-spacing: -.01em; text-align: center; padding: 0 8px; line-height: 1.1; }
 .plc-sess-logo { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 9px; text-align: center; }
@@ -3851,7 +3856,10 @@ Object.assign(PlexCenterCard.prototype, {
     const move = others.length > 1 && !cfg(this._c, 'lock') && np.live && this._sessionFor(np.tv);
     // the icon (and app) sit under the picture: when the TV has no picture or it doesn't load (a 404 from another app), they show
     const app = np.st?.attributes?.app_name || '';
-    return `<div class="plc-side-card"><div class="plc-side-art"><div class="plc-side-ph">${appPh(np.live ? np.logo : null, app, `mdi:${np.live ? 'television-play' : 'television'}`)}</div>
+    // under the logo (seen when there's no poster or screen capture): is it playing?
+    const paused = np.st?.state === 'paused';
+    const status = np.live ? `<span class="plc-np-status${paused ? ' paused' : ''}"><ha-icon icon="mdi:${paused ? 'pause-circle' : 'play-circle'}"></ha-icon>${paused ? 'Show Paused' : 'Show in Progress'}</span>` : '';
+    return `<div class="plc-side-card"><div class="plc-side-art"><div class="plc-side-ph">${appPh(np.live ? np.logo : null, app, `mdi:${np.live ? 'television-play' : 'television'}`)}${status}</div>
         ${np.art ? `<div class="plc-side-img" style="background-image:url('${cssUrl(np.art)}')"></div>` : ''}
         <button class="plc-icon-btn plc-np-x" data-npx title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
         ${move ? '<button class="plc-chip plc-np-move" data-movemenu title="Move to a different TV"><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>' : ''}

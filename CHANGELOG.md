@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.21.108
+
+**Added**
+- **Now playing without a picture:** a large chip under the app's logo says **Show in Progress** (green, play icon)
+  or **Show Paused** (amber, pause icon), so you can tell at a glance whether something plays.
+
 ## v2026.11.21.107
 
 **Fixed**
