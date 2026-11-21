@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.21.106
+
+**Added**
+- **Now playing closes by itself** when nothing is playing or paused on its TV (`np_auto_close`, on by default):
+  a countdown ring with **Cancel** over the poster, then it closes (`np_close_s`, 5 s by default, 1–30). Cancel
+  keeps it open until the next playback ends. A TV that was turned off mid-show keeps its Resume offer. Settings
+  under Now playing.
+
 ## v2026.11.21.105
 
 **Changed**

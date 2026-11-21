@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.21.105
+// Version: v2026.11.21.106
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.21.105';
+const BUILD_NUMBER = 'v2026.11.21.106';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -565,6 +565,8 @@ const DEFAULTS = {
   watching_chevron_px: 0,
   watching_chevron_weight: '',
   np_auto_open: false,
+  np_auto_close: true,      // Now playing closes when nothing plays or is paused, after a countdown you can cancel
+  np_close_s: 5,
   watching_home: true,
   watching_cal: true,
   watching_lib: true,
@@ -2070,6 +2072,7 @@ class PlexCenterCard extends HTMLElement {
   }
   disconnectedCallback() {
     this._detached = true;
+    clearInterval(this._npEndT); this._npEnd = null;
     if (this._onShot) SHOT_WATCH.delete(this._onShot);
     clearInterval(this._tick); clearInterval(this._poll); this._tick = this._poll = null;
     for (const t of Object.values(this._anim || {})) { clearInterval(t); clearTimeout(t); } this._anim = {}; clearTimeout(this._popTimer);
@@ -3699,12 +3702,17 @@ Object.assign(PlexCenterCard.prototype, {
     const tv = this._tv();
     const np = nowPlaying(this._hass, tv, this._c);
     const mode = this._npMode();
-    const panel = mode === 'panel' && this._panelVisible(np);
+    // auto close: Now playing was showing this TV's playback, and now nothing plays or is paused (and no resume to offer)
+    const idle = !!np && !np.live && !this._resumeFor(tv);
+    if (!idle) { if (np?.live) this._npKept = null; this._npCloseStop(); }
+    else if (cfg(this._c, 'np_auto_close') && this._npShown === tv?.id && !this._npEnd && this._npKept !== tv?.id) this._npCloseStart(tv, np);
+    const hold = idle && (this._npEnd?.tv === tv?.id || (this._npKept === tv?.id && this._npShown === tv?.id));   // keep it up while counting / kept
+    const panel = mode === 'panel' && (this._panelVisible(np) || (hold && !!np && this._v.npHidden !== `${np.tv?.id}|${np.title}`));
     const dup = this._v.tab === 'home' && watchOn(this._c, 'home') && !!this._sessionFor(tv);
     if (np?.live) this._npLiveAt = Date.now();
     else if (this._v.npFull && !this._resumeFor(tv) && Date.now() - (this._npFullAt || 0) > 90000) this._v.npFull = false;   // playback ended: don't pop up next time
     const vst = tv?.pipup && this._hass.states[tv.pipup];
-    const s = JSON.stringify([this._v.tab, dup, this._v.npFull, mode, panel, JSON.stringify(this._resumeFor(tv)), tv && this._resumeFor(tv) && this._resumeArt(tv, this._resumeFor(tv)), np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._phone,
+    const s = JSON.stringify([this._v.tab, dup, this._v.npFull, mode, panel, hold, !!this._npEnd, JSON.stringify(this._resumeFor(tv)), tv && this._resumeFor(tv) && this._resumeArt(tv, this._resumeFor(tv)), np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._phone,
       this._tvs().map((t) => [t.id, realOn(this._hass, t)]), tv?.route]);
     if (!force && this._npSig === s) return;
     this._npSig = s;
@@ -3717,9 +3725,40 @@ Object.assign(PlexCenterCard.prototype, {
     this._root.dataset.panel = panel ? '1' : '0';
     if (panel || wasPanel) this._renderTop();
     const full = this._root.querySelector('.plc-npfull-slot');
-    if (full) full.innerHTML = this._v.npFull && (np?.live || this._resumeFor(tv)) ? `<div class="plc-npfull">${this._panelHtml(np)}</div>` : '';
+    const fullOn = this._v.npFull && (np?.live || this._resumeFor(tv) || hold);
+    if (full) full.innerHTML = fullOn ? `<div class="plc-npfull">${this._panelHtml(np)}</div>` : '';
+    this._npShown = (panel || fullOn) && tv ? tv.id : null;
+    if (this._npEnd) for (const art of this._root.querySelectorAll('.plc-side .plc-side-art, .plc-npfull .plc-side-art')) art.insertAdjacentHTML('beforeend', this._npRing());
     this._progress();
   },
+  /** The auto close countdown: a ring with the seconds and Cancel over the poster. */
+  _npRing() {
+    const C = 2 * Math.PI * 26, e = this._npEnd, left = Math.max(0, e.total - (Date.now() - e.at));
+    return `<button class="plc-ring plc-npclose" data-npclosecancel title="Keep Now playing open"><svg viewBox="0 0 60 60"><circle class="bg" cx="30" cy="30" r="26"></circle>
+      <circle class="fg" cx="30" cy="30" r="26" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${(C * (1 - left / e.total)).toFixed(2)}"></circle></svg>
+      <span class="plc-ring-t"><span class="plc-ring-n">${Math.ceil(left / 1000)}</span><span class="plc-ring-c">Cancel</span></span></button>`;
+  },
+  _npCloseStart(tv, np) {
+    const total = Math.max(1, Number(cfg(this._c, 'np_close_s')) || 5) * 1000, C = 2 * Math.PI * 26;
+    this._npEnd = { tv: tv.id, at: Date.now(), total, title: np.title };
+    clearInterval(this._npEndT);
+    this._npEndT = setInterval(() => {
+      const e = this._npEnd;
+      if (!e) { clearInterval(this._npEndT); return; }
+      const left = e.total - (Date.now() - e.at);
+      if (left <= 0) {   // close it, as the X does
+        this._npCloseStop();
+        const now = nowPlaying(this._hass, this._tv(), this._c);
+        this._v.npFull = false; this._v.npOpen = null; this._v.npHidden = now ? `${now.tv?.id}|${now.title}` : null; this._npShown = null;
+        this._renderNP(true); return;
+      }
+      for (const r of this._root?.querySelectorAll('.plc-npclose') || []) {
+        r.querySelector('.fg')?.setAttribute('stroke-dashoffset', (C * (1 - left / e.total)).toFixed(2));
+        const n = r.querySelector('.plc-ring-n'); if (n) n.textContent = Math.ceil(left / 1000);
+      }
+    }, 100);
+  },
+  _npCloseStop() { if (!this._npEnd) return; clearInterval(this._npEndT); this._npEnd = null; this._root?.querySelectorAll('.plc-npclose').forEach((r) => r.remove()); },
 
   _controls(np, big = true) {
     if (!np?.live) return '';
@@ -4091,6 +4130,7 @@ Object.assign(PlexCenterCard.prototype, {
       this._v.wOpen = { ...(this._v.wOpen || {}), [pl]: !open }; this._paintWatching(); return;
     }
     if (t('[data-npclose]')) { this._v.npFull = false; this._renderNP(true); return; }
+    if (t('[data-npclosecancel]')) { const tv = this._npEnd?.tv; this._npCloseStop(); this._npKept = tv; this._npSig = null; return; }
     if (t('[data-npx]')) {
       if (this._v.npFull) this._v.npFull = false;
       else { const np = nowPlaying(this._hass, this._tv()); this._v.npHidden = np ? `${np.tv?.id}|${np.title}` : null; this._v.npOpen = null; }
@@ -4364,7 +4404,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['calendar', 'watching_resume', 'hold_play', 'watching_home', 'watching_cal', 'watching_lib', 'watching_coll_home', 'watching_coll_cal', 'watching_coll_lib', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'card_shadow']);
+const REVEAL_KEYS = new Set(['calendar', 'watching_resume', 'hold_play', 'np_auto_close', 'watching_home', 'watching_cal', 'watching_lib', 'watching_coll_home', 'watching_coll_cal', 'watching_coll_lib', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; this._onScreen = () => { if (this._rendered) this._render(); }; }
@@ -4912,7 +4952,9 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._c('watching_resume') === 'drop' ? '' : `${this._slider('watching_forget_h', 'Forget after', 0, 48, ' h')}<p class="plce-hint">0 = never. Resume turns the TV on and starts the title where it was paused.</p>
           ${this._check('watching_resume_apps', 'Keep other apps too (HBO Max, Netflix …): Resume opens the app and presses Play, best effort')}`}
         ${this._watchPages()}
-        ${this._check('np_power', 'Power button on the Now playing poster (asks before turning the TV off)')}`)}`;
+        ${this._check('np_power', 'Power button on the Now playing poster (asks before turning the TV off)')}
+        ${this._check('np_auto_close', 'Close by itself when nothing is playing or paused (a countdown you can cancel)')}
+        ${this._c('np_auto_close') ? this._slider('np_close_s', 'Close after', 1, 30, ' s') : ''}`)}`;
   }
   /** Watching now per page: Show on page, Collapsible, Start collapsed. */
   _watchPages() {
