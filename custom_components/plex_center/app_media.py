@@ -69,7 +69,13 @@ async def async_now_title(hass: HomeAssistant, tv: dict[str, Any], *, read_sessi
     pip, adb, cast = _attrs(hass, tv.get(TV_PIPUP)), _attrs(hass, tv.get(TV_ADB)), _attrs(hass, tv.get(TV_CAST))
     app = next((a.get("app_name") for a in (pip, cast, adb) if a and a.get("app_name") and "." not in a["app_name"]), None)
     package = (adb or pip or {}).get("app_id")
-    session = lambda at: at and (t := parse_media_session(at.get("adb_response"), package)) and \
+    names = {app, (pip or {}).get("app_name"), (cast or {}).get("app_name"), (adb or {}).get("app_name"), package,
+             str(package or "").rsplit(".", 1)[-1]}
+
+    def real(t: str | None) -> str | None:   # Prime Video's session says "PrimeVideo": its own name, not a title
+        flat = lambda x: re.sub(r"[^a-z0-9]", "", str(x or "").lower())  # noqa: E731
+        return None if not t or flat(t) in {flat(n) for n in names if n} else t
+    session = lambda at: at and (t := real(parse_media_session(at.get("adb_response"), package))) and \
         {"title": t, "series": False, "episode": None, "app": None, "package": package, "source": "adb"}  # noqa: E731
     hit = (pip and _pick(pip, "pipup")) or (adb and _pick(adb, "adb")) or session(adb) or (cast and _pick(cast, "cast"))
     now = time.monotonic()

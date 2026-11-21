@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.21.104
+
+**Fixed**
+- **Other apps without a title** (Prime Video): the app's own name in its media session ("PrimeVideo") is no
+  longer taken for the title and looked up. Now playing and Watching now show the app's name and Playing / Paused
+  instead of "Playing" with the app below.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.20.103
 
 **Added**

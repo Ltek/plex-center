@@ -104,3 +104,13 @@ def test_fill_finds_the_cast_player(hass):
     out = fill_remotes(hass, [{"id": "lr", "name": "Living Room TV", "pipup": "media_player.living_room_tv"}])
     assert out[0]["cast"] == cast
     assert fill_remotes(hass, out) is None
+
+
+async def test_app_name_is_not_a_title(hass):
+    """Prime Video's media session says "PrimeVideo" and every player's title is empty: no title (nothing to look up)."""
+    prime = """package=com.amazon.amazonvideo.livingroom
+      metadata: size=8, description=PrimeVideo, null, null"""
+    hass.states.async_set(TV["pipup"], "paused", {"media_title": "", "app_name": "Prime Video", "app_id": "com.amazon.amazonvideo.livingroom"})
+    hass.states.async_set(TV["adb"], "paused", {"app_id": "com.amazon.amazonvideo.livingroom", "app_name": "Prime Video", "adb_response": prime})
+    hass.states.async_set(TV["cast"], "paused", {"media_title": "", "app_name": "Prime Video"})
+    assert await async_now_title(hass, TV, read_session=False) is None

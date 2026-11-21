@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.20.103
+// Version: v2026.11.21.104
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.20.103';
+const BUILD_NUMBER = 'v2026.11.21.104';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1911,9 +1911,11 @@ function nowPlaying(hass, tv) {
     const at = src.attributes, series = meta.media_series_title;
     const k = !x && appMetaKey(hass, tv), am = k ? peek(k) : null, found = am?.meta;
     const app = am?.app || (at.app_name && !String(at.app_name).includes('.') ? at.app_name : '') || at.app_name || '';
-    return { tv, live: true, on: power, st: src, title: series || (found?.title || am?.title) || at.media_title || meta.media_title || 'Playing',
+    const known = series || found?.title || am?.title || at.media_title || meta.media_title;
+    const state = src.state === 'paused' ? 'Paused' : 'Playing';
+    return { tv, live: true, on: power, st: src, title: known || app || 'Playing',
       sub: series ? `S${meta.media_season} · E${meta.media_episode}${meta.media_title ? ` · ${meta.media_title}` : ''}`
-        : [am?.episode, found?.year, app].filter(Boolean).join(' · '),
+        : known ? [am?.episode, found?.year, app].filter(Boolean).join(' · ') : state,
       art: meta.entity_picture || found?.poster || (src === a ? null : at.entity_picture) || null, fanart: found?.art || null, found: found || null };
   }
   const r = tv.remote && hass.states[tv.remote];
