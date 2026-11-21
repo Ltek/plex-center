@@ -21,6 +21,7 @@ from .const import TV_BUSY, TV_FAIL, TV_POWER, TV_POWER_OFF, TV_POWER_ON, TV_REA
 from .plex import PlexConnections, plex_servers
 from .tvs import detect_tvs, route_for
 
+PLAYER_NAMES = ((TV_PIPUP, "PiPup"), (TV_ADB, "ADB"), (TV_REMOTE, "Android TV Remote"), (TV_CAST, "Cast"), (TV_PLEX, "Plex player"))
 ROUTE_NAMES = {"pipup": "PiPup", "adb": "ADB", "plex": "Plex remote control", "open": "PiPup (opens the title only)"}
 
 
@@ -135,11 +136,20 @@ class PlexCenterOptionsFlow(OptionsFlow):
             return "No TVs yet."
         rows = []
         for t in self._tvs:
-            players = [n for k, n in ((TV_PIPUP, "PiPup"), (TV_ADB, "ADB"), (TV_REMOTE, "Android TV Remote"), (TV_CAST, "Cast"), (TV_PLEX, "Plex")) if t.get(k)]
             route = route_for(self.hass, t)
-            rows.append(f"- **{t[TV_NAME]}**: Plex user {t.get(TV_USER) or 'server owner'}; players {', '.join(players) or 'none'}; "
+            rows.append(f"**{t[TV_NAME]}**: Plex user {t.get(TV_USER) or 'server owner'}; "
                         + (f"plays with {ROUTE_NAMES.get(route, route)}" if route else "**no reachable player**"))
-        return "\n".join(rows)
+            for k, n in PLAYER_NAMES:
+                ent = t.get(k)
+                st = ent and self.hass.states.get(ent)
+                note = "" if not ent else " (**missing**)" if not st else f" ({st.state})"
+                rows.append(f"- {n}: {f'`{ent}`' if ent else '—'}{note}")
+            for k, n in ((TV_POWER, "Room power"), (TV_STATUS, "Room status")):
+                if t.get(k):
+                    st = self.hass.states.get(t[k])
+                    rows.append(f"- {n}: `{t[k]}` ({st.state if st else '**missing**'})")
+            rows.append("")
+        return "\n".join(rows).rstrip()
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         await self._load()

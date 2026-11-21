@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.21.111
+
+**Added**
+- **See each TV's entities at a glance:** Settings → Plex Center → Configure now lists, per TV, its PiPup, ADB,
+  Android TV Remote, Cast and Plex player entity ids with their state (a missing one is flagged), and the room
+  entities.
+- **Download diagnostics** (the integration's ⋮ menu): every TV with its players, their states and key
+  attributes, the route it plays with now, and its other settings.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.21.110
 
 **Fixed**
