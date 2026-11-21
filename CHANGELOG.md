@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.21.112
+
+**Changed**
+- **Seeking on the SHIELD is much faster:** with ADB, all the Fast forward / Rewind presses go in one command
+  (one round trip) instead of one PiPup key every 0.35 s. Without ADB the PiPup keys follow each other faster.
+  One seek runs at a time per TV, and seeks up to 180 presses away.
+- The seek bar stays where you let go (and runs on) until the TV reports the new position, instead of jumping
+  back while it skips.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.21.111
 
 **Added**

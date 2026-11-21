@@ -353,15 +353,31 @@ def position(hass: HomeAssistant, tv: dict[str, Any]) -> float | None:
     return None
 
 
+_SEEK_LOCKS: dict[str, asyncio.Lock] = {}
+
+
 async def _skip_keys(hass: HomeAssistant, tv: dict[str, Any], key, delta: float) -> None:
-    """Move by `delta` seconds with Fast forward / Rewind presses: each skips as far as the Plex app is set to."""
+    """Move by `delta` seconds with Fast forward / Rewind presses: each skips as far as the Plex app is set to.
+
+    With ADB, every press goes in one command (one round trip, a second or two for any distance); else one PiPup
+    key at a time. One seek at a time per TV, so presses never interleave."""
     fwd, back = float(tv.get(TV_SKIP_FWD) or 30), float(tv.get(TV_SKIP_BACK) or 10)
     step = fwd if delta > 0 else back
-    n = min(60, round(abs(delta) / step)) or (1 if abs(delta) >= step / 2 else 0)
-    for i in range(n):
-        await key("fast_forward" if delta > 0 else "rewind")
-        if i < n - 1:
-            await asyncio.sleep(0.35)
+    n = min(180, round(abs(delta) / step)) or (1 if abs(delta) >= step / 2 else 0)
+    if not n:
+        return
+    lock = _SEEK_LOCKS.setdefault(tv.get(TV_NAME) or tv.get(TV_PIPUP) or tv.get(TV_ADB) or "", asyncio.Lock())
+    async with lock:
+        adb = tv.get(TV_ADB)
+        if _has(hass, adb) and hass.states.get(adb).state not in ("off", "unavailable"):
+            code = "KEYCODE_MEDIA_FAST_FORWARD" if delta > 0 else "KEYCODE_MEDIA_REWIND"
+            for i in range(0, n, 60):   # Android's input takes many key codes at once
+                await _svc(hass, "androidtv", "adb_command", {"command": "input keyevent " + " ".join([code] * min(60, n - i))}, adb)
+            return
+        for i in range(n):
+            await key("fast_forward" if delta > 0 else "rewind")
+            if i < n - 1:
+                await asyncio.sleep(0.12)
 
 
 VOLUME_ACTIONS = {"volume_up", "volume_down", "mute", "power_on", "power_off"}

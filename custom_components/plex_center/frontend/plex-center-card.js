@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.21.111
+// Version: v2026.11.21.112
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.21.111';
+const BUILD_NUMBER = 'v2026.11.21.112';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -3893,7 +3893,14 @@ Object.assign(PlexCenterCard.prototype, {
     if (!np?.live) return;
     this._upTick(np);
     const d = Number(np.st.attributes.media_duration) || 0;
-    const p = this._seekTo ?? livePosition(np.st) ?? 0;
+    // after a seek, the bar stays at the target (and runs on) until the TV reports it: no jump back while it skips
+    const live = livePosition(np.st), h = this._seekHeld;
+    let held = null;
+    if (h && h.tv === np.tv?.id) {
+      const want = h.to + (np.st.state === 'playing' ? (Date.now() - h.at) / 1000 : 0);
+      if (Date.now() - h.at > 20000 || (live != null && Math.abs(live - want) < 15)) this._seekHeld = null; else held = want;
+    }
+    const p = this._seekTo ?? held ?? live ?? 0;
     r.querySelectorAll('[data-bar] .plc-bar-fill').forEach((f) => { f.style.width = d ? `${Math.min(100, (p / d) * 100)}%` : '0'; });
     r.querySelectorAll('[data-pos]').forEach((x) => { x.textContent = fmtTime(p); });
     r.querySelectorAll('[data-dur]').forEach((x) => { x.textContent = d ? fmtTime(d) : ''; });
@@ -3912,6 +3919,7 @@ Object.assign(PlexCenterCard.prototype, {
     const up = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       const to = this._seekTo; this._seekTo = null;
+      this._seekHeld = { tv: this._tv()?.id, to, at: Date.now() };
       this._control('seek', to);
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);

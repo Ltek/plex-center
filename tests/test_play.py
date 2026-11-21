@@ -286,3 +286,13 @@ async def test_no_media_session_falls_back_to_skip_keys(hass, calls):
         assert keys == ["fast_forward"] * 4
         keys.clear(); await play.control(hass, {**tv, "skip_back": 30}, "seek", 300)   # back 300 s at 30 s a press
         assert keys == ["rewind"] * 10
+    adb = []
+
+    async def adb_cmd(call):
+        adb.append(call.data["command"])
+    hass.services.async_register("androidtv", "adb_command", adb_cmd)
+    hass.states.async_set("media_player.adb", "idle")
+    keys.clear()
+    with patch("asyncio.sleep"):
+        await play.control(hass, {**tv, "adb": "media_player.adb"}, "seek", 720)
+    assert keys == [] and adb == ["input keyevent " + " ".join(["KEYCODE_MEDIA_FAST_FORWARD"] * 4)], "with ADB: one command"
