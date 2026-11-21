@@ -158,7 +158,7 @@ async def test_off_tv_with_stale_plex_session_wakes_and_never_presses_back(hass,
     with patch("asyncio.sleep"):
         await play.start(hass, tv, MOVIE)
     assert [(c[1], c[2].get("key")) for c in calls] == [("turn_on", None), ("turn_on", None), ("launch_app", None)]
-    assert calls[-1][2]["wait"] == 45
+    assert calls[-1][2]["wait"] == 30
 
 
 async def test_plex_not_on_screen_retries_after_home_then_says_so(hass, calls):
@@ -241,3 +241,21 @@ async def test_resume_service(hass, calls):
         assert started == [("721605", "play")] and res.data == {}
         with pytest.raises(HomeAssistantError, match="Nothing to resume"):
             await hass.services.async_call("plex_center", "resume", {"tv": "lr"}, blocking=True)
+
+
+async def test_pipup_wait_limit_is_followed(hass, calls):
+    """PiPup allows "wait" up to some limit: a lower one than ours is read from its error and used."""
+    import voluptuous as vol
+    got = []
+
+    async def launch(call):
+        got.append(call.data["wait"])
+    _pip(hass)
+    hass.services.async_register("pipup", "launch_app", launch,
+                                 schema=vol.Schema({vol.Optional("wait"): vol.All(int, vol.Range(max=20))}, extra=vol.ALLOW_EXTRA))
+    old = play.PIPUP_WAIT[0]
+    try:
+        assert await play.start(hass, {"name": "LR", "pipup": "media_player.pip"}, MOVIE) == "pipup"
+        assert got == [20] and play.PIPUP_WAIT[0] == 20
+    finally:
+        play.PIPUP_WAIT[0] = old

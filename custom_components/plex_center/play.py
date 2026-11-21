@@ -8,6 +8,8 @@ import re
 import time
 from typing import Any
 
+import voluptuous as vol
+
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -18,6 +20,7 @@ from .tvs import room_ready, route_for, tv_on, tv_playing, values
 
 _LOGGER = logging.getLogger(__name__)
 _BUSY: set[str] = set()
+PIPUP_WAIT = [30]   # seconds PiPup waits for Plex's Watch button (PiPup allows at most 30)
 
 
 class Steps:
@@ -255,7 +258,16 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
             else:
                 async def launch(button: str) -> None:
                     try:
-                        await _svc(hass, "pipup", "launch_app", {**data, "click": button, "method": "ok", "wait": 45}, pip)
+                        try:
+                            await _svc(hass, "pipup", "launch_app", {**data, "click": button, "method": "ok", "wait": PIPUP_WAIT[0]}, pip)
+                        except (vol.Invalid, HomeAssistantError) as err:   # PiPup's limit for "wait": use it, try again
+                            m = re.search(r"at most (\d+)\D*'?wait", str(err))
+                            if not m or int(m.group(1)) >= PIPUP_WAIT[0]:
+                                if isinstance(err, HomeAssistantError):
+                                    raise
+                                raise HomeAssistantError(str(err)) from err
+                            PIPUP_WAIT[0] = int(m.group(1))
+                            await _svc(hass, "pipup", "launch_app", {**data, "click": button, "method": "ok", "wait": PIPUP_WAIT[0]}, pip)
                     except HomeAssistantError as err:
                         steps.mark(f"PiPup open + press {button.rsplit('-', 1)[-1]} FAILED: {err}")
                         raise

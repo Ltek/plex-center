@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.21.109
+
+**Fixed**
+- **Play failed with "value must be at most 30 at 'wait'":** PiPup now allows at most 30 s for its wait for Plex's
+  Watch button, and Plex Center asked for 45 s. It asks for 30 s, and follows a lower limit if PiPup reports one.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.21.108
 
 **Added**
