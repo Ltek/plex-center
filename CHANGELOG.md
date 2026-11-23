@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.24.122
+
+**Changed**
+- **Flags, every style:** top right or bottom right, on lists and on posters alike. The corner and the info icon
+  have a **Flag position**; icons and labels keep one per flag. On posters the flags and the "New" badge moved to
+  the right (bottom ones sit above the Play button when there is one).
+- **Item size for rows too:** a row's **Poster height** / **Fanart height** makes each poster or fanart that tall
+  (as wide as its shape, the row scrolls); reset it and Items to show share the width as before. Lists keep Item
+  width and Item height. **Item border** now applies to rows as well (a ring inside each poster). The size options
+  sit together under Content Visuals → Item size, per screen type.
+- **Showtime Remote:** "Look" is now **Appearance**, with sizes for the button text, the second line, the button
+  icons (Play / Pause and the skips scale from them) and the title / Ends at. Bigger defaults: 26 px text, 13 px
+  second line, 32 px icons, 60 px title; phones shrink them to fit.
+
 ## v2026.11.23.121
 
 **Added**

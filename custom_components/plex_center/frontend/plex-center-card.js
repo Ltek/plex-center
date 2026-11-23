@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.23.121
+// Version: v2026.11.24.122
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.23.121';
+const BUILD_NUMBER = 'v2026.11.24.122';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -455,9 +455,9 @@ function flagsHtml(it, st, ref, where = 'li') {
     return box(top, '') + box(bot, ' bot');
   }
   if (!it.flag) return '';
-  const why = esc(it.flag_text || 'New');
-  if (where === 'tile') return `<span class="plc-badge" title="${why}">${esc(it.flag_text || 'New')}</span>`;
-  return st.flag_style === 'info' ? `<ha-icon class="plc-li-info" icon="mdi:information-outline" title="${why}"></ha-icon>` : `<span class="plc-li-flag" title="${why}"></span>`;
+  const why = esc(it.flag_text || 'New'), bot = st.flag_pos === 'bottom' ? ' bot' : '';
+  if (where === 'tile') return `<span class="plc-badge r${bot}" title="${why}">${esc(it.flag_text || 'New')}</span>`;
+  return st.flag_style === 'info' ? `<ha-icon class="plc-li-info${bot}" icon="mdi:information-outline" title="${why}"></ha-icon>` : `<span class="plc-li-flag${bot}" title="${why}"></span>`;
 }
 
 /** Fanart text backdrop gradients: where the dark side is. */
@@ -600,6 +600,10 @@ const DEFAULTS = {
   remote_font: 'card',      // card | condensed (the big text)
   remote_tv: '',            // the TV it controls ('' = the card's)
   remote_idle_title: '',
+  remote_label_px: 26,      // remote button text
+  remote_sub_px: 13,        // its second line
+  remote_icon_px: 32,       // button icons (Play / Pause and the skips scale from it)
+  remote_title_px: 60,      // the title; Ends at 0.8 of it
   np_volume: true,          // Now playing: volume buttons
   np_play_center: true,     // Play / Pause in the middle of the skip buttons (Stop, Home and volume on their own row)
   np_scale: 100,            // Now playing control buttons, %
@@ -933,7 +937,7 @@ const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phon
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
-  border_color: 'str', flag: 'bool', flag_style: ['corner', 'info', 'icons', 'labels', 'both'], flag_items: 'words', flag_bottom: 'words', flag_px: 'num', releases: 'words',
+  border_color: 'str', flag: 'bool', flag_style: ['corner', 'info', 'icons', 'labels', 'both'], flag_items: 'words', flag_bottom: 'words', flag_pos: ['top', 'bottom'], flag_px: 'num', releases: 'words',
   count_pos: ['title', 'right'] };
 /** A Home row's settings shared by every screen type: what the row is (its source). Everything else is per screen. */
 const SEC_SHARED = new Set(['source', 'sensors', 'library', 'hub', 'releases']);
@@ -1012,7 +1016,7 @@ function secStyle(c, id) {
     speed: Number(s.speed ?? (auto === 'scroll' && s.layout !== 'banner' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
     flag: s.flag ?? cfg(c, 'flag'), flag_style: s.flag_style || (fanDef ? FAN_SEC.flag_style : 'corner'),
     item_h: s.item_h ?? (listFan ? FAN_SEC.item_h : undefined), flag_items: Array.isArray(s.flag_items) ? s.flag_items : FACTS.map(([f]) => f),
-    flag_px: Math.max(12, Math.min(40, Number(s.flag_px) || 20)), flag_bottom: Array.isArray(s.flag_bottom) ? s.flag_bottom : [],
+    flag_px: Math.max(12, Math.min(40, Number(s.flag_px) || 20)), flag_bottom: Array.isArray(s.flag_bottom) ? s.flag_bottom : [], flag_pos: s.flag_pos || 'top',
     count_pos: s.count_pos || 'title', list_w: Number(s.list_w ?? (listFan ? FAN_SEC.list_w : 340)), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
     get max() { return this.total; } };
@@ -1021,6 +1025,7 @@ function secStyle(c, id) {
 function secVars(st) {
   const s = st.s, clean = (v) => String(v).replace(/[;{}<>]/g, ''), v = [`--plc-li-w:${st.list_w}px`, `--plc-show:${st.show}`, `--plc-fade-ms:${st.fade_ms}ms`];
   if (st.item_h !== undefined) v.push(`--plc-li-h:${Number(st.item_h)}px`);
+  if (s.border_color) v.push('--plc-li-bdw:2px');
   for (const n of [1, 2, 3, 4]) {
     if (s[`l${n}_px`] !== undefined) v.push(`--plc-l${n}-px:${Number(s[`l${n}_px`])}px`);
     if (s[`l${n}_color`]) v.push(`--plc-l${n}-c:${clean(s[`l${n}_color`])}`);
@@ -1619,10 +1624,16 @@ const CARD_CSS = `
 .plc-li .plc-s { color: var(--plc-line-c, #9a9a9a); }
 .plc-facts { position: absolute; z-index: 3; display: flex; gap: 4px; align-items: center; --mdc-icon-size: var(--plc-fact-px, 20px); }
 .plc-facts.li { top: 8px; right: 8px; flex-direction: row-reverse; }
-.plc-facts.tile { top: 6px; left: 6px; flex-wrap: wrap; }
+.plc-facts.tile { top: 6px; right: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: calc(100% - 12px); }
 .plc-facts.li.bot { top: auto; bottom: 8px; }
 .plc-li:has(.plc-play) .plc-facts.li.bot { right: 64px; }
-.plc-facts.tile.bot { top: auto; bottom: 12px; }
+.plc-facts.tile.bot { top: auto; bottom: 8px; }
+.plc-poster:has(.plc-play) .plc-facts.tile.bot, .plc-poster:has(.plc-play) .plc-badge.bot { bottom: 52px; }
+.plc-badge.r { left: auto; right: 6px; }
+.plc-badge.bot { top: auto; bottom: 8px; }
+.plc-li-info.bot { top: auto; bottom: 8px; }
+.plc-li-flag.bot { top: auto; bottom: 0; border-width: 46px 46px 0 0; }
+.plc-li:has(.plc-play) .plc-li-info.bot, .plc-li:has(.plc-play) .plc-li-flag.bot { right: 56px; }
 .plc-flagi { display: inline-flex; align-items: center; gap: 3px; padding: 3px; border-radius: 6px; background: rgba(0,0,0,.55); color: var(--plc-flag-c, var(--plc-a)); }
 .plc-flagi.labels { padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,.65); filter: none; font-size: calc(var(--plc-fact-px, 20px) * .6); font-weight: 700;
   --mdc-icon-size: calc(var(--plc-fact-px, 20px) * .7); border: 1px solid color-mix(in srgb, var(--plc-flag-c, var(--plc-a)) 60%, transparent); }
@@ -1646,6 +1657,12 @@ const CARD_CSS = `
 .plc-kchips .plc-chip { padding: 3px 10px; font-size: .78em; }
 .plc-li.poster .plc-li-img { position: static; width: auto; aspect-ratio: 2 / 3; -webkit-mask-image: none; mask-image: none; }
 .plc-li.poster .plc-li-text { max-width: none; }
+/* rows with an Item height: each poster / fanart that tall, its width from the shape (Items to show then don't size them) */
+.plc-sec-body.fixh .plc-row > .plc-tile { flex: 0 0 calc(var(--plc-li-h) * 2 / 3); }
+.plc-sec-body.fixh .plc-row.fanart > .plc-tile { flex-basis: calc(var(--plc-li-h) * 16 / 9); }
+/* an Item border colour on rows: a ring inside each poster */
+.plc-row .plc-poster::before { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: inherit; pointer-events: none;
+  border: var(--plc-li-bdw, 0px) solid var(--plc-li-bd, transparent); }
 /* Item height set: every item is that tall (poster, fanart and fade alike); text that doesn't fit is cut */
 .plc-sec-body.fixh .plc-li { height: var(--plc-li-h); min-height: 0; }
 .plc-sec-body.fixh .plc-li.poster { grid-template-rows: 100%; }
@@ -1920,12 +1937,12 @@ const CARD_CSS = `
   font-family: "Bebas Neue", "Oswald", "Roboto Condensed", sans-serif-condensed, "Bahnschrift Condensed", "Arial Narrow", sans-serif; font-stretch: condensed; letter-spacing: .02em; }
 .plc-rm-head { display: flex; align-items: flex-end; gap: 16px; }
 .plc-rm-ttl { flex: 1; min-width: 0; }
-.plc-rm-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; opacity: .75; }
-.plc-rm-title { font-size: clamp(26px, 4.6vw, 56px); font-weight: 800; line-height: 1; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+.plc-rm-eyebrow { font-size: max(12px, calc(var(--rm-sub, 13px) * .95)); font-weight: 700; letter-spacing: .2em; text-transform: uppercase; opacity: .75; }
+.plc-rm-title { font-size: min(var(--rm-ttl, 60px), 9vw); font-weight: 800; line-height: 1; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
 .plc-rm-sub { font-size: 14px; opacity: .7; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plc-rm-ends { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
 .plc-rm-ends span { font-size: 12px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; opacity: .75; }
-.plc-rm-ends b { font-size: clamp(24px, 3.6vw, 44px); font-weight: 800; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.plc-rm-ends b { font-size: min(calc(var(--rm-ttl, 60px) * .8), 8vw); font-weight: 800; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
 .plc-rm-x { flex: none; align-self: flex-start; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--rm-line); background: none; color: var(--rm-a); display: grid; place-items: center; }
 .plc-rm-x.small { width: 30px; height: 30px; border: none; }
 .plc-rm-bar { height: 4px; border-radius: 2px; background: var(--rm-line); overflow: hidden; flex: none; }
@@ -1934,26 +1951,26 @@ const CARD_CSS = `
 .plc-rm-left { display: grid; gap: 14px; grid-template-rows: 2fr 1fr 2fr; min-height: 0; }
 .plc-rm-right { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
 .plc-rm-right > * { flex: 1 1 0; }
-.plc-rm-right .plc-rm-btn .top { flex-direction: column; gap: 8px; } .plc-rm-right .plc-rm-btn .lbl { font-size: clamp(12px, 1.3vw, 16px); letter-spacing: .12em; }
+.plc-rm-right .plc-rm-btn .top { flex-direction: column; gap: 8px; } .plc-rm-right .plc-rm-btn .lbl { font-size: min(calc(var(--rm-lbl, 26px) * .65), 4vw); letter-spacing: .12em; }
 .plc-rm-bottom { grid-column: 1 / -1; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
 .plc-rm-bottom .wide { grid-column: span 1; }
 .plc-rm-center { display: flex; align-items: center; justify-content: center; gap: clamp(24px, 8%, 110px); border-radius: 20px; background: var(--rm-p); border: 1px solid var(--rm-line); min-height: 0; }
 .plc-rm-btn { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 56px;
   padding: 8px; border-radius: 16px; border: 1px solid var(--rm-line); background: var(--rm-p); color: var(--rm-a); font: inherit; cursor: pointer; }
 .plc-rm-btn .top { display: inline-flex; align-items: center; gap: 10px; }
-.plc-rm-btn ha-icon { --mdc-icon-size: 26px; }
-.plc-rm-btn .lbl { font-size: clamp(15px, 1.9vw, 24px); font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
-.plc-rm-btn .sub { font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; opacity: .7; text-align: center; }
-.plc-rm-btn.mute .top { flex-direction: column; gap: 4px; } .plc-rm-btn.mute .lbl { font-size: 11px; letter-spacing: .16em; }
+.plc-rm-btn ha-icon { --mdc-icon-size: var(--rm-ic, 32px); }
+.plc-rm-btn .lbl { font-size: min(var(--rm-lbl, 26px), 5vw); font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
+.plc-rm-btn .sub { font-size: min(var(--rm-sub, 13px), 3.4vw); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; opacity: .7; text-align: center; }
+.plc-rm-btn.mute .top { flex-direction: column; gap: 4px; } .plc-rm-btn.mute .lbl { font-size: min(var(--rm-sub, 13px), 3.4vw); letter-spacing: .16em; }
 .plc-rm-btn.dark { background: #000; }
 .plc-rm-btn.lit { background: color-mix(in srgb, var(--rm-a) 22%, var(--rm-p)); border-color: color-mix(in srgb, var(--rm-a) 60%, transparent); }
 .plc-rm-btn:active, .plc-rm-skip:active, .plc-rm-play:active { filter: brightness(1.3); }
 .plc-rm-play { width: clamp(110px, 15vw, 180px); aspect-ratio: 1; border-radius: 50%; background: #000; border: 1.5px solid var(--rm-a); color: var(--rm-a); display: grid; place-items: center;
   position: relative; overflow: hidden; cursor: pointer; }
-.plc-rm-play ha-icon { --mdc-icon-size: clamp(48px, 7vw, 84px); }
-.plc-rm-skip { display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: none; color: var(--rm-a); font: inherit; font-size: 13px; letter-spacing: .1em;
+.plc-rm-play ha-icon { --mdc-icon-size: min(calc(var(--rm-ic, 32px) * 2.8), 16vw); }
+.plc-rm-skip { display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: none; color: var(--rm-a); font: inherit; font-size: var(--rm-sub, 13px); letter-spacing: .1em;
   position: relative; overflow: hidden; padding: 14px; border-radius: 16px; cursor: pointer; }
-.plc-rm-skip ha-icon { --mdc-icon-size: 40px; }
+.plc-rm-skip ha-icon { --mdc-icon-size: calc(var(--rm-ic, 32px) * 1.5); }
 .plc-remote .plc-hold::after { background: color-mix(in srgb, var(--rm-a) 35%, transparent); }
 .plc-rm-popslot { position: absolute; right: 26px; bottom: calc(110px + env(safe-area-inset-bottom, 0px)); z-index: 3; width: min(480px, calc(100vw - 52px)); }
 .plc-rm-pop { background: #000; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 14px 16px 16px; box-shadow: 0 20px 60px rgba(0,0,0,.7); }
@@ -5069,10 +5086,15 @@ class PlexCenterCardEditor extends HTMLElement {
       ${sub('shape', 'Content Visuals', `${this._lookBody(id, 'visual')}${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}
         ${st.flag ? `${sel('flag_style', 'Flag shows as', [['corner', 'A corner'], ['info', 'An info icon (i)'], ['icons', 'Icons'], ['labels', 'Labels'], ['both', 'Icons and labels']])}
           ${['icons', 'labels', 'both'].includes(st.flag_style) ? `<div class="plce-tvlist">${FACTS.map(([f, n]) => `<div class="plce-row plce-nowrap"><label class="plce-check" style="flex:1"><input type="checkbox" data-sid="${esc(id)}" data-sfact="${f}"${st.flag_items.includes(f) ? ' checked' : ''}>${esc(n)}${f === 'trailer' ? ' (tap plays it)' : ''}</label>
-            <select data-sid="${esc(id)}" data-sfpos="${f}"><option value="top">${list ? 'Top right' : 'Top left'}</option><option value="bottom"${st.flag_bottom.includes(f) ? ' selected' : ''}>${list ? 'Bottom right' : 'Bottom left'}</option></select></div>`).join('')}</div>
-            ${sl('flag_px', 'Icon size', 12, 40, 20)}` : ''}${col('flag_color', 'Flag colour', '#0099cc')}` : ''}${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}
+            <select data-sid="${esc(id)}" data-sfpos="${f}"><option value="top">Top right</option><option value="bottom"${st.flag_bottom.includes(f) ? ' selected' : ''}>Bottom right</option></select></div>`).join('')}</div>
+            ${sl('flag_px', 'Icon size', 12, 40, 20)}` : sel('flag_pos', 'Flag position', [['', 'Top right'], ['bottom', 'Bottom right']])}${col('flag_color', 'Flag colour', '#0099cc')}` : ''}
+        <div class="plce-group">Item size</div>
+        ${list ? sl('list_w', 'Item width', 220, 4000, st.list_w) : ''}
+        ${sl('item_h', list ? 'Item height' : (st.image === 'fanart' ? 'Fanart height' : 'Poster height'), 60, 600, st.item_h ?? (list ? 150 : 240))}
+        <p class="plce-hint">${list ? 'Every item is this tall, whatever its image style; text that doesn\'t fit is cut.' : 'Set: each poster or fanart is this tall and as wide as its shape, and the row scrolls. Not set (reset): they share the width by Items to show.'}</p>
         ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
-        ${list ? `${col('item_bg', 'Item background', '#0d0d0d', true)}${col('border_color', 'Item border', '#000000', true)}` : ''}`)}
+        ${col('border_color', 'Item border', '#000000', true)}
+        ${list ? col('item_bg', 'Item background', '#0d0d0d', true) : ''}`)}
 `;
   }
 
@@ -5243,7 +5265,10 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._c('remote_blackout') ? `${this._slider('remote_blackout_s', 'After', 5, 600, ' s')}${this._chips('remote_blackout_style', 'Black screen shows', [['black', 'Nothing'], ['clock', 'A dim clock (it drifts)']])}` : ''}
         ${this._check('remote_keep_awake', 'Keep the screen on while the remote is open')}
         <p class="plce-hint">${secure ? 'This browser can keep the screen on.' : "This browser can't keep the screen on here (it needs Home Assistant over HTTPS): turn on <b>Keep screen on</b> in the Companion App or in Fully Kiosk."}</p>`)}
-      ${this._sub('rm-look', 'Look', `${this._chips('remote_font', 'Big text', [['card', "The card's font"], ['condensed', 'Condensed']])}
+      ${this._sub('rm-look', 'Appearance', `${this._chips('remote_font', 'Font', [['card', "The card's font"], ['condensed', 'Condensed']])}
+        ${this._slider('remote_label_px', 'Button text', 12, 48)}${this._slider('remote_sub_px', 'Second line', 9, 28)}
+        ${this._slider('remote_icon_px', 'Button icons', 16, 64)}${this._slider('remote_title_px', 'Title and Ends at', 20, 96)}
+        <p class="plce-hint">Each button's text is set under Buttons. Phones shrink the sizes to fit.</p>
         ${this._colorControl('remote_bg')}${this._colorControl('remote_panel')}${this._colorControl('remote_accent')}`)}
       ${this._sub('rm-sleep', 'Sleep timer', `<p class="plce-hint">The Sleep button turns the room off after this long, or when what's playing ends. It runs in Home Assistant, so it keeps going when the screen is off.</p>
         <div class="plce-row"><label class="lbl">Minutes</label><input type="text" data-rmsleepmin value="${esc((Array.isArray(this._config.remote_sleep_min) ? this._config.remote_sleep_min : [30, 60, 90]).join(', '))}"></div>`)}
@@ -6024,7 +6049,9 @@ Object.assign(PlexCenterCard.prototype, {
     const play = b('play'), playBtn = `<button class="plc-rm-play" data-rm="play" data-rmhold="${play.hold}" data-rmlabel="${playing ? 'Pause' : 'Play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>`;
     const skip = (id, dir) => { const s = b(id); return `<button class="plc-rm-skip" data-rm="${id}" data-rmhold="${s.hold}" data-rmlabel="${dir}${step} s"><ha-icon icon="${esc(s.icon)}"></ha-icon><span>${step}s</span></button>`; };
     const right = [b('lighting'), ...extra].filter((x) => !x.hidden).slice(0, 3);
-    slot.innerHTML = `<div class="plc-remote${cfg(this._c, 'remote_font') === 'condensed' ? ' condensed' : ''}" data-rmroot>
+    const px = (k) => Math.max(6, Number(cfg(this._c, k)) || DEFAULTS[k]);
+    const sizes = `--rm-lbl:${px('remote_label_px')}px;--rm-sub:${px('remote_sub_px')}px;--rm-ic:${px('remote_icon_px')}px;--rm-ttl:${px('remote_title_px')}px`;
+    slot.innerHTML = `<div class="plc-remote${cfg(this._c, 'remote_font') === 'condensed' ? ' condensed' : ''}" style="${sizes}" data-rmroot>
       <div class="plc-rm-head"><div class="plc-rm-ttl"><div class="plc-rm-eyebrow">${esc(state)}${tv ? ` · ${esc(tvLabel(tv))}` : ''}</div>
         <div class="plc-rm-title">${esc(title)}</div>${live && np.sub ? `<div class="plc-rm-sub">${esc(np.sub)}</div>` : ''}</div>
         <div class="plc-rm-ends"><span>Ends at</span><b data-rmends>--:--</b></div>
