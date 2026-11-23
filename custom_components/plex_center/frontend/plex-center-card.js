@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.23.117
+// Version: v2026.11.23.118
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.23.117';
+const BUILD_NUMBER = 'v2026.11.23.118';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -276,10 +276,17 @@ const LOOK_KEYS = Object.keys(LOOK_BASE);
 /** Defaults per kind: rows have no border unless asked for; the Calendar has its type-colour border. */
 const ROW_TEXT = { title_px: 14, title_weight: '700', ...Object.fromEntries(['info', 'when', 'meta', 'extra'].flatMap((id) => [[`${id}_px`, 12], [`${id}_weight`, '400']])) };
 const lookBase = (kind) => (kind === 'calendar' ? LOOK_BASE : { ...LOOK_BASE, border: false, ...ROW_TEXT });
+/** Coming Soon and Recently Added with fanart or a fanart fade: defaults made for them (a dark border, no text
+ *  backdrop, bigger text; one item per row, 130 px tall, flags as labels). */
+const FAN_LOOK = { border: true, text_bg: 'none', title_px: 17, info_px: 14, when_px: 14, meta_px: 14, extra_px: 14 };
+const FAN_SEC = { item_h: 130, list_w: 4000, flag_style: 'labels' };
+const fanKind = (id) => /^(soon|recent)(-\d+)?$/.test(String(id));
 /** The look of a kind on a screen: built-in defaults with the card's values on top. */
 function lookFor(c, kind, screen) {
   const own = (c.looks || {})[`${kind}:${screen}`] || {};
   const out = { ...lookBase(kind), ...(kind === 'calendar' ? {} : { image: cfg(c, 'image_style') === 'fanart' ? 'fanart' : 'poster' }) };
+  const secImg = c.sec_styles?.[`${kind}:${screen}`]?.image;
+  if (fanKind(kind) && ['fanart', 'fade'].includes(own.image || secImg || out.image)) Object.assign(out, FAN_LOOK);
   for (const k of LOOK_KEYS) if (own[k] !== undefined && own[k] !== '') out[k] = own[k];
   return out;
 }
@@ -962,8 +969,11 @@ function secStyle(c, id) {
   const s = { ...((c.home_style || {})[id] || {}), ...((c.sec_styles || {})[`${id}:${c._screen || 'tablet_landscape'}`] || {}) };
   const type = secType(c, id) || 'sensor';
   const collapsible = !!s.collapsible;
-  const own = lookOwn(c, id), lkImg = own.image;
+  const own0 = lookOwn(c, id), lkImg = own0.image;
   const image = (lkImg === 'fade' ? 'fanart' : lkImg) || s.image || cfg(c, 'image_style');
+  const fanDef = fanKind(id) && image === 'fanart';   // Coming Soon / Recently Added with fanart or a fade
+  const own = fanDef ? { ...FAN_LOOK, ...own0 } : own0;
+  const listFan = fanDef && (s.layout || 'row') === 'list';
   const wide = (s.layout || 'row') === 'row' && image === 'fanart';
   // Cycle: the header chip turns the section's auto-rotate on / off; Cycle content says how (scroll or fade)
   const cycleMode = s.cycle_mode || (s.auto && s.auto !== 'off' ? s.auto : id === 'continue' ? 'fade' : 'scroll');
@@ -976,16 +986,17 @@ function secStyle(c, id) {
       return wide && !(s.show ?? s.max) ? Math.max(1, Math.round(n / 2)) : n; })(),
     scroll: !!s.scroll, auto, scroll_dir: s.scroll_dir || ((s.layout || 'row') === 'list' ? 'up' : 'left'),
     speed: Number(s.speed ?? (auto === 'scroll' && s.layout !== 'banner' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
-    flag: s.flag ?? cfg(c, 'flag'), flag_style: s.flag_style || 'corner', flag_items: Array.isArray(s.flag_items) ? s.flag_items : FACTS.map(([f]) => f),
+    flag: s.flag ?? cfg(c, 'flag'), flag_style: s.flag_style || (fanDef ? FAN_SEC.flag_style : 'corner'),
+    item_h: s.item_h ?? (listFan ? FAN_SEC.item_h : undefined), flag_items: Array.isArray(s.flag_items) ? s.flag_items : FACTS.map(([f]) => f),
     flag_px: Math.max(12, Math.min(40, Number(s.flag_px) || 20)), flag_bottom: Array.isArray(s.flag_bottom) ? s.flag_bottom : [],
-    count_pos: s.count_pos || 'title', list_w: Number(s.list_w ?? 340), type, s,
+    count_pos: s.count_pos || 'title', list_w: Number(s.list_w ?? (listFan ? FAN_SEC.list_w : 340)), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
     get max() { return this.total; } };
 }
 /** The section's own CSS custom properties (inline on the section; inherit the card's when unset). */
 function secVars(st) {
   const s = st.s, clean = (v) => String(v).replace(/[;{}<>]/g, ''), v = [`--plc-li-w:${st.list_w}px`, `--plc-show:${st.show}`, `--plc-fade-ms:${st.fade_ms}ms`];
-  if (s.item_h !== undefined) v.push(`--plc-li-h:${Number(s.item_h)}px`);
+  if (st.item_h !== undefined) v.push(`--plc-li-h:${Number(st.item_h)}px`);
   for (const n of [1, 2, 3, 4]) {
     if (s[`l${n}_px`] !== undefined) v.push(`--plc-l${n}-px:${Number(s[`l${n}_px`])}px`);
     if (s[`l${n}_color`]) v.push(`--plc-l${n}-c:${clean(s[`l${n}_color`])}`);
@@ -3152,10 +3163,12 @@ class PlexCenterCard extends HTMLElement {
     const head = st.collapsible
       ? `<button class="plc-sec-bar slots${noc} ${hcls}${total ? ' has' : ''}" data-secbar="${esc(id)}">${slots}</button>`
       : `<div class="plc-sec-h slots${noc} ${hcls}">${slots}</div>`;
-    const page = st.auto === 'fade' ? this._fadePage?.[id] || 0 : 0;
-    const body = this._sectionItems(st, items, listId, page);
-    const mode = st.auto === 'scroll' ? 'scroll auto' : st.auto === 'fade' ? 'limit fadeset' : st.scroll ? 'scroll' : 'limit';
-    return `${head}<div class="plc-sec-body ${mode}${st.s.item_h !== undefined ? ' fixh' : ''}" data-secbody="${esc(id)}">${body}</div>`;
+    // everything fits: no cycling (it would scroll or fade the same items round and round)
+    const auto = more ? st.auto : 'off';
+    const page = auto === 'fade' ? this._fadePage?.[id] || 0 : 0;
+    const body = this._sectionItems(more ? st : { ...st, auto: 'off', scroll: false }, items, listId, page);
+    const mode = auto === 'scroll' ? 'scroll auto' : auto === 'fade' ? 'limit fadeset' : st.scroll && more ? 'scroll' : 'limit';
+    return `${head}<div class="plc-sec-body ${mode}${st.item_h !== undefined ? ' fixh' : ''}" data-secbody="${esc(id)}">${body}</div>`;
   }
 
   /** The items of a section: all of them when it scrolls, else one page of `show` (fade pages rotate). */

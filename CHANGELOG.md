@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.23.118
+
+**Changed**
+- **Coming Soon and Recently Added with fanart or a fanart fade** have their own defaults (taken from a tuned
+  Coming Soon card): a dark border, no text backdrop, a 17 px title and 14 px lines, flags as labels, and in a
+  list one item per row, 130 px tall. Anything you set yourself still wins; poster rows don't change.
+- **No cycling when everything fits:** a section with no more items than it shows doesn't scroll or fade (it would
+  loop the same items), and its Cycle chip and View all stay hidden.
+
 ## v2026.11.23.117
 
 **Added**
