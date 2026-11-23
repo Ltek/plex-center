@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.21.112
+// Version: v2026.11.23.113
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.21.112';
+const BUILD_NUMBER = 'v2026.11.23.113';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -3898,7 +3898,9 @@ Object.assign(PlexCenterCard.prototype, {
     let held = null;
     if (h && h.tv === np.tv?.id) {
       const want = h.to + (np.st.state === 'playing' ? (Date.now() - h.at) / 1000 : 0);
-      if (Date.now() - h.at > 20000 || (live != null && Math.abs(live - want) < 15)) this._seekHeld = null; else held = want;
+      const rep = Date.parse(np.st.attributes.media_position_updated_at || '') || 0;
+      // let go once the seek is done and the TV has reported a position since (Plex reports every few seconds)
+      if ((h.done && rep > h.done) || Date.now() - h.at > 30000) this._seekHeld = null; else held = want;
     }
     const p = this._seekTo ?? held ?? live ?? 0;
     r.querySelectorAll('[data-bar] .plc-bar-fill').forEach((f) => { f.style.width = d ? `${Math.min(100, (p / d) * 100)}%` : '0'; });
@@ -3919,8 +3921,9 @@ Object.assign(PlexCenterCard.prototype, {
     const up = () => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
       const to = this._seekTo; this._seekTo = null;
-      this._seekHeld = { tv: this._tv()?.id, to, at: Date.now() };
-      this._control('seek', to);
+      const held = { tv: this._tv()?.id, to, at: Date.now() };
+      this._seekHeld = held;
+      this._control('seek', to)?.finally(() => { held.done = Date.now(); });
     };
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
     e.preventDefault();
@@ -3930,7 +3933,7 @@ Object.assign(PlexCenterCard.prototype, {
     const tv = this._tv();
     if (!tv) return;
     const stop = action === 'power_on' ? this._roomWatch(tv) : () => {};
-    this._hass.callService('plex_center', 'control', { tv: tv.id, action, ...(value != null ? { value: Number(value) } : {}) })
+    return this._hass.callService('plex_center', 'control', { tv: tv.id, action, ...(value != null ? { value: Number(value) } : {}) })
       .catch((err) => this._toast(`${action === 'power_on' ? 'Turn on' : action}: ${err?.message || err}`)).finally(stop);
   },
 

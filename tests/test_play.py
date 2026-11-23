@@ -282,9 +282,11 @@ async def test_no_media_session_falls_back_to_skip_keys(hass, calls):
         assert keys == ["fast_forward"], "+30 = one press (Plex's default 30 s)"
         keys.clear(); await play.control(hass, tv, "skip", -10)
         assert keys == ["rewind"]
-        keys.clear(); await play.control(hass, tv, "seek", 720)          # 600 → 720: 4 × 30 s
+        play._LAST_SEEK.clear(); keys.clear(); await play.control(hass, tv, "skip", 10)
+        assert keys == ["fast_forward", "rewind", "rewind"], "+10 with skips of 30 / 10"
+        play._LAST_SEEK.clear(); keys.clear(); await play.control(hass, tv, "seek", 720)          # 600 → 720: 4 × 30 s
         assert keys == ["fast_forward"] * 4
-        keys.clear(); await play.control(hass, {**tv, "skip_back": 30}, "seek", 300)   # back 300 s at 30 s a press
+        play._LAST_SEEK.clear(); keys.clear(); await play.control(hass, {**tv, "skip_back": 30}, "seek", 300)   # back 300 s at 30 s a press
         assert keys == ["rewind"] * 10
     adb = []
 
@@ -292,7 +294,33 @@ async def test_no_media_session_falls_back_to_skip_keys(hass, calls):
         adb.append(call.data["command"])
     hass.services.async_register("androidtv", "adb_command", adb_cmd)
     hass.states.async_set("media_player.adb", "idle")
-    keys.clear()
+    keys.clear(); play._LAST_SEEK.clear()
     with patch("asyncio.sleep"):
         await play.control(hass, {**tv, "adb": "media_player.adb"}, "seek", 720)
     assert keys == [] and adb == ["input keyevent " + " ".join(["KEYCODE_MEDIA_FAST_FORWARD"] * 4)], "with ADB: one command"
+
+
+def test_skip_plan():
+    assert play.skip_plan(10, 30, 10) == (1, 2)
+    assert play.skip_plan(30, 30, 10) == (1, 0)
+    assert play.skip_plan(-30, 30, 10) == (0, 3)
+    assert play.skip_plan(130, 30, 10) == (5, 2)
+    assert play.skip_plan(4, 30, 10) == (0, 0), "nearer to stay put"
+
+
+async def test_back_falls_back_to_adb(hass, calls):
+    """PiPup's Back needs its accessibility service (off on the SHIELD): ADB presses it."""
+    from homeassistant.exceptions import HomeAssistantError
+    adb = []
+
+    async def no_access(call):
+        raise HomeAssistantError("Shield: back needs the accessibility service")
+
+    async def adb_cmd(call):
+        adb.append(call.data["command"])
+    _pip(hass)
+    hass.services.async_register("pipup", "send_key", no_access)
+    hass.services.async_register("androidtv", "adb_command", adb_cmd)
+    hass.states.async_set("media_player.adb", "idle")
+    await play.control(hass, {"name": "Theater", "pipup": "media_player.pip", "adb": "media_player.adb"}, "stop")
+    assert adb == ["input keyevent KEYCODE_BACK"]

@@ -337,12 +337,19 @@ def position(hass: HomeAssistant, tv: dict[str, Any]) -> float | None:
     """Where playback is now (seconds): from the TV's Plex player, else PiPup / ADB, moved on while playing."""
     from datetime import datetime  # noqa: PLC0415
 
+    last = _LAST_SEEK.get(_tv_key(tv))
     for ent in (tv.get(TV_PLEX), tv.get(TV_PIPUP), tv.get(TV_ADB)):
         st = ent and hass.states.get(ent)
         pos = st and st.attributes.get("media_position")
         if st and pos is not None and st.state in ("playing", "paused", "buffering"):
             pos = float(pos)
             at = st.attributes.get("media_position_updated_at")
+            try:
+                at_ts = (at if isinstance(at, datetime) else datetime.fromisoformat(str(at))).timestamp() if at else 0.0
+            except (TypeError, ValueError):
+                at_ts = 0.0
+            if last and time.time() - last[1] < 60 and at_ts < last[1]:   # the TV hasn't reported since our last seek
+                return last[0] + (time.time() - last[1] if st.state == "playing" else 0.0)
             if st.state == "playing" and at:
                 try:
                     when = at if isinstance(at, datetime) else datetime.fromisoformat(str(at))
@@ -356,28 +363,50 @@ def position(hass: HomeAssistant, tv: dict[str, Any]) -> float | None:
 _SEEK_LOCKS: dict[str, asyncio.Lock] = {}
 
 
-async def _skip_keys(hass: HomeAssistant, tv: dict[str, Any], key, delta: float) -> None:
-    """Move by `delta` seconds with Fast forward / Rewind presses: each skips as far as the Plex app is set to.
+def skip_plan(delta: float, fwd: float, back: float, cap: int = 180) -> tuple[int, int]:
+    """Fast forward and Rewind presses that land nearest `delta` seconds, with the fewest presses: a +10 with skips of
+    30 / 10 is one Fast forward and two Rewinds."""
+    best = (abs(delta), 0, 0, 0)
+    for a in range(0, min(cap, int(max(0.0, delta) // fwd) + 3) + 1):
+        b = max(0, round((a * fwd - delta) / back))
+        if a + b > cap:
+            continue
+        cand = (abs(a * fwd - b * back - delta), a + b, a, b)
+        if cand < best:
+            best = cand
+    return best[2], best[3]
 
-    With ADB, every press goes in one command (one round trip, a second or two for any distance); else one PiPup
-    key at a time. One seek at a time per TV, so presses never interleave."""
+
+_SEEK_LOCKS: dict[str, asyncio.Lock] = {}
+_LAST_SEEK: dict[str, tuple[float, float]] = {}   # tv → (where it was sent, when: time.time())
+
+
+def _tv_key(tv: dict[str, Any]) -> str:
+    return tv.get(TV_NAME) or tv.get(TV_PIPUP) or tv.get(TV_ADB) or ""
+
+
+async def _skip_keys(hass: HomeAssistant, tv: dict[str, Any], key, delta: float, start: float | None = None) -> None:
+    """Move by `delta` seconds with Fast forward / Rewind presses (each skips as far as the Plex app is set to),
+    mixed to land as near as possible. With ADB every press goes in one command; else one PiPup key at a time.
+    One seek at a time per TV, so presses never interleave."""
     fwd, back = float(tv.get(TV_SKIP_FWD) or 30), float(tv.get(TV_SKIP_BACK) or 10)
-    step = fwd if delta > 0 else back
-    n = min(180, round(abs(delta) / step)) or (1 if abs(delta) >= step / 2 else 0)
-    if not n:
+    a, b = skip_plan(delta, fwd, back)
+    if not a and not b:
         return
-    lock = _SEEK_LOCKS.setdefault(tv.get(TV_NAME) or tv.get(TV_PIPUP) or tv.get(TV_ADB) or "", asyncio.Lock())
-    async with lock:
+    async with _SEEK_LOCKS.setdefault(_tv_key(tv), asyncio.Lock()):
         adb = tv.get(TV_ADB)
+        presses = ["fast_forward"] * a + ["rewind"] * b
         if _has(hass, adb) and hass.states.get(adb).state not in ("off", "unavailable"):
-            code = "KEYCODE_MEDIA_FAST_FORWARD" if delta > 0 else "KEYCODE_MEDIA_REWIND"
-            for i in range(0, n, 60):   # Android's input takes many key codes at once
-                await _svc(hass, "androidtv", "adb_command", {"command": "input keyevent " + " ".join([code] * min(60, n - i))}, adb)
-            return
-        for i in range(n):
-            await key("fast_forward" if delta > 0 else "rewind")
-            if i < n - 1:
-                await asyncio.sleep(0.12)
+            codes = [{"fast_forward": "KEYCODE_MEDIA_FAST_FORWARD", "rewind": "KEYCODE_MEDIA_REWIND"}[k] for k in presses]
+            for i in range(0, len(codes), 60):   # Android's input takes many key codes at once
+                await _svc(hass, "androidtv", "adb_command", {"command": "input keyevent " + " ".join(codes[i:i + 60])}, adb)
+        else:
+            for i, k in enumerate(presses):
+                await key(k)
+                if i < len(presses) - 1:
+                    await asyncio.sleep(0.12)
+        if start is not None:
+            _LAST_SEEK[_tv_key(tv)] = (max(0.0, start + a * fwd - b * back), time.time())
 
 
 VOLUME_ACTIONS = {"volume_up", "volume_down", "mute", "power_on", "power_off"}
@@ -452,12 +481,24 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
     pip = route in ("pipup", "open")
     ent = tv[TV_PIPUP] if pip else tv[TV_ADB]
 
+    adb = tv.get(TV_ADB)
+
+    async def adb_key(k: str) -> None:
+        code = {"fast_forward": "MEDIA_FAST_FORWARD", "rewind": "MEDIA_REWIND"}.get(k, k.upper())
+        await _svc(hass, "androidtv", "adb_command", {"command": f"input keyevent KEYCODE_{code}"}, adb)
+
     async def key(k: str) -> None:
-        if pip:
+        if not pip:
+            await adb_key(k)
+            return
+        try:
             await _svc(hass, "pipup", "send_key", {"key": k}, ent)
-        else:
-            code = {"fast_forward": "MEDIA_FAST_FORWARD", "rewind": "MEDIA_REWIND"}.get(k, k.upper())
-            await _svc(hass, "androidtv", "adb_command", {"command": f"input keyevent KEYCODE_{code}"}, ent)
+        except HomeAssistantError as err:
+            # Back / Home need PiPup's accessibility service (off on the SHIELD): ADB presses them instead
+            if not _has(hass, adb):
+                raise
+            _LOGGER.debug("plex_center: PiPup %s failed on %s (%s); pressing it with ADB", k, _name(tv), err)
+            await adb_key(k)
 
     if action in ("play", "pause", "play_pause"):
         await _svc(hass, "media_player", {"play": "media_play", "pause": "media_pause", "play_pause": "media_play_pause"}[action], {}, ent)
@@ -477,7 +518,7 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
         pos = position(hass, tv)
         if pos is None:
             raise HomeAssistantError(f"{_name(tv)}: can't seek, the Plex app isn't saying where it is")
-        await _skip_keys(hass, tv, key, target - pos)
+        await _skip_keys(hass, tv, key, target - pos, pos)
     elif action == "skip":
         if pip:
             try:
@@ -486,6 +527,6 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
             except HomeAssistantError as err:
                 if not _no_session(err):
                     raise
-        await _skip_keys(hass, tv, key, float(value or 0))
+        await _skip_keys(hass, tv, key, float(value or 0), position(hass, tv))
     else:
         raise HomeAssistantError(f"Unknown action {action}")

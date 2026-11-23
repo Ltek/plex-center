@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.23.113
+
+**Fixed**
+- **Stop (and Home) on the SHIELD** ("back needs the accessibility service"): when PiPup can't press a key, ADB
+  presses it.
+- **+10 on the SHIELD did nothing:** a skip smaller than Plex's Fast forward step mixes Fast forward and Rewind
+  (+10 = one Fast forward, two Rewinds with skips of 30 / 10). The seek bar uses the same mix, so it lands within
+  a few seconds instead of up to 15 s off.
+- **Seek bar jumping around:** Plex reports the position only every few seconds. Plex Center remembers where it
+  seeked to until the TV reports a newer position (so a second seek starts from the right place), and the bar
+  stays at the target until then.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.21.112
 
 **Changed**
