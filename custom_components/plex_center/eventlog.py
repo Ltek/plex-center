@@ -1,8 +1,13 @@
 """Plex Center's log: commands a TV didn't take, with the cause and what to do about it.
 
 Each entry is written to Home Assistant's log (a warning; info when Plex Center worked around it) and kept,
-the last 100, for the card's Log panel (editor → Apps & devices → Log). The same failure on the same TV within
-10 minutes adds to the count of the entry instead of a new one (and isn't logged again).
+the last 100, for the card's Log panel (editor → Apps & devices → Log), in `.storage/plex_center.log` so it
+survives a restart (saved 30 s after the last change: a burst of entries is one write). The same failure on the
+same TV within 10 minutes adds to the count of the entry instead of a new one (and isn't logged again).
+
+Two levels: **error** (the default: commands that failed) and **info** (also the times Plex Center worked around a
+refusal, such as Back pressed with ADB or a seek done with skip keys). At error level workarounds go to Home
+Assistant's debug log only.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, TV_ADB, TV_NAME, TV_PIPUP
 
@@ -72,8 +78,58 @@ def explain(message: str) -> tuple[str, str]:
     return "", ""
 
 
+SAVE_DELAY_S = 30
+LEVELS = ("error", "info")
+
+
+def level(hass: HomeAssistant) -> str:
+    return hass.data.get(f"{DOMAIN}_log_level", "error")
+
+
+def set_level(hass: HomeAssistant, value: str) -> None:
+    hass.data[f"{DOMAIN}_log_level"] = value if value in LEVELS else "error"
+    if value != "info":   # leave only errors
+        log = entries(hass)
+        keep = [e for e in log if e.get("level") != "info"]
+        log.clear(); log.extend(keep)
+    _save_later(hass)
+
+
 def entries(hass: HomeAssistant) -> deque:
     return hass.data.setdefault(f"{DOMAIN}_log", deque(maxlen=KEEP))
+
+
+def _store(hass: HomeAssistant) -> Store:
+    key = f"{DOMAIN}_log_store"
+    if key not in hass.data:
+        hass.data[key] = Store(hass, 1, f"{DOMAIN}.log")
+    return hass.data[key]
+
+
+async def async_load(hass: HomeAssistant) -> None:
+    """Load the saved log (once, at setup)."""
+    if hass.data.get(f"{DOMAIN}_log_loaded"):
+        return
+    hass.data[f"{DOMAIN}_log_loaded"] = True
+    try:
+        data = await _store(hass).async_load()
+    except Exception as err:  # noqa: BLE001 - start with an empty log
+        _LOGGER.debug("Plex Center log not loaded: %s", err)
+        return
+    log = entries(hass)
+    if (data or {}).get("level") in LEVELS:
+        hass.data[f"{DOMAIN}_log_level"] = data["level"]
+    saved = [e for e in (data or {}).get("entries", []) if isinstance(e, dict) and "message" in e]
+    log.extendleft(reversed(saved[-KEEP:]))   # before anything logged while loading
+
+
+def _save_later(hass: HomeAssistant) -> None:
+    _store(hass).async_delay_save(lambda: {"level": level(hass), "entries": list(entries(hass))}, SAVE_DELAY_S)
+
+
+def clear(hass: HomeAssistant) -> None:
+    entries(hass).clear()
+    _save_later(hass)
 
 
 def record(hass: HomeAssistant, tv: dict[str, Any] | None, action: str, err: Exception | str, *, handled: str = "") -> dict[str, Any]:
@@ -81,16 +137,21 @@ def record(hass: HomeAssistant, tv: dict[str, Any] | None, action: str, err: Exc
     msg = str(err) or err.__class__.__name__
     cause, fix = explain(msg)
     name = (tv or {}).get(TV_NAME) or "Plex Center"
+    if handled and level(hass) != "info":   # a workaround, and only errors are logged
+        _LOGGER.debug("Plex Center: %s: %s needed a workaround: %s (%s)", name, action, msg, handled)
+        return {}
     log, now = entries(hass), time.time()
     for e in reversed(log):
         if e["tv"] == name and e["action"] == action and e["cause"] == cause and e["message"] == msg and now - e["last"] < SAME_S:
             e["count"] += 1
             e["last"] = now
+            _save_later(hass)
             return e
     e = {"at": now, "last": now, "count": 1, "tv": name, "action": action, "message": msg, "cause": cause, "fix": fix,
          "handled": handled, "level": "info" if handled else "error",
          "players": {k: v for k, v in ((k, (tv or {}).get(k)) for k in (TV_PIPUP, TV_ADB)) if v}}
     log.append(e)
+    _save_later(hass)
     text = f"Plex Center: {name}: {action} {'needed a workaround' if handled else 'failed'}: {msg}"
     if cause:
         text += f". Cause: {cause} Fix: {fix}"

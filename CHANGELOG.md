@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.23.115
+
+**Added**
+- **Log levels:** **Errors** (the default: commands that failed) or **Errors and info** (also the times Plex Center
+  worked around a refusal, such as Back pressed with ADB or a seek done with skip keys), chosen on the Log panel.
+  At Errors, workarounds go to Home Assistant's debug log only, and switching to Errors drops the info entries.
+- **The log is kept across restarts** (the last 100, in `.storage/plex_center.log`), saved 30 s after the last
+  change, so a burst of entries is one write.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.23.114
 
 **Added**

@@ -33,8 +33,9 @@ type PlexCenterConfigEntry = ConfigEntry[PlexCenterData]
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register what is shared by every entry: the websocket API and the card's file."""
-    from . import services, websocket  # noqa: PLC0415
+    from . import eventlog, services, websocket  # noqa: PLC0415
 
+    await eventlog.async_load(hass)
     websocket.async_register(hass)
     services.async_register(hass)
     await _register_card(hass)

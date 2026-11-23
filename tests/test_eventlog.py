@@ -30,6 +30,7 @@ def test_repeats_are_counted(hass):
 
 async def test_workaround_is_logged_as_handled(hass):
     entries(hass).clear()
+    eventlog.set_level(hass, "info")
 
     async def refuse(call):
         raise HomeAssistantError("Shield: back needs the accessibility service")
@@ -43,6 +44,10 @@ async def test_workaround_is_logged_as_handled(hass):
     await play.control(hass, {"name": "Theater", "pipup": "media_player.pip", "adb": "media_player.adb"}, "stop")
     (e,) = entries(hass)
     assert e["level"] == "info" and "ADB" in e["handled"] and e["tv"] == "Theater" and e["cause"]
+    eventlog.set_level(hass, "error")
+    assert list(entries(hass)) == [], "Errors only: the workaround is dropped"
+    await play.control(hass, {"name": "Theater", "pipup": "media_player.pip", "adb": "media_player.adb"}, "stop")
+    assert list(entries(hass)) == [], "and new ones aren't kept"
 
 
 async def test_service_failure_is_logged(hass):
@@ -57,3 +62,22 @@ async def test_service_failure_is_logged(hass):
     (e,) = entries(hass)
     assert e["action"] == "seek" and e["level"] == "error" and "Configure" in e["fix"]
     _ = eventlog
+
+
+async def test_log_is_saved_and_loaded(hass, hass_storage):
+    entries(hass).clear()
+    hass_storage["plex_center.log"] = {"version": 1, "key": "plex_center.log",
+                                       "data": {"entries": [{"at": 1, "last": 1, "count": 1, "tv": "Theater", "action": "stop", "message": "old"}]}}
+    hass.data.pop("plex_center_log_loaded", None)
+    await eventlog.async_load(hass)
+    assert [e["message"] for e in entries(hass)] == ["old"]
+    import asyncio
+    with patch.object(eventlog, "SAVE_DELAY_S", 0):
+        eventlog.set_level(hass, "info")
+        record(hass, {"name": "Theater"}, "seek", "has no media session", handled="skip keys")
+        for _ in range(5):
+            await asyncio.sleep(0.05)
+            await hass.async_block_till_done()
+    saved = hass_storage["plex_center.log"]["data"]
+    assert [e["message"] for e in saved["entries"]] == ["old", "has no media session"] and saved["level"] == "info"
+    eventlog.set_level(hass, "error")

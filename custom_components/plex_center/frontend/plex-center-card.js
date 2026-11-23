@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.23.114
+// Version: v2026.11.23.115
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.23.114';
+const BUILD_NUMBER = 'v2026.11.23.115';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -5205,13 +5205,18 @@ class PlexCenterCardEditor extends HTMLElement {
         <p class="plce-hint" style="margin:0">${esc(e.message)}</p>
         ${e.handled ? `<p class="plce-hint" style="margin:0"><b>Worked around:</b> ${esc(e.handled)}</p>` : ''}
         ${e.cause ? `<p class="plce-hint" style="margin:0"><b>Why:</b> ${esc(e.cause)}</p><p class="plce-hint" style="margin:0"><b>Fix:</b> ${esc(e.fix)}</p>` : ''}</div>`).join('');
-    return `<p class="plce-hint">Commands a TV didn't take, why, and what to do. Also in Home Assistant's log (Settings → System → Logs).</p>
+    const lv = this._logs.level || 'error';
+    return `<p class="plce-hint">Commands a TV didn't take, why, and what to do. Also in Home Assistant's log (Settings → System → Logs). Kept across restarts (the last 100).</p>
+      <div class="plce-row"><label class="lbl">Log</label><div class="plce-chips">
+        <button class="plce-chip${lv === 'error' ? ' on' : ''}" data-loglevel="error">Errors</button>
+        <button class="plce-chip${lv === 'info' ? ' on' : ''}" data-loglevel="info">Errors and info</button></div></div>
+      <p class="plce-hint">Info adds the times Plex Center worked around a refusal (Back pressed with ADB, a seek done with skip keys).</p>
       <div class="plce-chips"><button class="plce-chip" data-logload><ha-icon icon="mdi:refresh"></ha-icon>Refresh</button>
       ${this._logs.list.length ? '<button class="plce-chip" data-logclear><ha-icon icon="mdi:delete-outline"></ha-icon>Clear</button>' : ''}</div>
       <div class="plce-list">${rows || '<p class="plce-hint">Nothing logged since Home Assistant started.</p>'}</div>`;
   }
-  _loadLog() {
-    ws(this._hass, 'log').then((list) => { this._logs = { list: list || [] }; }).catch((e) => { this._logs = { error: e?.message || String(e), list: [] }; })
+  _loadLog(lvl) {
+    ws(this._hass, 'log', lvl ? { level: lvl } : {}).then((r) => { this._logs = Array.isArray(r) ? { list: r } : { list: r?.entries || [], level: r?.level }; }).catch((e) => { this._logs = { error: e?.message || String(e), list: [] }; })
       .then(() => { if (this._open.has('log')) this._render(); });
   }
 
@@ -5480,6 +5485,7 @@ class PlexCenterCardEditor extends HTMLElement {
       setSec(id, 'flag_items', on.length === FACTS.length ? '' : on);
     }));
     all('[data-logload]', (b) => b.addEventListener('click', () => this._loadLog()));
+    all('[data-loglevel]', (b) => b.addEventListener('click', () => this._loadLog(b.dataset.loglevel)));
     all('[data-logclear]', (b) => b.addEventListener('click', () => ws(this._hass, 'log_clear').then(() => this._loadLog()).catch(() => this._loadLog())));
     all('[data-ssens]', (el) => el.addEventListener('change', () => {
       const id = el.dataset.sid;
