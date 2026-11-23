@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.23.120
+// Version: v2026.11.23.121
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.23.120';
+const BUILD_NUMBER = 'v2026.11.23.121';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -54,6 +54,9 @@ const COLOR_DEFS = {
   page_active_grad_color: ['Active', 'Same as not active', '#e5a00d', '--pmu-agc'],
   page_glow_color: ['Color', 'Accent', '#e5a00d', '--pmu-glc'],
   page_shadow_color: ['Color', 'Black', '#000000', '--pmu-shc'],
+  remote_bg: ['Background', 'Black', '#0b0d10', '--plc-rm-bg'],
+  remote_panel: ['Buttons', 'Near black', '#12161a', '--plc-rm-p'],
+  remote_accent: ['Icons and text', 'Gold', '#c9a35a', '--plc-rm-a'],
 };
 /** Page button style: groups like the Style Builder. A checked group (page_groups) uses its own values; unchecked = the preset. */
 const PAGE_GROUPS = [
@@ -209,13 +212,13 @@ const SIZE_PX = { title_size: { large: 17, medium: 14, small: 12 }, line_size: {
 const SHADOWS = { none: 'none', soft: '0 2px 8px rgba(0,0,0,.25)', strong: '0 8px 28px rgba(0,0,0,.55)' };
 const HEADER_ITEMS = [['title', 'Title'], ['tabs', 'Page menu (Home and libraries)'], ['search', 'Search'], ['surprise', 'Surprise me'],
   ['watched', 'All / Unwatched'], ['genre', 'Genre'], ['decade', 'Decade'], ['rating', 'Content rating'], ['length', 'Under 2 h (movies)'],
-  ['sort', 'Sort'], ['view', 'Grid / list switch'], ['filterbtn', 'Filters button (opens the Filters popup)'], ['achips', 'Active filters (a chip per filter that is on)'], ['watchchip', 'Watching now (a chip that opens the cards)'], ['tvs', 'TV picker']];
+  ['sort', 'Sort'], ['view', 'Grid / list switch'], ['filterbtn', 'Filters button (opens the Filters popup)'], ['achips', 'Active filters (a chip per filter that is on)'], ['watchchip', 'Watching now (a chip that opens the cards)'], ['remote', 'Showtime Remote (an icon that opens it)'], ['tvs', 'TV picker']];
 const SORT_OPTS = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
 const FLABEL = { watched: 'Show', genre: 'Genre', decade: 'Decade', rating: 'Rating', sort: 'Sort', length: 'Length', view: 'View' };
 /** An icon for each controls-layout item (editor list). */
 const ITEM_ICONS = { title: 'mdi:format-title', tabs: 'mdi:tab', search: 'mdi:magnify', surprise: 'mdi:auto-fix', watched: 'mdi:eye-check-outline',
   genre: 'mdi:drama-masks', decade: 'mdi:calendar-range', rating: 'mdi:shield-account-outline', length: 'mdi:timer-outline', sort: 'mdi:sort',
-  view: 'mdi:view-grid-outline', filterbtn: 'mdi:filter-variant', achips: 'mdi:filter-check-outline', watchchip: 'mdi:account-eye', tvs: 'mdi:television' };
+  view: 'mdi:view-grid-outline', filterbtn: 'mdi:filter-variant', achips: 'mdi:filter-check-outline', watchchip: 'mdi:account-eye', remote: 'mdi:remote-tv', tvs: 'mdi:television' };
 /** Library filter items: each can sit in the header / footer or in the Filters popup. */
 const FILTER_IDS = new Set(['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view']);
 /** Styles an item can be shown in (first = default). */
@@ -227,13 +230,14 @@ const DEFAULT_HEADER = [
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view', 'filterbtn'].map((id) => ({ id, section: 'library', row: 1, align: 'right' })),
   { id: 'tvs', section: 'library', row: 2, align: 'left' }, { id: 'achips', section: 'library', row: 3, align: 'left', hidden: true },
-  { id: 'watchchip', section: 'library', row: 1, align: 'right', hidden: true }];
+  { id: 'watchchip', section: 'library', row: 1, align: 'right', hidden: true }, { id: 'remote', section: 'library', row: 1, align: 'right', hidden: true }];
 const DEFAULT_HEADER_PHONE = [
   { id: 'title', section: 'library', row: 1, align: 'left', hidden: true }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view'].map((id) => ({ id, section: 'popover', row: 1, align: 'right' })),
   { id: 'filterbtn', section: 'library', row: 1, align: 'right' }, { id: 'tvs', section: 'library', row: 1, align: 'right' },
-  { id: 'achips', section: 'library', row: 2, align: 'left', hidden: true }, { id: 'watchchip', section: 'library', row: 1, align: 'right', hidden: true }];
+  { id: 'achips', section: 'library', row: 2, align: 'left', hidden: true }, { id: 'watchchip', section: 'library', row: 1, align: 'right', hidden: true },
+  { id: 'remote', section: 'library', row: 1, align: 'right', hidden: true }];
 const ALIGNS = ['left', 'center', 'right'];
 const PLACES = ['library', 'player', 'footer', 'popover'];
 const HOME_BUILTIN = [['watching', 'Watching now'], ['continue', 'Continue watching'], ['next', 'Next Episode'], ['recent', 'Recently Added'], ['soon', 'Coming Soon']];
@@ -585,6 +589,17 @@ const DEFAULTS = {
   watching_chevron_px: 0,
   watching_chevron_weight: '',
   np_auto_open: false,
+  remote_hold_ms: 2000,     // Showtime Remote: how long a button is held (volume up / down never need it)
+  remote_skip: 10,          // its skip buttons, s
+  remote_auto_open: false,  // opens by itself remote_auto_s after a title starts
+  remote_auto_s: 10,
+  remote_blackout: true,    // the screen goes black when not used; the first tap only wakes it
+  remote_blackout_s: 30,
+  remote_blackout_style: 'black',   // black | clock (a dim clock that drifts)
+  remote_keep_awake: true,  // the browser's Wake Lock while it's open (HTTPS only)
+  remote_font: 'card',      // card | condensed (the big text)
+  remote_tv: '',            // the TV it controls ('' = the card's)
+  remote_idle_title: '',
   np_volume: true,          // Now playing: volume buttons
   np_play_center: true,     // Play / Pause in the middle of the skip buttons (Stop, Home and volume on their own row)
   np_scale: 100,            // Now playing control buttons, %
@@ -1895,6 +1910,72 @@ const CARD_CSS = `
 .plc-np-move { top: 8px; left: 8px; max-width: calc(100% - 70px); font-size: .8em; }
 .plc-np-move span, .plc-np-move { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plc-np-power { right: 8px; bottom: 8px; }
+.plc-np-remote { position: absolute; z-index: 2; left: 8px; bottom: 8px; background: rgba(0,0,0,.55); }
+/* Showtime Remote: full screen, dark, made for a dark room */
+.plc-remote { --rm-a: var(--plc-rm-a, #c9a35a); --rm-p: var(--plc-rm-p, #12161a); --rm-line: rgba(255,255,255,.07);
+  position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; gap: 14px; overflow: hidden;
+  padding: max(18px, env(safe-area-inset-top, 0px)) 26px calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--plc-rm-bg, #0b0d10); color: var(--rm-a);
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+.plc-remote.condensed .plc-rm-title, .plc-remote.condensed .plc-rm-ends b, .plc-remote.condensed .lbl {
+  font-family: "Bebas Neue", "Oswald", "Roboto Condensed", sans-serif-condensed, "Bahnschrift Condensed", "Arial Narrow", sans-serif; font-stretch: condensed; letter-spacing: .02em; }
+.plc-rm-head { display: flex; align-items: flex-end; gap: 16px; }
+.plc-rm-ttl { flex: 1; min-width: 0; }
+.plc-rm-eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; opacity: .75; }
+.plc-rm-title { font-size: clamp(26px, 4.6vw, 56px); font-weight: 800; line-height: 1; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+.plc-rm-sub { font-size: 14px; opacity: .7; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plc-rm-ends { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.plc-rm-ends span { font-size: 12px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; opacity: .75; }
+.plc-rm-ends b { font-size: clamp(24px, 3.6vw, 44px); font-weight: 800; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.plc-rm-x { flex: none; align-self: flex-start; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--rm-line); background: none; color: var(--rm-a); display: grid; place-items: center; }
+.plc-rm-x.small { width: 30px; height: 30px; border: none; }
+.plc-rm-bar { height: 4px; border-radius: 2px; background: var(--rm-line); overflow: hidden; flex: none; }
+.plc-rm-bar i { display: block; height: 100%; width: 0; background: var(--rm-a); transition: width 1s linear; }
+.plc-rm-grid { flex: 1 1 auto; min-height: 0; display: grid; gap: 14px; grid-template-columns: minmax(84px, 1fr) minmax(0, 5fr) minmax(84px, 1fr); grid-template-rows: minmax(0, 1fr) minmax(76px, auto); }
+.plc-rm-left { display: grid; gap: 14px; grid-template-rows: 2fr 1fr 2fr; min-height: 0; }
+.plc-rm-right { display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.plc-rm-right > * { flex: 1 1 0; }
+.plc-rm-right .plc-rm-btn .top { flex-direction: column; gap: 8px; } .plc-rm-right .plc-rm-btn .lbl { font-size: clamp(12px, 1.3vw, 16px); letter-spacing: .12em; }
+.plc-rm-bottom { grid-column: 1 / -1; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.plc-rm-bottom .wide { grid-column: span 1; }
+.plc-rm-center { display: flex; align-items: center; justify-content: center; gap: clamp(24px, 8%, 110px); border-radius: 20px; background: var(--rm-p); border: 1px solid var(--rm-line); min-height: 0; }
+.plc-rm-btn { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 56px;
+  padding: 8px; border-radius: 16px; border: 1px solid var(--rm-line); background: var(--rm-p); color: var(--rm-a); font: inherit; cursor: pointer; }
+.plc-rm-btn .top { display: inline-flex; align-items: center; gap: 10px; }
+.plc-rm-btn ha-icon { --mdc-icon-size: 26px; }
+.plc-rm-btn .lbl { font-size: clamp(15px, 1.9vw, 24px); font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
+.plc-rm-btn .sub { font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; opacity: .7; text-align: center; }
+.plc-rm-btn.mute .top { flex-direction: column; gap: 4px; } .plc-rm-btn.mute .lbl { font-size: 11px; letter-spacing: .16em; }
+.plc-rm-btn.dark { background: #000; }
+.plc-rm-btn.lit { background: color-mix(in srgb, var(--rm-a) 22%, var(--rm-p)); border-color: color-mix(in srgb, var(--rm-a) 60%, transparent); }
+.plc-rm-btn:active, .plc-rm-skip:active, .plc-rm-play:active { filter: brightness(1.3); }
+.plc-rm-play { width: clamp(110px, 15vw, 180px); aspect-ratio: 1; border-radius: 50%; background: #000; border: 1.5px solid var(--rm-a); color: var(--rm-a); display: grid; place-items: center;
+  position: relative; overflow: hidden; cursor: pointer; }
+.plc-rm-play ha-icon { --mdc-icon-size: clamp(48px, 7vw, 84px); }
+.plc-rm-skip { display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: none; color: var(--rm-a); font: inherit; font-size: 13px; letter-spacing: .1em;
+  position: relative; overflow: hidden; padding: 14px; border-radius: 16px; cursor: pointer; }
+.plc-rm-skip ha-icon { --mdc-icon-size: 40px; }
+.plc-remote .plc-hold::after { background: color-mix(in srgb, var(--rm-a) 35%, transparent); }
+.plc-rm-popslot { position: absolute; right: 26px; bottom: calc(110px + env(safe-area-inset-bottom, 0px)); z-index: 3; width: min(480px, calc(100vw - 52px)); }
+.plc-rm-pop { background: #000; border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 14px 16px 16px; box-shadow: 0 20px 60px rgba(0,0,0,.7); }
+.plc-rm-pophead { display: flex; align-items: center; justify-content: space-between; font-size: 12px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; opacity: .85; margin-bottom: 12px; }
+.plc-rm-popgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.plc-rm-popgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.plc-rm-popgrid .plc-rm-btn { min-height: 72px; }
+.plc-rm-empty { grid-column: 1 / -1; margin: 0; opacity: .7; font-size: 14px; }
+.plc-rm-black { position: absolute; inset: 0; z-index: 10; background: #000; display: none; place-items: center; cursor: pointer; }
+.plc-remote.black .plc-rm-black { display: grid; }
+.plc-rm-clock { color: var(--rm-a); opacity: .28; font-size: clamp(22px, 4vw, 40px); font-weight: 700; letter-spacing: .06em; transition: transform 2s ease; }
+/* phones and tablets held upright: stacked */
+@media (orientation: portrait) {
+  .plc-remote { padding-left: 16px; padding-right: 16px; gap: 12px; }
+  .plc-rm-grid { grid-template-columns: 1fr; grid-template-rows: auto minmax(220px, 1fr) auto auto; gap: 12px; }
+  .plc-rm-left { grid-row: 3; grid-template-rows: none; grid-template-columns: 1fr 1fr 1fr; }
+  .plc-rm-center { grid-row: 2; }
+  .plc-rm-right { grid-row: 1; flex-direction: row; } .plc-rm-right > * { min-height: 64px; }
+  .plc-rm-bottom { grid-row: 4; grid-template-columns: 1fr 1fr; }
+  .plc-rm-popslot { left: 16px; right: 16px; width: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .plc-rm-popgrid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .plc-side-art .plc-icon-btn, .plc-side-art .plc-chip { background: rgba(0,0,0,.55); border-color: rgba(255,255,255,.35); color: #fff; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 `;
 
@@ -2126,6 +2207,9 @@ class PlexCenterCard extends HTMLElement {
   disconnectedCallback() {
     this._detached = true;
     clearInterval(this._npEndT); this._npEnd = null;
+    clearTimeout(this._rmIdleT); clearInterval(this._rmTickT); clearInterval(this._rmSleepT); clearTimeout(this._rmAutoT);
+    this._rmLock?.release?.().catch?.(() => {}); this._rmLock = null;
+    if (this._rmVis) { document.removeEventListener('visibilitychange', this._rmVis); this._rmVis = null; }
     if (this._onShot) SHOT_WATCH.delete(this._onShot);
     clearInterval(this._tick); clearInterval(this._poll); this._tick = this._poll = null;
     for (const t of Object.values(this._anim || {})) { clearInterval(t); clearTimeout(t); } this._anim = {}; clearTimeout(this._popTimer);
@@ -2197,7 +2281,7 @@ class PlexCenterCard extends HTMLElement {
       <div class="plc-content"><div class="plc-top"></div>
         <div class="plc-body"><div class="plc-main"></div><div class="plc-detail-slot"></div></div>
         <div class="plc-bnav-slot"></div></div></div>
-      <div class="plc-sheet-slot"></div><div class="plc-npfull-slot"></div></div></ha-card>`;
+      <div class="plc-sheet-slot"></div><div class="plc-npfull-slot"></div><div class="plc-remote-slot"></div></div></ha-card>`;
     this._root = this.querySelector('.plc');
     this._applyLook();
     this._observeSize();
@@ -2223,6 +2307,8 @@ class PlexCenterCard extends HTMLElement {
   /** Hold buttons: Play (hold_play / hold_ms), Mark watched (hold_mark_ms) and a show's Mark all watched
    *  (hold_markall_ms) act only after being held (an indicator fills while holding). Play: not in Now playing. */
   _holdTarget(e) {
+    const rm = e.target.closest?.('[data-rmhold]');
+    if (rm) { const ms = Number(rm.dataset.rmhold); return ms > 0 ? { el: rm, ms: Math.max(300, ms), label: rm.dataset.rmlabel || 'it' } : null; }
     for (const [sel, key, label] of HOLDS) {
       const el = e.target.closest?.(sel);
       if (!el) continue;
@@ -2410,6 +2496,7 @@ class PlexCenterCard extends HTMLElement {
       filterbtn: popItems.length ? filterBtn : '',
       achips: inLib ? this._chipsHtml() : '',
       watchchip: (() => { const n = this._watchList().length; return n ? `<button class="plc-chip plc-menuchip" data-watchpop title="Watching now"><ha-icon icon="mdi:account-eye"></ha-icon><span class="plc-menuchip-n">Watching</span><span class="plc-fcount">${n}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>` : ''; })(),
+      remote: '<button class="plc-icon-btn" data-remoteopen title="Showtime Remote"><ha-icon icon="mdi:remote-tv"></ha-icon></button>',
       surprise: !cfg(this._c, 'surprise') || !libs.length ? ''
         : style === 'icon' ? `<button class="plc-icon-btn" data-surprise title="${esc(label)}"><ha-icon icon="${esc(icon)}"></ha-icon></button>`
           : `<button class="plc-chip" data-surprise>${style === 'both' ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ''}${esc(label)}</button>`,
@@ -3786,6 +3873,8 @@ Object.assign(PlexCenterCard.prototype, {
     this._npShown = (panel || fullOn) && tv ? tv.id : null;
     if (this._npEnd) for (const art of this._root.querySelectorAll('.plc-side .plc-side-art, .plc-npfull .plc-side-art')) art.insertAdjacentHTML('beforeend', this._npRing());
     this._progress();
+    this._rmAuto();
+    if (this._v.remote) this._renderRemote();
   },
   /** The auto close countdown: a ring with the seconds and Cancel over the poster. */
   _npRing() {
@@ -3916,7 +4005,8 @@ Object.assign(PlexCenterCard.prototype, {
         ${np.art ? `<div class="plc-side-img" style="background-image:url('${cssUrl(np.art)}')"></div>` : ''}
         <button class="plc-icon-btn plc-np-x" data-npx title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
         ${move ? '<button class="plc-chip plc-np-move" data-movemenu title="Move to a different TV"><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>' : ''}
-        ${cfg(this._c, 'np_power') ? `<span class="plc-np-power">${this._powerHtml(np)}</span>` : ''}</div>
+        ${cfg(this._c, 'np_power') ? `<span class="plc-np-power">${this._powerHtml(np)}</span>` : ''}
+        <button class="plc-icon-btn plc-np-remote" data-remoteopen title="Showtime Remote"><ha-icon icon="mdi:remote-tv"></ha-icon></button></div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
         <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-info-sub">${esc(np.sub)}</div>` : ''}${(() => {
           const sx = np.live && this._sessionFor(np.tv), dur = Number(np.st?.attributes?.media_duration) || sx?.duration || 0;
@@ -4023,6 +4113,17 @@ Object.assign(PlexCenterCard.prototype, {
   _onClick(e) {
     const t = (sel) => e.target.closest?.(sel);
     let el;
+    if (t('[data-rmroot]')) {   // the Showtime Remote
+      if (t('[data-rmwake]')) { this._rmActive(); return; }   // blacked out: the first tap only wakes it
+      this._rmActive();
+      if (t('[data-rmclose]')) { this._closeRemote(); return; }
+      if (t('[data-rmpopx]')) { this._rmPop = null; this._rmPaintPop(); return; }
+      if ((el = t('[data-rmsleep]'))) { this._rmSleepSet(el.dataset.rmsleep); return; }
+      if ((el = t('[data-rmitem]'))) { const [k, i] = el.dataset.rmitem.split('|'); const x = this._rmItems(k)[Number(i)]; if (x) this._rmRun(x); return; }
+      if ((el = t('[data-rm]'))) { this._rmPress(el.dataset.rm); return; }
+      return;
+    }
+    if (t('[data-remoteopen]')) { this._openRemote(); return; }
     if (t('.plc-vasheet .plc-tile') && !t('[data-qplay]')) this._closeSheet(true);
     if ((el = t('[data-openshow]'))) { e.stopPropagation(); this._closeMenu?.(); this._openShow(el.dataset.openshow, el.dataset.showtitle); return; }
     const menu = this._root.querySelector('.plc-menu');
@@ -5085,6 +5186,69 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._watchPages()}
         <p class="plce-hint">The controls a card opens are set in <b>Now playing</b>.</p>`)}`;
   }
+  /** Showtime Remote: a full-screen remote for a dark room (opening, buttons, lighting, screen, look, sleep timer). */
+  _remoteBody() {
+    const tvs = this._conf?.tvs || [], btns = this._config.remote_buttons || {}, defHold = Number(this._c('remote_hold_ms'));
+    const NAMES = { vol_up: 'Volume up', mute: 'Mute', vol_down: 'Volume down', back: 'Skip back', play: 'Play / Pause', fwd: 'Skip forward', lighting: 'Lighting',
+      intermission: 'Intermission', endshow: 'End show', sleep: 'Sleep', full: 'Full controls' };
+    const ALSO = { mute: 1, back: 1, play: 1, fwd: 1, intermission: 1, endshow: 1 };
+    const slot = ([id, label, sub, icon, hold]) => {
+      const o = btns[id] || {};
+      return this._sub(`rmb:${id}`, `${esc(NAMES[id])}${o.hidden ? ' <span class="plce-badge">hidden</span>' : ''}`, `
+        ${label || sub ? `<div class="plce-row"><label class="lbl">Label</label><input type="text" data-rmb="${id}|label" value="${esc(o.label ?? '')}" placeholder="${esc(label)}"></div>
+          <div class="plce-row"><label class="lbl">Second line</label><input type="text" data-rmb="${id}|sub" value="${esc(o.sub ?? '')}" placeholder="${esc(sub || 'none')}"></div>` : ''}
+        <div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-rmbicon="${id}" value="${esc(o.icon || '')}" placeholder="${esc(icon)}"></plce-icon-pick></div>
+        ${ALSO[id] ? `<div class="plce-row"><label class="lbl">Also run</label><input type="text" list="plce-dl-run" data-rmb="${id}|also" value="${esc(o.also || '')}" placeholder="a script, scene or automation"></div>
+          <p class="plce-hint">Runs after the button's own action (${id === 'intermission' ? 'Pause' : id === 'endshow' ? 'Stop' : NAMES[id]}): for example a script that sets the lights.</p>` : ''}
+        <div class="plce-row plce-nowrap"><label class="lbl">Hold for</label><input type="number" min="0" max="10000" step="100" data-rmb="${id}|hold_ms" value="${esc(o.hold_ms ?? '')}"
+          placeholder="${hold ? `${defHold} (the remote's)` : '0 (a tap)'}" style="width:9em"> ms</div>
+        ${RM_OPTIONAL.includes(id) ? `<label class="plce-check"><input type="checkbox" data-rmb="${id}|hidden"${o.hidden ? ' checked' : ''}>Hide this button</label>` : ''}`);
+    };
+    const list = (kind, title, hint) => {
+      const key = kind === 'lights' ? 'remote_lights' : 'remote_extra', arr = Array.isArray(this._config[key]) ? this._config[key] : [];
+      const rows = arr.map((x, i) => this._sub(`rml:${kind}:${i}`, `${esc(x.name || `Button ${i + 1}`)}${x.entity || x.action ? '' : ' <span class="plce-badge bad">nothing to run</span>'}`, `
+        <div class="plce-row"><label class="lbl">Name</label><input type="text" data-rml="${kind}|${i}|name" value="${esc(x.name || '')}"></div>
+        <div class="plce-row"><label class="lbl">Runs</label><input type="text" list="plce-dl-run" data-rml="${kind}|${i}|entity" value="${esc(x.entity || '')}" placeholder="script.…, scene.…, light.… (toggled)"></div>
+        <div class="plce-row"><label class="lbl">Lit while on</label><input type="text" list="plce-dl-run" data-rml="${kind}|${i}|lit" value="${esc(x.lit || '')}" placeholder="the entity above"></div>
+        <div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-rmlicon="${kind}|${i}" value="${esc(x.icon || '')}" placeholder="${kind === 'lights' ? 'mdi:lightbulb-outline' : 'mdi:gesture-tap-button'}"></plce-icon-pick></div>
+        <div class="plce-row"><label class="lbl">Action instead</label><input type="text" data-rml="${kind}|${i}|action" value="${esc(x.action || '')}" placeholder="optional, e.g. light.turn_on"></div>
+        ${x.action ? `<div class="plce-row"><label class="lbl">Its data (JSON)</label><input type="text" data-rml="${kind}|${i}|data" value="${esc(typeof x.data === 'string' ? x.data : x.data ? JSON.stringify(x.data) : '')}" placeholder='{"brightness_pct": 30}'></div>` : ''}
+        <div class="plce-row plce-nowrap"><label class="lbl">Hold for</label><input type="number" min="0" max="10000" step="100" data-rml="${kind}|${i}|hold_ms" value="${esc(x.hold_ms ?? '')}" placeholder="${defHold} (the remote's)" style="width:9em"> ms</div>
+        <button class="plce-chip reset" data-rmldel="${kind}|${i}"><ha-icon icon="mdi:delete-outline"></ha-icon>Remove</button>`)).join('');
+      const have = new Set(arr.map((x) => String(x.name || '').toLowerCase()));
+      const ex = kind === 'lights' ? RM_LIGHT_EXAMPLES.filter((n) => !have.has(n.toLowerCase())) : [];
+      return `<div class="plce-group">${title}</div><p class="plce-hint">${hint}</p>${rows}
+        <div class="plce-chips">${(kind === 'extra' && arr.length >= 2) ? '' : `<button class="plce-chip" data-rmladd="${kind}|"><ha-icon icon="mdi:plus"></ha-icon>Add a button</button>`}
+        ${ex.map((n) => `<button class="plce-chip" data-rmladd="${kind}|${esc(n)}"><ha-icon icon="mdi:plus"></ha-icon>${esc(n)}</button>`).join('')}</div>`;
+    };
+    const scr = Array.isArray(this._config.remote_auto_screens) ? this._config.remote_auto_screens : [];
+    const atvs = Array.isArray(this._config.remote_auto_tvs) ? this._config.remote_auto_tvs : [];
+    const states = this._hass?.states || {};
+    const runIds = Object.keys(states).filter((e) => /^(script|scene|automation|light|switch|input_boolean|button|input_button|fan|cover)\./.test(e)).sort();
+    const secure = typeof window !== 'undefined' && window.isSecureContext && !!navigator.wakeLock;
+    return `<p class="plce-hint">A full-screen remote for a dark room. Open it with the remote icon (turn on <b>Showtime Remote</b> in Controls layout), the remote button on Now playing, or by itself when a show starts.</p>
+      ${this._select('remote_tv', 'Controls', [['', "The card's TV"], ...tvs.map((t) => [t.id, t.name])])}
+      ${this._sub('rm-open', 'Opening', `${this._check('remote_auto_open', 'Open by itself when a show starts')}
+        ${this._c('remote_auto_open') ? `${this._slider('remote_auto_s', 'After', 0, 120, ' s')}
+          <div class="plce-chiprow"><span class="plce-chiplbl">On</span>${SCREENS.map(([sc, n]) => `<button class="plce-pick${!scr.length || scr.includes(sc) ? ' on' : ''}" data-rmscr="${sc}">${esc(n.replace('Tablet / computer', 'Tablet'))}</button>`).join('')}</div>
+          <div class="plce-tvlist">${tvs.map((t) => `<label class="plce-check"><input type="checkbox" data-rmatv="${esc(t.id)}"${!atvs.length || atvs.includes(t.id) ? ' checked' : ''}>${esc(t.name)}</label>`).join('')}</div>` : ''}
+        ${this._text('remote_idle_title', 'Title when nothing plays', 'Now showing')}`)}
+      ${this._sub('rm-btns', 'Buttons', `${this._slider('remote_hold_ms', 'Hold every button for', 0, 5000, ' ms')}
+        <p class="plce-hint">Guards against a touch in the dark: a button acts only after this long (a ring fills while you hold). Volume up / down are a tap. Each button can have its own time.</p>
+        ${this._chips('remote_skip', 'Skip buttons', [[10, '10 s'], [30, '30 s']])}
+        ${RM_SLOTS.map(slot).join('')}`)}
+      ${this._sub('rm-lights', 'Lighting', list('lights', 'Lighting buttons', 'The Lighting button opens these: each runs a script, scene or automation, or toggles a light, and lights up while its entity is on.'))}
+      ${this._sub('rm-extra', 'More buttons (right column)', list('extra', 'Under Lighting', 'Up to two more buttons in the right column.'))}
+      ${this._sub('rm-screen', 'Screen', `${this._check('remote_blackout', 'Go black when not used (the first tap only wakes it)')}
+        ${this._c('remote_blackout') ? `${this._slider('remote_blackout_s', 'After', 5, 600, ' s')}${this._chips('remote_blackout_style', 'Black screen shows', [['black', 'Nothing'], ['clock', 'A dim clock (it drifts)']])}` : ''}
+        ${this._check('remote_keep_awake', 'Keep the screen on while the remote is open')}
+        <p class="plce-hint">${secure ? 'This browser can keep the screen on.' : "This browser can't keep the screen on here (it needs Home Assistant over HTTPS): turn on <b>Keep screen on</b> in the Companion App or in Fully Kiosk."}</p>`)}
+      ${this._sub('rm-look', 'Look', `${this._chips('remote_font', 'Big text', [['card', "The card's font"], ['condensed', 'Condensed']])}
+        ${this._colorControl('remote_bg')}${this._colorControl('remote_panel')}${this._colorControl('remote_accent')}`)}
+      ${this._sub('rm-sleep', 'Sleep timer', `<p class="plce-hint">The Sleep button turns the room off after this long, or when what's playing ends. It runs in Home Assistant, so it keeps going when the screen is off.</p>
+        <div class="plce-row"><label class="lbl">Minutes</label><input type="text" data-rmsleepmin value="${esc((Array.isArray(this._config.remote_sleep_min) ? this._config.remote_sleep_min : [30, 60, 90]).join(', '))}"></div>`)}
+      <datalist id="plce-dl-run">${runIds.map((e) => `<option value="${esc(e)}">${esc(states[e].attributes?.friendly_name || '')}</option>`).join('')}</datalist>`;
+  }
   /** Now playing: the side panel per screen, then how it opens and closes and its controls (every screen). */
   _npBody() {
     const sc = this._eds(), phone = sc.startsWith('phone'), k = `${sc}_now_playing`;
@@ -5373,6 +5537,7 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-row plce-wrap plce-addrow"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>
       ${this._panel('sec-watching', 'mdi:account-eye', 'Watching now', this._watchBody())}
       ${this._panel('nowplaying', 'mdi:play-box-outline', 'Now playing', this._npBody())}
+      ${this._panel('remote', 'mdi:remote-tv', 'Showtime Remote', this._remoteBody())}
       ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', `${this._profile(`${this._secStyleBody('continue', 'visual')}${this._secStyleBody('continue', 'rest')}`, 'row:continue')}
         ${this._everyScreen(`${this._slider('watched_pct', 'Counts as watched at', 50, 100, ' %')}<p class="plce-hint">An episode or movie watched this far leaves Continue watching; for a show, the episode after it moves to <b>Next Episode</b>. Continue watching shows each show's latest episode in progress.</p>`)}`)}
       ${this._panel('sec-next', 'mdi:skip-next-circle-outline', 'Next Episode', `${this._profile(`${this._secStyleBody('next', 'visual')}${this._secStyleBody('next', 'rest')}`, 'row:next')}
@@ -5624,6 +5789,50 @@ class PlexCenterCardEditor extends HTMLElement {
       setSec(id, 'flag_items', on.length === FACTS.length ? '' : on);
     }));
     all('[data-logload]', (b) => b.addEventListener('click', () => this._loadLog()));
+    const setRmb = (id, f, v) => {
+      const all2 = { ...(this._config.remote_buttons || {}) }, o = { ...(all2[id] || {}) };
+      if (v === '' || v === false || v == null) delete o[f]; else o[f] = f === 'hold_ms' ? Math.max(0, Number(v)) : v;
+      if (Object.keys(o).length) all2[id] = o; else delete all2[id];
+      if (Object.keys(all2).length) this._config.remote_buttons = all2; else delete this._config.remote_buttons;
+      this._emit(); this._render();
+    };
+    all('[data-rmb]', (el) => el.addEventListener('change', () => { const [id, f] = el.dataset.rmb.split('|'); setRmb(id, f, el.type === 'checkbox' ? el.checked : el.value.trim()); }));
+    all('plce-icon-pick[data-rmbicon]', (el) => el.addEventListener('value-changed', (e) => setRmb(el.dataset.rmbicon, 'icon', (e.detail?.value || '').trim())));
+    const listKey = (k) => (k === 'lights' ? 'remote_lights' : 'remote_extra');
+    const setRml = (kind, i, f, v) => {
+      const arr = [...(this._config[listKey(kind)] || [])], o = { ...(arr[i] || {}) };
+      if (v === '' || v == null) delete o[f]; else o[f] = f === 'hold_ms' ? Math.max(0, Number(v)) : v;
+      arr[i] = o; this._config[listKey(kind)] = arr; this._emit(); this._render();
+    };
+    all('[data-rml]', (el) => el.addEventListener('change', () => { const [k, i, f] = el.dataset.rml.split('|'); setRml(k, Number(i), f, el.value.trim()); }));
+    all('plce-icon-pick[data-rmlicon]', (el) => el.addEventListener('value-changed', (e) => { const [k, i] = el.dataset.rmlicon.split('|'); setRml(k, Number(i), 'icon', (e.detail?.value || '').trim()); }));
+    all('[data-rmladd]', (b) => b.addEventListener('click', () => {
+      const [k, name] = b.dataset.rmladd.split('|'), arr = [...(this._config[listKey(k)] || [])];
+      arr.push(name ? { name } : { name: `Button ${arr.length + 1}` }); this._config[listKey(k)] = arr;
+      this._open.add(`rml:${k}:${arr.length - 1}`); this._emit(); this._render();
+    }));
+    all('[data-rmldel]', (b) => b.addEventListener('click', () => {
+      const [k, i] = b.dataset.rmldel.split('|'), arr = [...(this._config[listKey(k)] || [])];
+      arr.splice(Number(i), 1);
+      if (arr.length) this._config[listKey(k)] = arr; else delete this._config[listKey(k)];
+      this._emit(); this._render();
+    }));
+    all('[data-rmscr]', (b) => b.addEventListener('click', () => {
+      const cur = Array.isArray(this._config.remote_auto_screens) && this._config.remote_auto_screens.length ? this._config.remote_auto_screens : SCREENS.map(([x]) => x);
+      const sc = b.dataset.rmscr, next = cur.includes(sc) ? cur.filter((x) => x !== sc) : [...cur, sc];
+      if (!next.length || next.length === SCREENS.length) delete this._config.remote_auto_screens; else this._config.remote_auto_screens = next;
+      this._emit(); this._render();
+    }));
+    all('[data-rmatv]', (el) => el.addEventListener('change', () => {
+      const on = [...this.querySelectorAll('[data-rmatv]')].filter((x) => x.checked).map((x) => x.dataset.rmatv);
+      if (!on.length || on.length === (this._conf?.tvs || []).length) delete this._config.remote_auto_tvs; else this._config.remote_auto_tvs = on;
+      this._emit(); this._render();
+    }));
+    all('[data-rmsleepmin]', (el) => el.addEventListener('change', () => {
+      const mins = [...new Set(el.value.split(/[,\s]+/).map(Number).filter((n) => n > 0 && n <= 600))].slice(0, 6);
+      if (!mins.length || mins.join(',') === '30,60,90') delete this._config.remote_sleep_min; else this._config.remote_sleep_min = mins;
+      this._emit(); this._render();
+    }));
     all('[data-tvset]', (el) => el.addEventListener('change', () => {
       const [id, key] = el.dataset.tvset.split('|');
       this._saveTv(id, key, el.type === 'checkbox' ? el.checked : el.value.trim());
@@ -5721,7 +5930,230 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { lookDefault, SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+
+// ---------------------------------------------------------------------------------------------- Showtime Remote
+/** The remote's built-in buttons: [id, label, second line, icon, hold by default]. Volume up / down never need a hold. */
+const RM_SLOTS = [
+  ['vol_up', '', '', 'mdi:volume-plus', false], ['mute', 'Mute', '', 'mdi:volume-off', true], ['vol_down', '', '', 'mdi:volume-minus', false],
+  ['back', '', '', 'mdi:rotate-left', true], ['play', '', '', 'mdi:play', true], ['fwd', '', '', 'mdi:rotate-right', true],
+  ['lighting', 'Lighting', '', 'mdi:lightbulb-outline', true],
+  ['intermission', 'Intermission', 'Pause', 'mdi:coffee-outline', true], ['endshow', 'End show', 'Stop', 'mdi:white-balance-sunny', true],
+  ['sleep', 'Sleep', '', 'mdi:weather-night', true], ['full', 'Full controls', '', 'mdi:home-outline', true],
+];
+const RM_SLOT = Object.fromEntries(RM_SLOTS.map((x) => [x[0], x]));
+/** Buttons that can be hidden (the rest are the remote itself). */
+const RM_OPTIONAL = ['lighting', 'intermission', 'endshow', 'sleep', 'full'];
+const RM_LIGHT_EXAMPLES = ['Aisle', 'Steps', 'Entry', 'Bar', 'Ceiling', 'Walkway'];
+/** Run an entity the way its kind runs: a script / scene / automation, a light or switch (toggled), a button. */
+function rmEntityCall(entity) {
+  const [d] = String(entity || '').split('.');
+  if (!d || !/^[a-z_]+\.[a-z0-9_]+$/.test(entity)) return null;
+  const svc = { script: ['script', 'turn_on'], scene: ['scene', 'turn_on'], automation: ['automation', 'trigger'], button: ['button', 'press'],
+    input_button: ['input_button', 'press'] }[d] || ['homeassistant', 'toggle'];
+  return { domain: svc[0], service: svc[1], data: { entity_id: entity } };
+}
+
+Object.assign(PlexCenterCard.prototype, {
+  /** The TV the remote controls: its own (remote_tv), else the card's. */
+  _rmTv() { return this._tvs().find((t) => t.id === cfg(this._c, 'remote_tv')) || this._tv(); },
+  _rmBtn(id) {
+    const own = (this._c.remote_buttons || {})[id] || {}, [, label, sub, icon, hold] = RM_SLOT[id];
+    const holdMs = own.hold_ms !== undefined && own.hold_ms !== '' ? Number(own.hold_ms) : hold ? Number(cfg(this._c, 'remote_hold_ms')) : 0;
+    return { id, label: own.label ?? label, sub: own.sub ?? sub, icon: own.icon || icon, also: own.also || '', hold: Math.max(0, holdMs || 0), hidden: !!own.hidden };
+  },
+  _rmItems(kind) {
+    return (Array.isArray(this._c[kind === 'lights' ? 'remote_lights' : 'remote_extra']) ? this._c[kind === 'lights' ? 'remote_lights' : 'remote_extra'] : [])
+      .filter((x) => x && typeof x === 'object').map((x, i) => ({ ...x, i, hold: x.hold_ms !== undefined && x.hold_ms !== '' ? Number(x.hold_ms) : Number(cfg(this._c, 'remote_hold_ms')) }));
+  },
+  _openRemote() {
+    this._v.remote = true; this._rmPop = null; this._rmSig = null;
+    this._rmAwake();
+    this._renderRemote(true);
+    this._fetchSleep();
+  },
+  _closeRemote() {
+    this._v.remote = false; this._rmPop = null;
+    clearTimeout(this._rmIdleT); clearInterval(this._rmTickT); clearInterval(this._rmSleepT);
+    this._rmLock?.release?.().catch?.(() => {}); this._rmLock = null;
+    this._renderRemote(true);
+  },
+  /** Keep the screen on while the remote is open (the browser's Wake Lock: only on HTTPS). */
+  async _rmAwake() {
+    if (!cfg(this._c, 'remote_keep_awake') || !navigator.wakeLock || !window.isSecureContext) return;
+    try { this._rmLock = await navigator.wakeLock.request('screen'); } catch { this._rmLock = null; }
+    if (!this._rmVis) {
+      this._rmVis = () => { if (this._v.remote && document.visibilityState === 'visible') this._rmAwake(); };
+      document.addEventListener('visibilitychange', this._rmVis);
+    }
+  },
+  /** Blackout: after remote_blackout_s without a touch the screen goes black; the first tap only wakes it. */
+  _rmActive() {
+    clearTimeout(this._rmIdleT);
+    const box = this._root?.querySelector('.plc-remote');
+    if (!box) return;
+    box.classList.remove('black');
+    if (!cfg(this._c, 'remote_blackout')) return;
+    this._rmIdleT = setTimeout(() => { this._root?.querySelector('.plc-remote')?.classList.add('black'); this._rmPop = null; this._rmPaintPop(); },
+      Math.max(5, Number(cfg(this._c, 'remote_blackout_s')) || 30) * 1000);
+  },
+  _rmBtnHtml(b, cls = '', extra = '') {
+    if (b.hidden) return '';
+    return `<button class="plc-rm-btn ${cls}" data-rm="${b.id}" data-rmhold="${b.hold}" data-rmlabel="${esc(b.label || b.id)}">${extra || `<span class="top">
+      <ha-icon icon="${esc(b.icon)}"></ha-icon>${b.label ? `<span class="lbl">${esc(b.label)}</span>` : ''}</span>${b.sub ? `<span class="sub">${esc(b.sub)}</span>` : ''}`}</button>`;
+  },
+  _rmItemHtml(x, kind) {
+    const st = x.entity && this._hass.states[x.lit || x.entity], on = st && ['on', 'open', 'playing'].includes(st.state);
+    return `<button class="plc-rm-btn${on ? ' lit' : ''}" data-rmitem="${kind}|${x.i}" data-rmhold="${x.hold}" data-rmlabel="${esc(x.name || '')}">
+      <span class="top"><ha-icon icon="${esc(x.icon || (kind === 'lights' ? 'mdi:lightbulb-outline' : 'mdi:gesture-tap-button'))}"></ha-icon></span><span class="sub">${esc(x.name || x.entity || '?')}</span></button>`;
+  },
+  _renderRemote(force = false) {
+    const slot = this._root?.querySelector('.plc-remote-slot');
+    if (!slot) return;
+    if (!this._v.remote) { slot.innerHTML = ''; return; }
+    const tv = this._rmTv(), np = tv ? nowPlaying(this._hass, tv, this._c) : null, live = !!np?.live, playing = live && np.st.state === 'playing';
+    const lights = this._rmItems('lights'), extra = this._rmItems('extra');
+    const litSig = [...lights, ...extra].map((x) => this._hass.states[x.lit || x.entity]?.state);
+    const sig = JSON.stringify([live, playing, np?.title, np?.sub, litSig, this._rmPop, this._sleep?.[tv?.id], cfg(this._c, 'remote_font'), JSON.stringify(this._c.remote_buttons || {}), lights.length, extra.length, tv?.id]);
+    if (!force && sig === this._rmSig) return;
+    this._rmSig = sig;
+    const b = (id) => this._rmBtn(id), step = Number(cfg(this._c, 'remote_skip')) || 10;
+    const state = live ? (playing ? 'Now playing' : 'Paused') : 'Standing by';
+    const title = live ? np.title : (cfg(this._c, 'remote_idle_title') || 'Now showing');
+    const sl = this._sleep?.[tv?.id];
+    const sleepSub = !sl ? 'Off' : sl.mode === 'after' ? 'After this' : `${Math.max(1, Math.round((sl.at * 1000 - Date.now()) / 60000))} min`;
+    const play = b('play'), playBtn = `<button class="plc-rm-play" data-rm="play" data-rmhold="${play.hold}" data-rmlabel="${playing ? 'Pause' : 'Play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>`;
+    const skip = (id, dir) => { const s = b(id); return `<button class="plc-rm-skip" data-rm="${id}" data-rmhold="${s.hold}" data-rmlabel="${dir}${step} s"><ha-icon icon="${esc(s.icon)}"></ha-icon><span>${step}s</span></button>`; };
+    const right = [b('lighting'), ...extra].filter((x) => !x.hidden).slice(0, 3);
+    slot.innerHTML = `<div class="plc-remote${cfg(this._c, 'remote_font') === 'condensed' ? ' condensed' : ''}" data-rmroot>
+      <div class="plc-rm-head"><div class="plc-rm-ttl"><div class="plc-rm-eyebrow">${esc(state)}${tv ? ` · ${esc(tvLabel(tv))}` : ''}</div>
+        <div class="plc-rm-title">${esc(title)}</div>${live && np.sub ? `<div class="plc-rm-sub">${esc(np.sub)}</div>` : ''}</div>
+        <div class="plc-rm-ends"><span>Ends at</span><b data-rmends>--:--</b></div>
+        <button class="plc-rm-x" data-rmclose title="Close the remote"><ha-icon icon="mdi:close"></ha-icon></button></div>
+      <div class="plc-rm-bar"><i data-rmbar></i></div>
+      <div class="plc-rm-grid">
+        <div class="plc-rm-left">${this._rmBtnHtml(b('vol_up'), 'vol')}${this._rmBtnHtml(b('mute'), 'mute')}${this._rmBtnHtml(b('vol_down'), 'vol')}</div>
+        <div class="plc-rm-center">${skip('back', '−')}${playBtn}${skip('fwd', '+')}</div>
+        <div class="plc-rm-right">${right.map((x) => (x.id === 'lighting' ? this._rmBtnHtml(x) : this._rmItemHtml(x, 'extra'))).join('')}</div>
+        <div class="plc-rm-bottom">${this._rmBtnHtml(b('intermission'), 'wide')}${this._rmBtnHtml(b('endshow'), 'wide')}
+          ${this._rmBtnHtml({ ...b('sleep'), sub: sleepSub }, `wide${sl ? ' lit' : ''}`)}${this._rmBtnHtml(b('full'), 'dark')}</div>
+      </div>
+      <div class="plc-rm-popslot"></div>
+      <div class="plc-rm-black" data-rmwake><span class="plc-rm-clock" data-rmclock></span></div></div>`;
+    this._rmPaintPop();
+    this._rmTickNow();
+    clearInterval(this._rmTickT); this._rmTickT = setInterval(() => this._rmTickNow(), 1000);
+    if (force) this._rmActive();
+  },
+  /** Ends at, the progress line and the blackout clock (every second while the remote is open). */
+  _rmTickNow() {
+    const box = this._root?.querySelector('.plc-remote');
+    if (!box) { clearInterval(this._rmTickT); return; }
+    const tv = this._rmTv(), np = tv ? nowPlaying(this._hass, tv, this._c) : null;
+    const d = Number(np?.st?.attributes?.media_duration) || 0, p = np?.live ? livePosition(np.st) ?? 0 : 0;
+    const ends = np?.live && d ? endsAt(d - p, cfg(this._c, 'clock')) : '--:--';
+    const e = box.querySelector('[data-rmends]'); if (e) e.textContent = ends;
+    const bar = box.querySelector('[data-rmbar]'); if (bar) bar.style.width = d ? `${Math.min(100, (p / d) * 100)}%` : '0';
+    const c = box.querySelector('[data-rmclock]');
+    if (c) {
+      const now = new Date(), t = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: cfg(this._c, 'clock') !== '24' });
+      c.textContent = cfg(this._c, 'remote_blackout_style') === 'clock' ? (np?.live && d ? `${t} · ends ${ends}` : t) : '';
+      const m = now.getMinutes();   // drift slowly so nothing burns in
+      c.style.transform = `translate(${(m * 37) % 60 - 30}vw, ${(m * 23) % 50 - 25}vh)`;
+    }
+  },
+  _rmPaintPop() {
+    const box = this._root?.querySelector('.plc-rm-popslot');
+    if (!box) return;
+    if (!this._rmPop) { box.innerHTML = ''; return; }
+    const tv = this._rmTv(), sl = this._sleep?.[tv?.id];
+    const head = (t) => `<div class="plc-rm-pophead"><span>${esc(t)}</span><button class="plc-rm-x small" data-rmpopx title="Close"><ha-icon icon="mdi:close"></ha-icon></button></div>`;
+    const hold = Number(cfg(this._c, 'remote_hold_ms'));
+    if (this._rmPop === 'sleep') {
+      const opt = (v, l, sub = '') => `<button class="plc-rm-btn" data-rmsleep="${v}" data-rmhold="${hold}" data-rmlabel="${esc(l)}"><span class="lbl">${esc(l)}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</button>`;
+      box.innerHTML = `<div class="plc-rm-pop">${head('Turn the room off')}<div class="plc-rm-popgrid">${opt('after', 'After this', 'When it ends')}
+        ${(Array.isArray(this._c.remote_sleep_min) && this._c.remote_sleep_min.length ? this._c.remote_sleep_min : [30, 60, 90]).map((m) => opt(m, `${m} min`)).join('')}
+        ${sl ? opt('off', 'Cancel', 'Keep it on') : ''}</div></div>`;
+      return;
+    }
+    const lights = this._rmItems('lights');
+    box.innerHTML = `<div class="plc-rm-pop">${head('Lighting')}<div class="plc-rm-popgrid three">${lights.map((x) => this._rmItemHtml(x, 'lights')).join('')
+      || '<p class="plc-rm-empty">Add lighting buttons in the card editor: Showtime Remote → Lighting.</p>'}</div></div>`;
+  },
+  /** Run an action for the remote: the main one, then its "also run" entity. */
+  async _rmCall(domain, service, data) {
+    try { await this._hass.callService(domain, service, data); } catch (e) { this._toast(`${domain}.${service}: ${e?.message || e}`); }
+  },
+  async _rmRun(item) {
+    if (item.action && /^[a-z_]+\.[a-z0-9_]+$/.test(item.action)) {
+      const [d, s] = item.action.split('.');
+      let data = {};
+      try { data = typeof item.data === 'string' && item.data.trim() ? JSON.parse(item.data) : (item.data || {}); } catch { this._toast(`${item.name}: its data isn't JSON`); return; }
+      await this._rmCall(d, s, { ...(item.entity ? { entity_id: item.entity } : {}), ...data });
+      return;
+    }
+    const call = rmEntityCall(item.entity);
+    if (!call) { this._toast(`${item.name || 'This button'} has nothing to run yet (card editor → Showtime Remote)`); return; }
+    await this._rmCall(call.domain, call.service, call.data);
+  },
+  async _rmPress(id) {
+    const tv = this._rmTv();
+    if (!tv) return;
+    const b = this._rmBtn(id), step = Number(cfg(this._c, 'remote_skip')) || 10;
+    const ctl = (action, value) => this._hass.callService('plex_center', 'control', { tv: tv.id, action, ...(value != null ? { value } : {}) })
+      .catch((err) => this._toast(`${action}: ${err?.message || err}`));
+    const playing = nowPlaying(this._hass, tv, this._c)?.st?.state === 'playing';
+    switch (id) {
+      case 'vol_up': await ctl('volume_up'); break;
+      case 'vol_down': await ctl('volume_down'); break;
+      case 'mute': await ctl('mute'); break;
+      case 'back': await ctl('skip', -step); break;
+      case 'fwd': await ctl('skip', step); break;
+      case 'play': await ctl(playing ? 'pause' : 'play'); break;
+      case 'intermission': await ctl('pause'); break;
+      case 'endshow': await ctl('stop'); break;
+      case 'lighting': this._rmPop = this._rmPop === 'lights' ? null : 'lights'; this._rmPaintPop(); return;
+      case 'sleep': this._rmPop = this._rmPop === 'sleep' ? null : 'sleep'; this._rmPaintPop(); return;
+      case 'full': this._closeRemote(); this._showPlaying(tv); return;
+      default: break;
+    }
+    if (b.also) await this._rmRun({ entity: b.also, name: b.label });
+  },
+  async _rmSleepSet(v) {
+    const tv = this._rmTv();
+    if (!tv) return;
+    const data = v === 'after' ? { after: true } : v === 'off' ? {} : { minutes: Number(v) };
+    try {
+      await this._hass.callService('plex_center', 'sleep_timer', { tv: tv.id, ...data });
+      this._toast(v === 'off' ? 'Sleep timer off' : v === 'after' ? `${tvLabel(tv)} turns off when this ends` : `${tvLabel(tv)} turns off in ${v} min`);
+    } catch (e) { this._toast(`Sleep timer: ${e?.message || e}`); }
+    this._rmPop = null;
+    await this._fetchSleep();
+  },
+  async _fetchSleep() {
+    try { this._sleep = await ws(this._hass, 'sleep_timers'); } catch { this._sleep = {}; }
+    this._renderRemote();
+    clearInterval(this._rmSleepT);
+    if (this._v.remote) this._rmSleepT = setInterval(() => this._fetchSleep(), 30000);
+  },
+  /** Auto open: the remote comes up remote_auto_s after a title starts on its TV (on the screens / TVs chosen). */
+  _rmAuto() {
+    const tv = this._rmTv(), np = tv && nowPlaying(this._hass, tv, this._c), key = np?.live ? `${tv.id}|${np.title}` : null;
+    if (this._rmSeen === undefined) { this._rmSeen = key; return; }   // already playing when the card loaded: not a start
+    if (key === this._rmSeen) return;
+    this._rmSeen = key;
+    clearTimeout(this._rmAutoT);
+    if (!key || this._v.remote || !cfg(this._c, 'remote_auto_open')) return;
+    const scr = this._c.remote_auto_screens, tvs = this._c.remote_auto_tvs;
+    if (Array.isArray(scr) && scr.length && !scr.includes(this._c._screen)) return;
+    if (Array.isArray(tvs) && tvs.length && !tvs.includes(tv.id)) return;
+    this._rmAutoT = setTimeout(() => {
+      const n2 = nowPlaying(this._hass, tv, this._c);
+      if (n2?.live && `${tv.id}|${n2.title}` === key && !this._v.remote) this._openRemote();
+    }, Math.max(0, Number(cfg(this._c, 'remote_auto_s')) || 0) * 1000);
+  },
+});
+
+PlexCenterCard._test = { rmEntityCall, RM_SLOTS, lookDefault, SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 

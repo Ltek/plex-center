@@ -75,3 +75,20 @@ resume:
       example: Living Room TV
       selector:
         text:
+sleep_timer:
+  fields:
+    tv:
+      required: true
+      example: Theater
+      selector:
+        text:
+    minutes:
+      example: 60
+      selector:
+        number:
+          min: 0
+          max: 600
+          unit_of_measurement: min
+    after:
+      selector:
+        boolean:

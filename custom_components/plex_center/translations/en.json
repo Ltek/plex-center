@@ -186,6 +186,24 @@
           "description": "Name or id of the TV."
         }
       }
+    },
+    "sleep_timer": {
+      "name": "Sleep timer",
+      "description": "Turn a TV and its room off after some minutes, or when what's playing ends. Neither cancels the timer.",
+      "fields": {
+        "tv": {
+          "name": "TV",
+          "description": "The Plex Center TV."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Turn off after this long (0 = no time)."
+        },
+        "after": {
+          "name": "After this",
+          "description": "Turn off when what's playing ends."
+        }
+      }
     }
   }
 }

@@ -22,6 +22,8 @@ MARK_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Required("key"): vo
 TRAILER_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
                              vol.Optional("url"): cv.string})
 RESUME_SCHEMA = vol.Schema({vol.Required("tv"): cv.string})
+SLEEP_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=600)),
+                           vol.Optional("after", default=False): cv.boolean})
 CONTROL_SCHEMA = vol.Schema({vol.Required("tv"): cv.string,
                              vol.Required("action"): vol.In(["play", "pause", "play_pause", "stop", "home", "seek", "skip",
                                                              "volume_up", "volume_down", "mute", "power_on", "power_off"]),
@@ -151,3 +153,11 @@ def async_register(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, "play", _logged(hass, "play", play), schema=PLAY_SCHEMA)
     hass.services.async_register(DOMAIN, "control", _logged(hass, "control", ctl), schema=CONTROL_SCHEMA)
     hass.services.async_register(DOMAIN, "resume", _logged(hass, "resume", resume), schema=RESUME_SCHEMA)
+
+    async def sleep_timer(call: ServiceCall) -> None:
+        """Turn the TV (and its room) off after `minutes`, or when what's playing ends (`after`); neither cancels."""
+        from .sleep import start as sleep_start  # noqa: PLC0415
+
+        _entry, tv = find_tv(hass, call.data["tv"])
+        sleep_start(hass, tv, call.data["minutes"], call.data["after"])
+    hass.services.async_register(DOMAIN, "sleep_timer", _logged(hass, "sleep timer", sleep_timer), schema=SLEEP_SCHEMA)

@@ -1,5 +1,32 @@
 # Changelog
 
+## v2026.11.23.121
+
+**Added**
+- **Showtime Remote:** a full-screen remote for a dark room, a page of the card. Open it with the remote icon in
+  the header (Controls layout → Showtime Remote), the remote button on Now playing's poster, or by itself a set
+  time after a show starts (on the screen types and TVs you pick).
+  - The show's state, title and episode, **Ends at** and a progress line; volume up / mute / down (to the TV's
+    Volume player); a large Play / Pause between −10 s and +10 s (or 30 s); **Lighting**; **Intermission** (Pause),
+    **End show** (Stop), **Sleep** and **Full controls** (Now playing). Landscape like the design; upright screens
+    stack it.
+  - **Every button but volume up / down must be held** (2 s by default, `remote_hold_ms`; each button can have its
+    own time, 0 = a tap), with a ring that fills.
+  - Each built-in button: its label, second line, icon, hold time, and an **Also run** (a script, scene or
+    automation run after its own action, such as lights to 30 % on Intermission); the optional ones can be hidden.
+  - **Lighting** opens your own buttons (Aisle, Steps, Entry, Bar, Ceiling, Walkway …, added with one tap in the
+    editor): each runs a script, scene or automation, toggles a light, or calls any action with data; it lights up
+    while its entity is on. Up to two more buttons can sit under Lighting.
+  - **Blackout:** after 30 s without a touch the screen goes black (or shows a dim clock that drifts); the first
+    tap only wakes it. **Keeps the screen on** while open (the browser's Wake Lock, on HTTPS; otherwise the
+    Companion App's or Fully Kiosk's setting).
+  - Dark by default (black, gold); background, buttons and accent colours, and a **Condensed** big-text font.
+- **Sleep timer** (`plex_center.sleep_timer`): turn a TV and its room off after some minutes or when what's playing
+  ends; kept in Home Assistant, so it runs on while the remote's screen is off. The remote's Sleep button shows
+  what's left. Websocket `plex_center/sleep_timers`.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.23.120
 
 **Fixed**

@@ -37,7 +37,7 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
     for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar,
-               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update):
+               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update, ws_sleep):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
@@ -749,3 +749,12 @@ def ws_log_clear(hass: HomeAssistant, connection, msg) -> None:
 
     clear(hass)
     connection.send_result(msg["id"], True)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/sleep_timers"})
+@callback
+def ws_sleep(hass: HomeAssistant, connection, msg) -> None:
+    """The TVs' sleep timers: {tv id: {mode: minutes | after, at}}."""
+    from .sleep import status  # noqa: PLC0415
+
+    connection.send_result(msg["id"], status(hass))
