@@ -37,9 +37,110 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
     for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar,
-               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear):
+               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
+
+
+# ------------------------------------------------------------------------------------------- TV settings (card editor)
+
+from .const import (TV_BUSY, TV_FAIL, TV_POWER, TV_POWER_OFF, TV_POWER_ON, TV_READY, TV_READY_S, TV_ROOM_OFF,  # noqa: E402
+                    TV_SKIP_BACK, TV_SKIP_FWD, TV_STATUS, TV_VOLUME)
+
+ROOM_DOMAINS = ("input_boolean", "input_select", "select", "switch", "script", "scene")
+EDIT_ENTITY = {TV_PIPUP: ("media_player",), TV_ADB: ("media_player",), TV_REMOTE: ("media_player",), TV_CAST: ("media_player",),
+               TV_PLEX: ("media_player",), TV_VOLUME: ("media_player",), TV_POWER: ROOM_DOMAINS, TV_STATUS: ()}
+EDIT_TEXT = (TV_NAME, TV_USER, TV_POWER_ON, TV_POWER_OFF, TV_READY, TV_BUSY, TV_FAIL)
+EDIT_NUM = {TV_SKIP_FWD: (5, 600, 30), TV_SKIP_BACK: (5, 600, 10), TV_READY_S: (10, 900, 120)}
+EDIT_BOOL = (TV_ROOM_OFF,)
+EDITABLE = (*EDIT_ENTITY, *EDIT_TEXT, *EDIT_NUM, *EDIT_BOOL, TV_ROUTE)
+
+
+def apply_tv_changes(tv: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
+    """A TV with `changes` applied, checked like the Configure dialog does (ValueError with the reason).
+    An empty value clears the setting (back to its default)."""
+    import re  # noqa: PLC0415
+
+    from .const import ROUTES  # noqa: PLC0415
+
+    out = dict(tv)
+    for k, v in changes.items():
+        if k not in EDITABLE:
+            raise ValueError(f"{k} can't be changed here")
+        empty = v is None or (isinstance(v, str) and not v.strip())
+        if k in EDIT_ENTITY:
+            if empty:
+                out.pop(k, None)
+                continue
+            v = str(v).strip()
+            if not re.match(r"^[a-z_]+\.[a-z0-9_]+$", v):
+                raise ValueError(f"{v} isn't an entity id")
+            if EDIT_ENTITY[k] and v.split(".", 1)[0] not in EDIT_ENTITY[k]:
+                raise ValueError(f"{v}: this needs a {' / '.join(EDIT_ENTITY[k])} entity")
+            out[k] = v
+        elif k in EDIT_TEXT:
+            if k == TV_NAME and empty:
+                raise ValueError("A TV needs a name")
+            if empty:
+                out[k] = "" if k == TV_USER else None
+                if out[k] is None:
+                    out.pop(k)
+            else:
+                out[k] = str(v).strip()[:100]
+        elif k in EDIT_NUM:
+            lo, hi, default = EDIT_NUM[k]
+            if empty:
+                out.pop(k, None)
+                continue
+            n = int(float(v))
+            if not lo <= n <= hi:
+                raise ValueError(f"{k} must be {lo}–{hi}")
+            if n == default:
+                out.pop(k, None)
+            else:
+                out[k] = n
+        elif k in EDIT_BOOL:
+            if v:
+                out[k] = True
+            else:
+                out.pop(k, None)
+        elif k == TV_ROUTE:
+            if empty or v == "auto":
+                out.pop(k, None)
+            elif v in ROUTES:
+                out[k] = v
+            else:
+                raise ValueError(f"route must be one of {', '.join(ROUTES)}")
+    if not any(out.get(k) for k in (TV_PIPUP, TV_ADB, TV_PLEX)):
+        raise ValueError("A TV needs a PiPup, ADB or Plex player")
+    return out
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/tv_update", vol.Optional("entry_id"): str,
+                                  vol.Required("tv"): str, vol.Required("changes"): dict})
+@websocket_api.require_admin
+@callback
+def ws_tv_update(hass: HomeAssistant, connection, msg) -> None:
+    """Change a TV's settings from the card editor (admins): the same settings as Configure → the TV."""
+    from .const import CONF_TVS  # noqa: PLC0415
+
+    try:
+        entry = _entry(hass, msg.get("entry_id"))
+    except LookupError as err:
+        connection.send_error(msg["id"], "not_set_up", str(err))
+        return
+    tvs = [dict(t) for t in entry.options.get(CONF_TVS, [])]
+    i = next((n for n, t in enumerate(tvs) if t.get(TV_ID) == msg["tv"]), None)
+    if i is None:
+        connection.send_error(msg["id"], "not_found", f"No Plex Center TV {msg['tv']}")
+        return
+    try:
+        tvs[i] = apply_tv_changes(tvs[i], msg["changes"])
+    except (ValueError, TypeError) as err:
+        connection.send_error(msg["id"], "invalid", str(err))
+        return
+    hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_TVS: tvs})
+    connection.send_result(msg["id"], {k: tvs[i][k] for k in EDITABLE if k in tvs[i]})
 
 
 # ------------------------------------------------------------------------------------------- helpers
@@ -272,7 +373,7 @@ async def ws_config(hass: HomeAssistant, connection, msg) -> None:
                 libraries[user] = {"error": str(err)}
         tvs.append({"id": tv[TV_ID], "name": tv[TV_NAME], "user": user, "route_setting": tv.get(TV_ROUTE, "auto"),
                     **{k: tv[k] for k in (TV_PIPUP, TV_ADB, TV_PLEX, TV_REMOTE, TV_CAST, "volume_entity", "status_entity", "ready_value", "busy_value", "fail_value") if tv.get(k)},
-                    "power_off": can_power_off(tv), **tv_state(hass, tv)})
+                    "power_off": can_power_off(tv), "settings": {k: tv[k] for k in EDITABLE if k in tv}, **tv_state(hass, tv)})
     reg = er.async_get(hass)
     found = {p for p in (e.platform for e in reg.entities.values()) if p in INTEGRATIONS}
     upcoming = sorted(s.entity_id for s in hass.states.async_all("sensor") if isinstance(s.attributes.get("data"), (list, str))

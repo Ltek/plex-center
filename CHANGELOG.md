@@ -1,5 +1,23 @@
 # Changelog
 
+## v2026.11.23.117
+
+**Added**
+- **Now playing panel** in the card editor: the side panel per screen type, then (every screen) opening by itself,
+  what happens after starting a title, closing by itself, the controls (Play / Pause in the middle, sizes, volume
+  buttons, power button), Up next and fitting the card to the screen. They were spread over Screens, Watching now
+  and Library. Same settings, so cards don't change.
+- **Each TV's settings in the card editor** (Apps & devices → TVs): name, Plex user, its PiPup / ADB / Android TV
+  Remote / Cast / Plex players with their state (a missing one is flagged), Play with, the Volume player, the skip
+  sizes and the room entities. An administrator can change them there; they're saved in the integration (the same
+  settings as Configure → the TV) and apply at once. Websocket `plex_center/tv_update` (admins).
+
+**Fixed**
+- Poster rows and the library grid: posters line up at the top whatever the number of text lines under them.
+- The editor's notes on Android TV Remote and Cast said they weren't used.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.23.116
 
 **Added**

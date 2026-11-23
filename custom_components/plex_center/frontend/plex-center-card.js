@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.23.116
+// Version: v2026.11.23.117
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.23.116';
+const BUILD_NUMBER = 'v2026.11.23.117';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1424,6 +1424,9 @@ const CARD_CSS = `
   color: var(--plc-a); }
 .plc-sec-h .n { color: var(--secondary-text-color); letter-spacing: .04em; }
 .plc-row { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
+/* poster tiles are buttons: stretched to the tallest in the row they centre their content, so posters with fewer
+   text lines sat lower. Keep every tile at its own height, at the top. */
+.plc-row, .plc-grid { align-items: flex-start; }
 .plc-row > .plc-tile { flex: 0 0 calc((100% - (var(--plc-across, 6) - 1) * 12px) / var(--plc-across, 6) - 4px); scroll-snap-align: start; }
 .plc-row.fanart > .plc-tile { flex: 0 0 calc((100% - (var(--plc-across-fan, 3) - 1) * 12px) / var(--plc-across-fan, 3) - 4px); }
 .plc-row.fanart .plc-poster, .plc-grid.fanart .plc-poster { aspect-ratio: 16 / 9; }
@@ -4440,8 +4443,8 @@ const INTEGRATION_USES = {
   plex: ['Plex', 'required: the Plex server Plex Center reads'],
   pipup: ['PiPup', 'plays on Android / Google TVs (app 0.32+, clicks allowed for Plex)'],
   androidtv: ['Android TV (ADB)', 'plays without PiPup; screenshot when nothing plays'],
-  androidtv_remote: ['Android TV Remote', 'found; not needed by Plex Center'],
-  cast: ['Google Cast', 'found; not used (Cast plays in its own receiver, not the Plex app)'],
+  androidtv_remote: ['Android TV Remote', 'the TV\'s power, and turning it on and off'],
+  cast: ['Google Cast', 'what other apps play (title), when PiPup and ADB don\'t say'],
   tautulli: ['Tautulli', 'found; Plex Center reads sessions from Plex directly'],
   tautulli_active_streams: ['Tautulli Active Streams', 'found; history rows are on the roadmap'],
   sonarr: ['Sonarr', 'its upcoming sensor can be a Home row'],
@@ -4552,9 +4555,15 @@ class PlexCenterCardEditor extends HTMLElement {
     const reach = (t) => !!t.route && !['unavailable', 'unknown'].includes(t.state);
     const rows = tvs.map((t) => `<label class="plce-check"><input type="checkbox" data-tvpick="${esc(t.id)}"${!pick.length || pick.includes(t.id) ? ' checked' : ''}>
       ${esc(t.name)} <span class="plce-badge ${reach(t) ? 'ok' : 'bad'}" title="${reach(t) ? 'Reachable' : 'No reachable player'}">${esc(routes[t.route] || 'no player')}</span><span class="plce-badge">${esc(t.user || 'owner')}</span></label>`).join('');
-    return `<p class="plce-hint">TVs, their Plex Home users and players are set in the integration: Settings → Devices &amp; services → Plex Center → Configure. Here you pick which ones this card offers.</p>
+    return `<p class="plce-hint">The TVs this card offers:</p>
       ${this._err ? `<p class="plce-hint" style="color:var(--ltek-c-error)">${esc(this._err)}</p>` : ''}
       <div class="plce-tvlist">${rows || '<p class="plce-hint">No TVs yet.</p>'}</div>
+      <div class="plce-group">Each TV's settings</div>
+      <p class="plce-hint">Saved in the Plex Center integration, so they change every card, automation and voice command.
+        ${this._hass?.user?.is_admin ? '' : ' Only an administrator can change them.'} Adding, finding and removing TVs: Settings → Devices &amp; services → Plex Center → Configure.</p>
+      ${this._tvErr ? `<p class="plce-hint" style="color:var(--ltek-c-error)">${esc(this._tvErr)}</p>` : ''}
+      ${tvs.map((t) => this._sub(`tvset:${t.id}`, `${esc(t.name)}${this._tvWarn(t) ? ' <span class="plce-badge bad">check</span>' : ''}`, this._tvSettings(t))).join('')}
+      ${this._tvLists()}
       <div class="plce-group">TV picker</div>
       <p class="plce-hint">How the TV picker looks (a button for each TV, a chip or icon that opens a menu, or hidden) is set per screen in Layout.</p>
       ${this._select('tv_label', 'TV buttons show', [['name', 'Name'], ['icon', 'Icon only'], ['both', 'Icon and name']])}
@@ -4562,6 +4571,64 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._select('default_tv', 'Default TV', [['', 'First in the list'], ...tvs.map((t) => [t.id, t.name])])}
       ${this._c('lock') ? '' : this._select('client_choice', 'When playing', [['card', "Use the card's TV"], ['ask', 'Ask which TV each time']])}
       ${this._check('lock', 'Lock to the default TV (wall tablet: no picker, no TV choice)')}`;
+  }
+
+  /** A TV's settings (the integration's): its players and their state, volume, room, skip sizes. Admins edit them. */
+  _tvSettings(t) {
+    const set = t.settings || {}, admin = !!this._hass?.user?.is_admin, dis = admin ? '' : ' disabled';
+    const state = (e) => {
+      if (!e) return '';
+      const st = this._hass.states[e];
+      return `<span class="plce-badge${st ? (['unavailable', 'unknown'].includes(st.state) ? ' bad' : '') : ' bad'}">${esc(st ? st.state : 'missing')}</span>`;
+    };
+    const ent = (k, label, list, hint = '') => `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label>
+      <input type="text" list="${list}" data-tvset="${esc(t.id)}|${k}" value="${esc(set[k] || '')}" placeholder="${hint ? esc(hint) : 'not set'}"${dis}>${state(set[k])}</div>`;
+    const txt = (k, label, ph) => `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label><input type="text" data-tvset="${esc(t.id)}|${k}" value="${esc(set[k] ?? '')}" placeholder="${esc(ph)}"${dis}></div>`;
+    const num = (k, label, def) => `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label><input type="number" data-tvset="${esc(t.id)}|${k}" value="${esc(set[k] ?? def)}" style="width:6em"${dis}> s</div>`;
+    const room = !!(set.power_entity || set.status_entity);
+    return `${txt('name', 'Name', t.name)}${txt('plex_user', 'Plex user', 'server owner')}
+      <div class="plce-group">Players</div>
+      ${ent('pipup', 'PiPup', 'plce-dl-pipup')}${ent('adb', 'ADB', 'plce-dl-androidtv')}${ent('remote', 'Android TV Remote', 'plce-dl-androidtv_remote')}
+      ${ent('cast', 'Cast', 'plce-dl-cast')}${ent('plex_client', 'Plex player', 'plce-dl-plex')}
+      <div class="plce-row plce-nowrap"><label class="lbl">Play with</label><select data-tvset="${esc(t.id)}|route"${dis}>${[['auto', 'Automatic'], ['pipup', 'PiPup'], ['adb', 'ADB'], ['plex', 'Plex remote control']]
+        .map(([v, n]) => `<option value="${v}"${(set.route || 'auto') === v ? ' selected' : ''}>${n}</option>`).join('')}</select>
+        <span class="plce-badge">now: ${esc({ pipup: 'PiPup', adb: 'ADB', plex: 'Plex', open: 'PiPup (opens only)' }[t.route] || 'no player')}</span></div>
+      <div class="plce-group">Volume</div>
+      ${ent('volume_entity', 'Volume player', 'plce-dl-mp', "the TV's own")}
+      <div class="plce-group">Seeking with skip keys</div>
+      <p class="plce-hint">When a TV's Plex app can't seek exactly (the SHIELD): how far one press goes in its Plex app (Plex: Settings → Player).</p>
+      ${num('skip_forward', 'Skip forward', 30)}${num('skip_back', 'Skip back', 10)}
+      <div class="plce-group">Room (a theater with several devices)</div>
+      ${ent('power_entity', 'Room power', 'plce-dl-room')}
+      ${room ? `${txt('power_on', 'Its on value', 'on')}${txt('power_off', 'Its off value', 'off')}` : ''}
+      ${ent('status_entity', 'Room status', 'plce-dl-status')}
+      ${room ? `${txt('ready_value', 'Ready value', 'on')}${txt('busy_value', 'Starting value', 'starting')}${txt('fail_value', 'Failure value', 'error')}
+        ${num('ready_wait', 'Wait for ready', 120)}
+        <label class="plce-check"><input type="checkbox" data-tvset="${esc(t.id)}|room_off"${set.room_off ? ' checked' : ''}${dis}>The room turns the TV off</label>` : ''}`;
+  }
+  /** Something to look at for a TV: a player that's missing or unavailable. */
+  _tvWarn(t) {
+    return ['pipup', 'adb', 'remote', 'cast', 'plex_client', 'volume_entity', 'power_entity', 'status_entity'].some((k) => {
+      const e = t.settings?.[k]; return e && !this._hass.states[e];
+    });
+  }
+  /** Entity suggestions for the TV settings (by integration where Home Assistant says which). */
+  _tvLists() {
+    const ents = this._hass?.entities || {}, states = this._hass?.states || {};
+    const ids = (pred) => Object.keys(states).filter(pred).sort().map((e) => `<option value="${esc(e)}">${esc(states[e].attributes?.friendly_name || '')}</option>`).join('');
+    const byPlat = (plat) => (e) => e.startsWith('media_player.') && (!Object.keys(ents).length || ents[e]?.platform === plat);
+    return `${['pipup', 'androidtv', 'androidtv_remote', 'cast', 'plex'].map((p) => `<datalist id="plce-dl-${p}">${ids(byPlat(p))}</datalist>`).join('')}
+      <datalist id="plce-dl-mp">${ids((e) => e.startsWith('media_player.'))}</datalist>
+      <datalist id="plce-dl-room">${ids((e) => /^(input_boolean|input_select|select|switch|script|scene)\./.test(e))}</datalist>
+      <datalist id="plce-dl-status">${ids((e) => /^(binary_sensor|sensor|input_boolean|input_select|select|switch)\./.test(e))}</datalist>`;
+  }
+  async _saveTv(id, key, value) {
+    this._tvErr = '';
+    try {
+      await ws(this._hass, 'tv_update', { tv: id, changes: { [key]: value } });
+      await cached(this._hass, 'config', 0, () => ws(this._hass, 'config'), { force: true });
+    } catch (e) { this._tvErr = e?.message || String(e); }
+    this._render();
   }
 
   /** Sonarr / Radarr found and the Calendar page on: the page shows in the page lists. */
@@ -4696,10 +4763,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._check('jump_bar', 'A–Z jump bar beside A → Z libraries')}
       ${this._check('remember_view', 'Remember the tab, filters, sort and view on each device')}
       ${this._check('recent_searches', 'Show recent searches when the search box is empty')}
-      ${this._check('up_next', 'Up next: near the end of an episode, show the next one with Play next / Stop after this')}
-      ${this._c('up_next') ? `${this._slider('up_next_secs', 'Show Up next this long before the end', 15, 600, ' s')}
-        ${this._check('up_next_autoplay', 'Start the next episode when one ends (leave off if the Plex app already auto-plays)')}` : ''}
-      ${this._select('after_play', 'After starting a title', [['nowplaying', 'Close the details and show Now playing'], ['stay', 'Stay on the details']])}
+      <p class="plce-hint">Up next and what happens after starting a title are in <b>Now playing</b>.</p>
       ${this._sub('popups', 'Details &amp; popups', `${this._check('popup_target', 'Target dropdown (a TV or this device) in details and popups')}
         ${this._select('local_app', '"This device" opens', [['auto', 'Automatic: the Plex app on phones and tablets, Plex Web on computers'], ['app', 'The Plex app'], ['web', 'Plex Web']])}
         <p class="plce-hint">The Plex app and Plex Web open the title's page; press Play there.</p>
@@ -4904,9 +4968,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._check(k('hide'), 'Hide the header while scrolling down (comes back when scrolling up)')}
         ${this._check(k('footer_sticky'), 'The footer sticks to the bottom of the screen')}
         ${this._check(k('swipe'), 'Swipe left / right on the content to change tab')}
-        <div class="plce-group">Now playing</div>
-        ${phone ? '<p class="plce-hint">Phones: tap a Watching now card to open the controls.</p>'
-          : this._select(k('now_playing'), 'Side panel', [['panel', 'Show it while something plays'], ['off', 'Off (tap a Watching now card for the controls)']])}</div>`;
+        <p class="plce-hint">Now playing (the side panel) has its own panel.</p></div>`;
     };
     return `${this._select('layout', 'Device type', [['auto', `Automatic (phone when the card is narrower than ${PHONE_MAX_W}px)`], ['tablet', 'Always tablet / computer'], ['phone', 'Always phone']])}
       <p class="plce-hint">Portrait or landscape follows the screen. Each screen type has its own settings; the card uses the one that matches.
@@ -4914,9 +4976,6 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._scrChips('Editing')}
       <div class="plce-row"><button class="plce-chip reset" data-scrreset title="Reset everything for this screen type"><ha-icon icon="mdi:restore"></ha-icon>Reset this screen type</button></div>
       ${screen(this._eds(), '')}
-      <div class="plce-group">Side panel (tablets, every screen)</div>
-      ${this._check('fit_screen', 'Fit the card to the screen height: the player stays put, the library scrolls')}
-      ${this._c('fit_screen') ? `${this._slider('screen_offset', 'Space above / below the card', 0, 300)}<p class="plce-hint">Room for the dashboard header and margins.</p>` : ''}
       <p class="plce-hint">Phones always get 44 px touch targets.</p>`;
   }
 
@@ -4999,15 +5058,31 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._c('watching_resume') === 'drop' ? '' : `${this._slider('watching_forget_h', 'Forget after', 0, 48, ' h')}<p class="plce-hint">0 = never. Resume turns the TV on and starts the title where it was paused.</p>
           ${this._check('watching_resume_apps', 'Keep other apps too (HBO Max, Netflix …): Resume opens the app and presses Play, best effort')}`}
         ${this._watchPages()}
-        ${this._check('np_power', 'Power button on the Now playing poster (asks before turning the TV off)')}
-        <div class="plce-group">Now playing controls</div>
-        ${this._check('np_volume', 'Volume buttons')}
+        <p class="plce-hint">The controls a card opens are set in <b>Now playing</b>.</p>`)}`;
+  }
+  /** Now playing: the side panel per screen, then how it opens and closes and its controls (every screen). */
+  _npBody() {
+    const sc = this._eds(), phone = sc.startsWith('phone'), k = `${sc}_now_playing`;
+    const prof = phone ? '<p class="plce-hint">Phones: Now playing opens full screen when you tap a Watching now card or start a title.</p>'
+      : this._select(k, 'Side panel', [['panel', 'Show it while something plays'], ['off', 'Off (tap a Watching now card for the controls)']]);
+    return `${this._profile(prof)}
+      ${this._everyScreen(`${this._check('np_auto_open', 'Open by itself when something plays (else: when you tap a Watching now card or press Play)')}
+        ${this._select('after_play', 'After starting a title', [['nowplaying', 'Close the details and show Now playing'], ['stay', 'Stay on the details']])}
+        ${this._check('np_auto_close', 'Close by itself when nothing is playing or paused (a countdown you can cancel)')}
+        ${this._c('np_auto_close') ? this._slider('np_close_s', 'Close after', 1, 30, ' s') : ''}
+        <div class="plce-group">Controls</div>
         ${this._check('np_play_center', 'Play / Pause in the middle (Stop, Home and volume on a row of their own)')}
         ${this._slider('np_scale', 'Button size', 50, 200, ' %')}
         ${this._slider('np_play_scale', 'Play / Pause size', 50, 200, ' %')}
-        <p class="plce-hint">The volume buttons change the TV's own volume, or its <b>Volume player</b> (an AV processor such as StormAudio): Settings → Plex Center → Configure → the TV.</p>
-        ${this._check('np_auto_close', 'Close by itself when nothing is playing or paused (a countdown you can cancel)')}
-        ${this._c('np_auto_close') ? this._slider('np_close_s', 'Close after', 1, 30, ' s') : ''}`)}`;
+        ${this._check('np_volume', 'Volume buttons')}
+        <p class="plce-hint">They change the TV's own volume, or its <b>Volume player</b> (an AV processor such as StormAudio), set per TV under Apps &amp; devices → TVs.</p>
+        ${this._check('np_power', 'Power button on the poster (asks before turning the TV off)')}
+        ${this._check('up_next', 'Up next: near the end of an episode, show the next one with Play next / Stop after this')}
+        ${this._c('up_next') ? `${this._slider('up_next_secs', 'Show Up next this long before the end', 15, 600, ' s')}
+          ${this._check('up_next_autoplay', 'Start the next episode when one ends (leave off if the Plex app already auto-plays)')}` : ''}
+        <div class="plce-group">Side panel (tablets)</div>
+        ${this._check('fit_screen', 'Fit the card to the screen height: the player stays put, the library scrolls')}
+        ${this._c('fit_screen') ? `${this._slider('screen_offset', 'Space above / below the card', 0, 300)}<p class="plce-hint">Room for the dashboard header and margins.</p>` : ''}`)}`;
   }
   /** Watching now per page: Show on page, Collapsible, Start collapsed. */
   _watchPages() {
@@ -5272,6 +5347,7 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-gh">Sections</div>
       <div class="plce-row plce-wrap plce-addrow"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>
       ${this._panel('sec-watching', 'mdi:account-eye', 'Watching now', this._watchBody())}
+      ${this._panel('nowplaying', 'mdi:play-box-outline', 'Now playing', this._npBody())}
       ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', `${this._profile(`${this._secStyleBody('continue', 'visual')}${this._secStyleBody('continue', 'rest')}`, 'row:continue')}
         ${this._everyScreen(`${this._slider('watched_pct', 'Counts as watched at', 50, 100, ' %')}<p class="plce-hint">An episode or movie watched this far leaves Continue watching; for a show, the episode after it moves to <b>Next Episode</b>. Continue watching shows each show's latest episode in progress.</p>`)}`)}
       ${this._panel('sec-next', 'mdi:skip-next-circle-outline', 'Next Episode', `${this._profile(`${this._secStyleBody('next', 'visual')}${this._secStyleBody('next', 'rest')}`, 'row:next')}
@@ -5523,6 +5599,10 @@ class PlexCenterCardEditor extends HTMLElement {
       setSec(id, 'flag_items', on.length === FACTS.length ? '' : on);
     }));
     all('[data-logload]', (b) => b.addEventListener('click', () => this._loadLog()));
+    all('[data-tvset]', (el) => el.addEventListener('change', () => {
+      const [id, key] = el.dataset.tvset.split('|');
+      this._saveTv(id, key, el.type === 'checkbox' ? el.checked : el.value.trim());
+    }));
     all('[data-loglevel]', (b) => b.addEventListener('click', () => this._loadLog(b.dataset.loglevel)));
     all('[data-logclear]', (b) => b.addEventListener('click', () => ws(this._hass, 'log_clear').then(() => this._loadLog()).catch(() => this._loadLog())));
     all('[data-ssens]', (el) => el.addEventListener('change', () => {
