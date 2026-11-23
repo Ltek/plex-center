@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.23.119
+// Version: v2026.11.23.120
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.23.119';
+const BUILD_NUMBER = 'v2026.11.23.120';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -277,10 +277,17 @@ const LOOK_KEYS = Object.keys(LOOK_BASE);
 const ROW_TEXT = { title_px: 14, title_weight: '700', ...Object.fromEntries(['info', 'when', 'meta', 'extra'].flatMap((id) => [[`${id}_px`, 12], [`${id}_weight`, '400']])) };
 const lookBase = (kind) => (kind === 'calendar' ? LOOK_BASE : { ...LOOK_BASE, border: false, ...ROW_TEXT });
 /** Coming Soon and Recently Added with fanart or a fanart fade: defaults made for them (a dark border, no text
- *  backdrop, bigger text; one item per row, 130 px tall, flags as labels). */
-const FAN_LOOK = { border: true, text_bg: 'none', title_px: 17, info_px: 14, when_px: 14, meta_px: 14, extra_px: 14 };
+ *  backdrop, bigger text; one item per row, 130 px tall, flags as labels). The accent border stays off. */
+const FAN_LOOK = { text_bg: 'none', title_px: 17, info_px: 14, when_px: 14, meta_px: 14, extra_px: 14 };
 const FAN_SEC = { item_h: 130, list_w: 4000, flag_style: 'labels' };
 const fanKind = (id) => /^(soon|recent)(-\d+)?$/.test(String(id));
+/** A look setting's default for a kind on a screen (what it is when the card doesn't set it): the editor stores
+ *  a value only when it differs, so turning a setting off sticks even where the default is on. */
+function lookDefault(c, kind, screen, f) {
+  if (f === 'image') return lookBase(kind)[f];
+  const k = `${kind}:${screen}`, own = c.looks?.[k] || {};
+  return lookFor({ ...c, looks: { ...(c.looks || {}), [k]: own.image ? { image: own.image } : {} } }, kind, screen)[f];
+}
 /** The look of a kind on a screen: built-in defaults with the card's values on top. */
 function lookFor(c, kind, screen) {
   const own = (c.looks || {})[`${kind}:${screen}`] || {};
@@ -333,8 +340,10 @@ function cleanLooks(c) {
     const keep = {}, base = lookBase(kind);
     for (const k of LOOK_KEYS) {
       let v = o[k];
-      if (v === undefined || v === null || v === '' || (v === base[k] && (k !== 'image' || kind === 'calendar'))) continue;
-      if (k.endsWith('_px')) { v = Number(v); if (!Number.isFinite(v) || v === base[k]) continue; }
+      // a fanart Coming Soon / Recently Added has its own defaults: keep a value that differs from them
+      const keep0 = fanKind(kind) && k in FAN_LOOK && String(v) !== String(FAN_LOOK[k]) && ['fanart', 'fade'].includes(o.image || c.sec_styles?.[lk]?.image);
+      if (v === undefined || v === null || v === '' || (v === base[k] && !keep0 && (k !== 'image' || kind === 'calendar'))) continue;
+      if (k.endsWith('_px')) { v = Number(v); if (!Number.isFinite(v) || (v === base[k] && !keep0)) continue; }
       if (k.endsWith('_color')) v = String(v).replace(/[;{}<>]/g, '');
       if (k === 'image' && !['poster', 'fanart', 'fade'].includes(v)) continue;
       if (k === 'text_bg' && !['gradient', 'box', 'none'].includes(v)) continue;
@@ -5550,13 +5559,13 @@ class PlexCenterCardEditor extends HTMLElement {
       this.querySelector(`details.plce-sec[data-panel="${panel}"]`)?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
     }));
     all('[data-lookk]', (el) => el.addEventListener('change', () => {
-      const k = el.dataset.lookk, f = k.split(':')[3];
+      const k = el.dataset.lookk, [, kind, screen, f] = k.split(':');
       const v = el.type === 'checkbox' ? el.checked : el.value;
-      this._setK(k, v === lookBase(k.split(':')[1])[f] ? '' : v); this._render();
+      this._setK(k, String(v) === String(lookDefault(this._config, kind, screen, f)) ? '' : v); this._render();
     }));
     all('[data-lookr]', (el) => {
       el.addEventListener('input', () => { const v = this.querySelector(`[data-lookv="${CSS.escape(el.dataset.lookr)}"]`); if (v) v.textContent = `${el.value}${el.dataset.unit || 'px'}`; });
-      el.addEventListener('change', () => { const f = el.dataset.lookr.split(':')[3], n = Number(el.value); this._setK(el.dataset.lookr, n === LOOK_BASE[f] ? '' : n); this._render(); });
+      el.addEventListener('change', () => { const [, kind, screen, f] = el.dataset.lookr.split(':'), n = Number(el.value); this._setK(el.dataset.lookr, n === Number(lookDefault(this._config, kind, screen, f)) ? '' : n); this._render(); });
     });
     all('[data-lookreset]', (b) => b.addEventListener('click', () => { this._setK(b.dataset.lookreset, ''); this._render(); }));
     all('[data-lookresetall]', (b) => b.addEventListener('click', () => {
@@ -5712,7 +5721,7 @@ class PlexCenterCardEditor extends HTMLElement {
 
 // ------------------------------------------------------------------------------------- registration
 
-PlexCenterCard._test = { SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { lookDefault, SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 

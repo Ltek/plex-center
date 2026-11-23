@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.23.120
+
+**Fixed**
+- **"Accent border on the left" stuck on** for Coming Soon / Recently Added with fanart (since .118): it was one of
+  their new defaults, and turning it off saved nothing, so it stayed on. It's off by default again, and the editor
+  now compares each look setting with the section's own default, so turning one off (or back to a row default
+  such as a 14 px title or the gradient backdrop) sticks.
+
 ## v2026.11.23.119
 
 **Fixed**
