@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.23.119
+
+**Fixed**
+- Recently Added's **View all** had a different style (accent colour, bold, not in capitals) from every other
+  section's.
+
 ## v2026.11.23.118
 
 **Changed**

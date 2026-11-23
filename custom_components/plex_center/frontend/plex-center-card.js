@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.23.118
+// Version: v2026.11.23.119
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.23.118';
+const BUILD_NUMBER = 'v2026.11.23.119';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1685,6 +1685,9 @@ const CARD_CSS = `
 .plc-sec-tt > ha-icon { align-self: center; }
 .slots .plc-kchips, .slots .plc-viewall { margin-left: 0; }
 .plc-viewall { margin-left: auto; border: none; background: none; color: var(--secondary-text-color); font-size: .9em; letter-spacing: .04em; }
+/* Recently Added's View all is a button (the page's own button style won over it): the same look as every other */
+.plc .plc-viewall { padding: 0; color: var(--secondary-text-color); font: inherit; font-size: calc(var(--plc-sec-px, 12px) * .9); font-weight: 800;
+  letter-spacing: .04em; text-transform: uppercase; }
 .plc-top { display: block; margin-bottom: 8px; }
 /* a header / footer row: left and right columns of equal width, the middle exactly in the center; items wrap inside their own column */
 .plc-hrow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr); align-items: center; gap: 10px; }
