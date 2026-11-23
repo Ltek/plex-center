@@ -1,0 +1,100 @@
+"""Plex Center's log: commands a TV didn't take, with the cause and what to do about it.
+
+Each entry is written to Home Assistant's log (a warning; info when Plex Center worked around it) and kept,
+the last 100, for the card's Log panel (editor → Apps & devices → Log). The same failure on the same TV within
+10 minutes adds to the count of the entry instead of a new one (and isn't logged again).
+"""
+
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import dataclass
+import logging
+import re
+import time
+from typing import Any
+
+from homeassistant.core import HomeAssistant
+
+from .const import DOMAIN, TV_ADB, TV_NAME, TV_PIPUP
+
+_LOGGER = logging.getLogger(__package__)
+KEEP = 100
+SAME_S = 600
+PIPUP_A11Y = "nl.rogro82.pipup/nl.rogro82.pipup.PiPupAccessibilityService"
+
+
+@dataclass(frozen=True)
+class Cause:
+    pattern: str
+    cause: str
+    fix: str
+
+
+# What a TV's players say when they can't do something, and why (what each command needs).
+CAUSES: tuple[Cause, ...] = (
+    Cause(r"needs the accessibility service|accessibility", "PiPup's keys (Back, Home, the D-pad) need its accessibility service "
+          "(PiPupAccessibilityService), which is off on this TV.",
+          "Run PiPup's install.sh --accessibility, or turn it on with ADB (androidtv.adb_command): settings put secure "
+          f"enabled_accessibility_services <current value>:{PIPUP_A11Y}. Until then Plex Center presses those keys with ADB."),
+    Cause(r"no media session|nothing is playing", "The app on screen doesn't tell Android what it plays (Plex on the NVIDIA SHIELD), "
+          "so PiPup can't seek to an exact time.",
+          "Nothing to fix: Plex Center seeks with Fast forward / Rewind presses. Set the TV's \"Plex's Skip forward / back\" to "
+          "what its Plex app uses (Plex: Settings → Player) so the seek bar lands where you let go."),
+    Cause(r"at most \d+.*wait", "PiPup refused how long Plex Center asked it to wait for Plex's Watch button.",
+          "Update Plex Center (it follows PiPup's limit)."),
+    Cause(r"not on screen|didn't open", "Plex's Watch button didn't appear in time: the screensaver was on, or Plex was slow to start.",
+          "Try again. If it keeps happening, wake the TV first or check that Plex opens on it."),
+    Cause(r"click", "PiPup isn't allowed to press buttons in Plex on this TV.",
+          "In the PiPup app on the TV, allow clicks for Plex (com.plexapp.android). Until then Plex Center opens the title only."),
+    Cause(r"service_not_found|ServiceNotFound|Action \w+\.\w+ not found",
+          "A Home Assistant integration Plex Center uses for this isn't loaded (PiPup or Android TV).",
+          "Check Settings → Devices & services: the PiPup or Android TV entry may have failed to start."),
+    Cause(r"adb.*(connect|offline|unauthori|refused|timed out)|Unable to connect|device offline",
+          "Home Assistant can't reach the TV over ADB.",
+          "On the TV, turn on Network debugging (Developer options) and allow Home Assistant's key; check the TV's IP."),
+    Cause(r"unavailable|isn't reachable|not reachable|timed out|Timeout", "The TV's player didn't answer (off, asleep or not on the network).",
+          "Check the TV is on and on the network; Plex Center turns it on first when it can."),
+    Cause(r"no usable player|no reachable player|has no player", "This TV has no player Plex Center can use for this.",
+          "Settings → Plex Center → Configure: set the TV's PiPup and / or ADB player."),
+    Cause(r"turned off with its remote", "Turning off needs ADB or the Android TV Remote (never PiPup: its off is a deep sleep).",
+          "Set the TV's ADB or Android TV Remote player in Plex Center's TV settings."),
+    Cause(r"isn't ready|didn't start", "The room (theater) didn't say it was ready in time.",
+          "Check the room's automation and its status entity; set a longer \"Wait for ready\" if it needs one."),
+)
+
+
+def explain(message: str) -> tuple[str, str]:
+    """The cause and the fix for an error message ('' when it isn't one we know)."""
+    for c in CAUSES:
+        if re.search(c.pattern, message, re.I):
+            return c.cause, c.fix
+    return "", ""
+
+
+def entries(hass: HomeAssistant) -> deque:
+    return hass.data.setdefault(f"{DOMAIN}_log", deque(maxlen=KEEP))
+
+
+def record(hass: HomeAssistant, tv: dict[str, Any] | None, action: str, err: Exception | str, *, handled: str = "") -> dict[str, Any]:
+    """Note a command the TV didn't take. `handled`: what Plex Center did instead (then it's not an error)."""
+    msg = str(err) or err.__class__.__name__
+    cause, fix = explain(msg)
+    name = (tv or {}).get(TV_NAME) or "Plex Center"
+    log, now = entries(hass), time.time()
+    for e in reversed(log):
+        if e["tv"] == name and e["action"] == action and e["cause"] == cause and e["message"] == msg and now - e["last"] < SAME_S:
+            e["count"] += 1
+            e["last"] = now
+            return e
+    e = {"at": now, "last": now, "count": 1, "tv": name, "action": action, "message": msg, "cause": cause, "fix": fix,
+         "handled": handled, "level": "info" if handled else "error",
+         "players": {k: v for k, v in ((k, (tv or {}).get(k)) for k in (TV_PIPUP, TV_ADB)) if v}}
+    log.append(e)
+    text = f"Plex Center: {name}: {action} {'needed a workaround' if handled else 'failed'}: {msg}"
+    if cause:
+        text += f". Cause: {cause} Fix: {fix}"
+    if handled:
+        text += f" ({handled})"
+    (_LOGGER.info if handled else _LOGGER.warning)(text)
+    return e

@@ -37,7 +37,7 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
     for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar,
-               ws_resumes, ws_resume_forget, ws_app_media):
+               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
@@ -623,3 +623,22 @@ async def ws_app_media(hass: HomeAssistant, connection, msg) -> None:
     art = await async_artwork(hass, entry.runtime_data.conn, tv.get(TV_USER), now["title"], now["series"],
                               _signer(hass, entry.runtime_data.conn.server_id))
     connection.send_result(msg["id"], {**now, **({"meta": art} if art else {})})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/log"})
+@callback
+def ws_log(hass: HomeAssistant, connection, msg) -> None:
+    """Plex Center's log, newest first: [{at, last, count, tv, action, message, cause, fix, handled, level}]."""
+    from .eventlog import entries  # noqa: PLC0415
+
+    connection.send_result(msg["id"], list(reversed(entries(hass))))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/log_clear"})
+@websocket_api.require_admin
+@callback
+def ws_log_clear(hass: HomeAssistant, connection, msg) -> None:
+    from .eventlog import entries  # noqa: PLC0415
+
+    entries(hass).clear()
+    connection.send_result(msg["id"], True)

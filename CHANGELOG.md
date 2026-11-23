@@ -1,5 +1,22 @@
 # Changelog
 
+## v2026.11.23.114
+
+**Added**
+- **Plex Center's log:** a command a TV didn't take (Play, Stop, seek, trailer, turn on / off, Mark watched, Resume)
+  is written to Home Assistant's log with **why** (for example: PiPup's Back needs its accessibility service; Plex
+  on the SHIELD doesn't publish a media session) and **what to do**. Times Plex Center worked around it (Back with
+  ADB, seek with skip keys) are noted too, at info level. The same failure on the same TV within 10 minutes is
+  counted instead of repeated.
+- **Log panel** in the card editor under Apps & devices: the last 100 entries with the cause and the fix, Refresh
+  and Clear. Websocket `plex_center/log` and `plex_center/log_clear`.
+
+**Fixed**
+- **"arr not found"** under Coming Soon when its source is Sonarr / Radarr: on a state update the section was
+  repainted as a Recently Added sensor called "arr".
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.23.113
 
 **Fixed**

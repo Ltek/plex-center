@@ -67,6 +67,23 @@ async def _resolve(hass: HomeAssistant, entry, tv: dict[str, Any], key: str | No
     return await entry.runtime_data.conn.async_call(tv.get(TV_USER), fetch)
 
 
+def _logged(hass: HomeAssistant, name: str, fn):
+    """Run an action; a failure goes to Plex Center's log (and Home Assistant's) with its cause, then on to the caller."""
+    async def run(call: ServiceCall) -> None:
+        try:
+            await fn(call)
+        except Exception as err:
+            from .eventlog import record  # noqa: PLC0415
+            try:
+                _entry, tv = find_tv(hass, call.data.get("tv", ""))
+            except HomeAssistantError:
+                tv = {TV_NAME: call.data.get("tv")}
+            what = name if name != "control" else f"{call.data.get('action')}"
+            record(hass, tv, what, err)
+            raise
+    return run
+
+
 @callback
 def async_register(hass: HomeAssistant) -> None:
     """Register the actions once."""
@@ -129,8 +146,8 @@ def async_register(hass: HomeAssistant) -> None:
             return d
         await trailer(hass, tv, item=await entry.runtime_data.conn.async_call(tv.get(TV_USER), find))
 
-    hass.services.async_register(DOMAIN, "mark", mark, schema=MARK_SCHEMA)
-    hass.services.async_register(DOMAIN, "play_trailer", play_trailer, schema=TRAILER_SCHEMA)
-    hass.services.async_register(DOMAIN, "play", play, schema=PLAY_SCHEMA)
-    hass.services.async_register(DOMAIN, "control", ctl, schema=CONTROL_SCHEMA)
-    hass.services.async_register(DOMAIN, "resume", resume, schema=RESUME_SCHEMA)
+    hass.services.async_register(DOMAIN, "mark", _logged(hass, "mark", mark), schema=MARK_SCHEMA)
+    hass.services.async_register(DOMAIN, "play_trailer", _logged(hass, "play_trailer", play_trailer), schema=TRAILER_SCHEMA)
+    hass.services.async_register(DOMAIN, "play", _logged(hass, "play", play), schema=PLAY_SCHEMA)
+    hass.services.async_register(DOMAIN, "control", _logged(hass, "control", ctl), schema=CONTROL_SCHEMA)
+    hass.services.async_register(DOMAIN, "resume", _logged(hass, "resume", resume), schema=RESUME_SCHEMA)

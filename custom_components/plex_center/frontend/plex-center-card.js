@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.23.113
+// Version: v2026.11.23.114
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.23.113';
+const BUILD_NUMBER = 'v2026.11.23.114';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -2795,7 +2795,7 @@ class PlexCenterCard extends HTMLElement {
     const r = this._root.querySelector(`[data-sec="${id}"]`);
     if (!r) return;
     const st = secStyle(this._c, id);
-    if (st.s.source) {
+    if (st.s.source && /^sensor\./.test(st.s.source)) {   // a Recently Added sensor (Coming Soon's "arr" isn't one)
       const mine = this._byKind(id, this._sensorItems(this._sensorKinds([st.s.source])));
       if (!this._hass.states[st.s.source]) { r.innerHTML = `<div class="plc-msg err">${esc(st.s.source)} not found.</div>`; return; }
       const items = mine.slice(0, st.max);
@@ -3961,7 +3961,7 @@ Object.assign(PlexCenterCard.prototype, {
     if (asig !== this._appSig) { this._appSig = asig; this._paintWatching(); }
     if (this._v.tab === 'home') {
       this._paintUpcoming();
-      homeOrder(this._c).filter((id) => secStyle(this._c, id).s.source).forEach((id) => this._paintRecent(id));
+      homeOrder(this._c).filter((id) => secType(this._c, id) === 'recent' && secStyle(this._c, id).s.source).forEach((id) => this._paintRecent(id));
     }
   },
 
@@ -4369,6 +4369,7 @@ const EDITOR_CSS = `
         .plce-reset:hover { color: var(--ltek-c-icon-hover); }
         .plce-reset ha-icon { --mdc-icon-size: var(--ltek-icon-sm); }
         .plce-list { display: flex; flex-direction: column; gap: var(--ltek-sp-2); }
+        .plce-log.error .plce-item-h ha-icon { color: var(--error-color, #db4437); } .plce-log.info .plce-item-h ha-icon { color: var(--info-color, #039be5); }
         .plce-item { display: flex; flex-direction: column; gap: var(--ltek-sp-1); padding: var(--ltek-sp-2) var(--ltek-sp-3);
           background: var(--ltek-c-surface-raised); border-radius: var(--ltek-r-card); }
         .plce-item-h { display: flex; align-items: center; gap: var(--ltek-sp-2); }
@@ -5193,6 +5194,27 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._text('date', 'Date format', 'mm/dd')}${this._select('clock', 'Clock', [['12', '12-hour'], ['24', '24-hour']])}`)}`;
   }
 
+  /** Plex Center's log: commands a TV didn't take, why, and what to do (newest first). */
+  _logBody() {
+    if (!this._logs) return '<p class="plce-hint">Loading…</p>';
+    if (this._logs.error) return `<p class="plce-hint">${esc(this._logs.error)} (restart Home Assistant after updating Plex Center).</p>`;
+    const when = (t) => new Date(t * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const rows = this._logs.list.map((e) => `<div class="plce-item plce-log ${e.level}"><div class="plce-item-h">
+        <ha-icon icon="mdi:${e.level === 'info' ? 'information-outline' : 'alert-circle-outline'}"></ha-icon>
+        <span class="plce-name">${esc(e.tv)} · ${esc(e.action)}</span><span class="plce-badge">${esc(when(e.last))}${e.count > 1 ? ` · ×${e.count}` : ''}</span></div>
+        <p class="plce-hint" style="margin:0">${esc(e.message)}</p>
+        ${e.handled ? `<p class="plce-hint" style="margin:0"><b>Worked around:</b> ${esc(e.handled)}</p>` : ''}
+        ${e.cause ? `<p class="plce-hint" style="margin:0"><b>Why:</b> ${esc(e.cause)}</p><p class="plce-hint" style="margin:0"><b>Fix:</b> ${esc(e.fix)}</p>` : ''}</div>`).join('');
+    return `<p class="plce-hint">Commands a TV didn't take, why, and what to do. Also in Home Assistant's log (Settings → System → Logs).</p>
+      <div class="plce-chips"><button class="plce-chip" data-logload><ha-icon icon="mdi:refresh"></ha-icon>Refresh</button>
+      ${this._logs.list.length ? '<button class="plce-chip" data-logclear><ha-icon icon="mdi:delete-outline"></ha-icon>Clear</button>' : ''}</div>
+      <div class="plce-list">${rows || '<p class="plce-hint">Nothing logged since Home Assistant started.</p>'}</div>`;
+  }
+  _loadLog() {
+    ws(this._hass, 'log').then((list) => { this._logs = { list: list || [] }; }).catch((e) => { this._logs = { error: e?.message || String(e), list: [] }; })
+      .then(() => { if (this._open.has('log')) this._render(); });
+  }
+
   _integrationsBody() {
     const found = new Set(this._conf?.integrations || []);
     return `<p class="plce-hint">What Home Assistant has, and what Plex Center does with it.</p>
@@ -5223,6 +5245,7 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-gh">Apps &amp; devices</div>
       ${this._panel('tvs', 'mdi:television-play', 'TVs', this._tvsBody())}
       ${this._panel('integrations', 'mdi:puzzle', 'Integrations found', this._integrationsBody())}
+      ${this._panel('log', 'mdi:text-box-search-outline', 'Log', this._logBody())}
       <div class="plce-foot">Plex Center Card (Ltek) ${BUILD_NUMBER}</div></div>`;
     this._rendered = true;
     this._wire();
@@ -5234,6 +5257,7 @@ class PlexCenterCardEditor extends HTMLElement {
       if (d.open) {
         this.querySelectorAll('details.plce-sec[open]').forEach((o) => { if (o !== d) { o.open = false; this._open.delete(o.dataset.panel); } });
         this._open.add(d.dataset.panel);
+        if (d.dataset.panel === 'log') this._loadLog();
         if (d.dataset.panel === 'header' && SHOWN.screen) {   // edit the layout the preview is using
           const k = layoutKeyFor(this._config, SHOWN.screen), want = k.startsWith('lay:') ? k : null;
           if ((this._hdrFor || null) !== want) { this._hdrFor = want; this._render(); }
@@ -5455,6 +5479,8 @@ class PlexCenterCardEditor extends HTMLElement {
       const on = [...this.querySelectorAll(sel2)].filter((x) => x.checked).map((x) => x.dataset.sfact);
       setSec(id, 'flag_items', on.length === FACTS.length ? '' : on);
     }));
+    all('[data-logload]', (b) => b.addEventListener('click', () => this._loadLog()));
+    all('[data-logclear]', (b) => b.addEventListener('click', () => ws(this._hass, 'log_clear').then(() => this._loadLog()).catch(() => this._loadLog())));
     all('[data-ssens]', (el) => el.addEventListener('change', () => {
       const id = el.dataset.sid;
       const on = [...this.querySelectorAll(`[data-ssens][data-sid="${CSS.escape ? CSS.escape(id) : id}"]`)].filter((x) => x.checked).map((x) => x.dataset.ssens);

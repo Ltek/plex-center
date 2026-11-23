@@ -497,7 +497,8 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
             # Back / Home need PiPup's accessibility service (off on the SHIELD): ADB presses them instead
             if not _has(hass, adb):
                 raise
-            _LOGGER.debug("plex_center: PiPup %s failed on %s (%s); pressing it with ADB", k, _name(tv), err)
+            from .eventlog import record  # noqa: PLC0415
+            record(hass, tv, f"{k} key (PiPup)", err, handled="pressed with ADB instead")
             await adb_key(k)
 
     if action in ("play", "pause", "play_pause"):
@@ -515,6 +516,8 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
             except HomeAssistantError as err:
                 if not _no_session(err):
                     raise
+                from .eventlog import record  # noqa: PLC0415
+                record(hass, tv, "seek (PiPup)", err, handled="seeked with Fast forward / Rewind presses")
         pos = position(hass, tv)
         if pos is None:
             raise HomeAssistantError(f"{_name(tv)}: can't seek, the Plex app isn't saying where it is")
@@ -527,6 +530,8 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
             except HomeAssistantError as err:
                 if not _no_session(err):
                     raise
+                from .eventlog import record  # noqa: PLC0415
+                record(hass, tv, "skip (PiPup)", err, handled="skipped with Fast forward / Rewind presses")
         await _skip_keys(hass, tv, key, float(value or 0), position(hass, tv))
     else:
         raise HomeAssistantError(f"Unknown action {action}")
