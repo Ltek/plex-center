@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .const import (CONF_TVS, TV_ADB, TV_CAST, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_POWER, TV_REMOTE, TV_ROUTE, TV_STATUS, TV_USER,
-                    VERSION)
+                    TV_VOLUME, VERSION)
 from .tvs import route_for, tv_on
 
 KEEP = ("app_id", "app_name", "media_title", "media_series_title", "media_duration", "media_position", "username", "click_service",
@@ -18,7 +18,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry) -> dict
     tvs = []
     for tv in entry.options.get(CONF_TVS, []):
         ents = {}
-        for k in (TV_PIPUP, TV_ADB, TV_REMOTE, TV_CAST, TV_PLEX, TV_POWER, TV_STATUS):
+        for k in (TV_PIPUP, TV_ADB, TV_REMOTE, TV_CAST, TV_PLEX, TV_VOLUME, TV_POWER, TV_STATUS):
             if not (ent := tv.get(k)):
                 continue
             st = hass.states.get(ent)

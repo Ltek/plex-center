@@ -271,7 +271,7 @@ async def ws_config(hass: HomeAssistant, connection, msg) -> None:
             except Exception as err:  # noqa: BLE001
                 libraries[user] = {"error": str(err)}
         tvs.append({"id": tv[TV_ID], "name": tv[TV_NAME], "user": user, "route_setting": tv.get(TV_ROUTE, "auto"),
-                    **{k: tv[k] for k in (TV_PIPUP, TV_ADB, TV_PLEX, TV_REMOTE, TV_CAST, "status_entity", "ready_value", "busy_value", "fail_value") if tv.get(k)},
+                    **{k: tv[k] for k in (TV_PIPUP, TV_ADB, TV_PLEX, TV_REMOTE, TV_CAST, "volume_entity", "status_entity", "ready_value", "busy_value", "fail_value") if tv.get(k)},
                     "power_off": can_power_off(tv), **tv_state(hass, tv)})
     reg = er.async_get(hass)
     found = {p for p in (e.platform for e in reg.entities.values()) if p in INTEGRATIONS}

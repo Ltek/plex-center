@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.23.115
+// Version: v2026.11.23.116
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.23.115';
+const BUILD_NUMBER = 'v2026.11.23.116';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -420,15 +420,19 @@ function itemFacts(it, want) {
 /** A section's flags for an item: the corner / info icon (a flag set) or icons / labels for what it is; the trailer one plays it. */
 function flagsHtml(it, st, ref, where = 'li') {
   if (!st.flag) return '';
-  if (st.flag_style === 'icons' || st.flag_style === 'labels') {
+  if (['icons', 'labels', 'both'].includes(st.flag_style)) {
     const f = itemFacts(it, st.flag_items);
     if (!f.length) return '';
+    const look = st.flag_style === 'icons' ? 'icons' : 'labels';   // labels and both are pills
     const one = ([id, label, icon]) => {
-      const inner = st.flag_style === 'labels' ? `${id === 'trailer' ? '<ha-icon icon="mdi:play"></ha-icon>' : ''}${esc(label)}` : `<ha-icon icon="${icon}"></ha-icon>`;
-      return id === 'trailer' ? `<span class="plc-flagi ${st.flag_style} go" role="button" tabindex="0" data-trailerli="${esc(ref)}" title="Play the trailer">${inner}</span>`
-        : `<span class="plc-flagi ${st.flag_style}" title="${esc(label)}">${inner}</span>`;
+      const ic = st.flag_style === 'labels' ? (id === 'trailer' ? '<ha-icon icon="mdi:play"></ha-icon>' : '') : `<ha-icon icon="${icon}"></ha-icon>`;
+      const inner = `${ic}${st.flag_style === 'icons' ? '' : esc(label)}`;
+      return id === 'trailer' ? `<span class="plc-flagi ${look} go" role="button" tabindex="0" data-trailerli="${esc(ref)}" title="Play the trailer">${inner}</span>`
+        : `<span class="plc-flagi ${look}" title="${esc(label)}">${inner}</span>`;
     };
-    return `<span class="plc-facts ${where}" style="--plc-fact-px:${st.flag_px}px">${f.map(one).join('')}</span>`;
+    const top = f.filter(([id]) => !st.flag_bottom.includes(id)), bot = f.filter(([id]) => st.flag_bottom.includes(id));
+    const box = (list, cls) => (list.length ? `<span class="plc-facts ${where}${cls}" style="--plc-fact-px:${st.flag_px}px">${list.map(one).join('')}</span>` : '');
+    return box(top, '') + box(bot, ' bot');
   }
   if (!it.flag) return '';
   const why = esc(it.flag_text || 'New');
@@ -565,6 +569,10 @@ const DEFAULTS = {
   watching_chevron_px: 0,
   watching_chevron_weight: '',
   np_auto_open: false,
+  np_volume: true,          // Now playing: volume buttons
+  np_play_center: true,     // Play / Pause in the middle of the skip buttons (Stop, Home and volume on their own row)
+  np_scale: 100,            // Now playing control buttons, %
+  np_play_scale: 100,       // the Play / Pause button on top of that, %
   np_auto_close: true,      // Now playing closes when nothing plays or is paused, after a countdown you can cancel
   np_close_s: 5,
   watching_home: true,
@@ -894,7 +902,8 @@ const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phon
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
-  border_color: 'str', flag: 'bool', flag_style: ['corner', 'info', 'icons', 'labels'], flag_items: 'words', flag_px: 'num', releases: 'words' };
+  border_color: 'str', flag: 'bool', flag_style: ['corner', 'info', 'icons', 'labels', 'both'], flag_items: 'words', flag_bottom: 'words', flag_px: 'num', releases: 'words',
+  count_pos: ['title', 'right'] };
 /** A Home row's settings shared by every screen type: what the row is (its source). Everything else is per screen. */
 const SEC_SHARED = new Set(['source', 'sensors', 'library', 'hub', 'releases']);
 /** 2026.11.16.53: rows' settings become screen profiles (sec_styles['<id>:<screen>']); only the source stays in home_style. */
@@ -968,7 +977,8 @@ function secStyle(c, id) {
     scroll: !!s.scroll, auto, scroll_dir: s.scroll_dir || ((s.layout || 'row') === 'list' ? 'up' : 'left'),
     speed: Number(s.speed ?? (auto === 'scroll' && s.layout !== 'banner' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
     flag: s.flag ?? cfg(c, 'flag'), flag_style: s.flag_style || 'corner', flag_items: Array.isArray(s.flag_items) ? s.flag_items : FACTS.map(([f]) => f),
-    flag_px: Math.max(12, Math.min(40, Number(s.flag_px) || 20)), list_w: Number(s.list_w ?? 340), type, s,
+    flag_px: Math.max(12, Math.min(40, Number(s.flag_px) || 20)), flag_bottom: Array.isArray(s.flag_bottom) ? s.flag_bottom : [],
+    count_pos: s.count_pos || 'title', list_w: Number(s.list_w ?? 340), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
     get max() { return this.total; } };
 }
@@ -1491,8 +1501,11 @@ const CARD_CSS = `
 .plc-np .plc-meta { color: rgba(255,255,255,.75); }
 .plc-np .plc-icon-btn, .plc-np .plc-btn { border-color: rgba(255,255,255,.35); color: #fff; }
 .plc-np-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-.plc-np-ctl .big { width: 52px; height: 52px; background: var(--plc-a); border-color: var(--plc-a); }
-.plc-np-ctl .big ha-icon { --mdc-icon-size: 28px; }
+.plc-np-ctl .plc-icon-btn { width: calc(40px * var(--np-s, 1)); height: calc(40px * var(--np-s, 1)); --mdc-icon-size: calc(20px * var(--np-s, 1)); }
+.plc-np-ctl .big { width: calc(52px * var(--np-s, 1) * var(--np-ps, 1)); height: calc(52px * var(--np-s, 1) * var(--np-ps, 1)); background: var(--plc-a); border-color: var(--plc-a); }
+.plc-np-ctl .big ha-icon { --mdc-icon-size: calc(28px * var(--np-s, 1) * var(--np-ps, 1)); }
+.plc-np-ctl.center { flex-direction: column; align-items: stretch; }
+.plc-np-row { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
 .plc-bar { position: relative; height: 22px; display: flex; align-items: center; touch-action: none; }
 .plc-bar.seek { cursor: pointer; }
 .plc-bar-track { width: 100%; height: 5px; border-radius: 3px; background: rgba(255,255,255,.25); overflow: hidden; }
@@ -1569,6 +1582,9 @@ const CARD_CSS = `
 .plc-facts { position: absolute; z-index: 3; display: flex; gap: 4px; align-items: center; --mdc-icon-size: var(--plc-fact-px, 20px); }
 .plc-facts.li { top: 8px; right: 8px; flex-direction: row-reverse; }
 .plc-facts.tile { top: 6px; left: 6px; flex-wrap: wrap; }
+.plc-facts.li.bot { top: auto; bottom: 8px; }
+.plc-li:has(.plc-play) .plc-facts.li.bot { right: 64px; }
+.plc-facts.tile.bot { top: auto; bottom: 12px; }
 .plc-flagi { display: inline-flex; align-items: center; gap: 3px; padding: 3px; border-radius: 6px; background: rgba(0,0,0,.55); color: var(--plc-flag-c, var(--plc-a)); }
 .plc-flagi.labels { padding: 2px 8px; border-radius: 999px; background: rgba(0,0,0,.65); filter: none; font-size: calc(var(--plc-fact-px, 20px) * .6); font-weight: 700;
   --mdc-icon-size: calc(var(--plc-fact-px, 20px) * .7); border: 1px solid color-mix(in srgb, var(--plc-flag-c, var(--plc-a)) 60%, transparent); }
@@ -1592,6 +1608,11 @@ const CARD_CSS = `
 .plc-kchips .plc-chip { padding: 3px 10px; font-size: .78em; }
 .plc-li.poster .plc-li-img { position: static; width: auto; aspect-ratio: 2 / 3; -webkit-mask-image: none; mask-image: none; }
 .plc-li.poster .plc-li-text { max-width: none; }
+/* Item height set: every item is that tall (poster, fanart and fade alike); text that doesn't fit is cut */
+.plc-sec-body.fixh .plc-li { height: var(--plc-li-h); min-height: 0; }
+.plc-sec-body.fixh .plc-li.poster { grid-template-rows: 100%; }
+.plc-sec-body.fixh .plc-li.poster .plc-li-img { height: 100%; }
+.plc-sec-body.fixh .plc-li-text { max-height: 100%; overflow: hidden; }
 .plc-li .plc-play { right: 10px; bottom: 10px; }
 .plc-sec-bar { display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 12px 8px 4px; margin: 0 0 10px; background: transparent;
   border: none; border-radius: 0; text-align: left; }
@@ -1757,8 +1778,9 @@ const CARD_CSS = `
 .plc.onerow .plc-hl { min-width: 7em; }
 /* bigger touch targets on phones */
 .plc.phone .plc-chip, .plc.phone .plc-tab, .plc.phone .plc-select, .plc.phone .plc-search, .plc.phone .plc-btn { min-height: max(34px, calc(44px / var(--plc-scale, 1))); }
-.plc.phone .plc-icon-btn, .plc.phone .plc-np-ctl .plc-icon-btn {
-  width: max(34px, calc(44px / var(--plc-scale, 1))); height: max(34px, calc(44px / var(--plc-scale, 1))); }
+.plc.phone .plc-icon-btn { width: max(34px, calc(44px / var(--plc-scale, 1))); height: max(34px, calc(44px / var(--plc-scale, 1))); }
+.plc.phone .plc-np-ctl .plc-icon-btn:not(.big) { width: calc(max(34px, calc(44px / var(--plc-scale, 1))) * var(--np-s, 1));
+  height: calc(max(34px, calc(44px / var(--plc-scale, 1))) * var(--np-s, 1)); }
 .plc.phone .plc-top .plc-chip, .plc.phone .plc-top .plc-select { padding-top: 0; padding-bottom: 0; }
 /* active-filter chips */
 .plc-achips { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -3113,7 +3135,7 @@ class PlexCenterCard extends HTMLElement {
       `<span class="plc-chip${kinds[v] ? ' on' : ''}" role="button" data-seckind="${esc(id)}|${v}">${n}</span>`).join('')}</span>` : '';
     const hcls = `${st.head_style}-h${st.divider ? ' div' : ''}`;
     const slot = { l: [], c: [], r: [] }, at = (p) => (p === 'center' ? 'c' : p === 'right' ? 'r' : 'l');
-    const ttl = st.collapsible ? `${icon}${name}` : `${icon}${name}${st.show_count ? ` <span class="n">${total}</span>` : ''}`;
+    const ttl = st.collapsible ? `${icon}${name}` : `${icon}${name}${st.show_count && st.count_pos !== 'right' ? ` <span class="n">${total}</span>` : ''}`;
     slot[at(st.title_pos)].push(`<span class="plc-sec-tt">${ttl}</span>`);
     if (chips) slot[at(st.chips_pos)].push(chips);
     const more = Math.max(total, items.length) > st.show;   // more than fits at once
@@ -3121,6 +3143,7 @@ class PlexCenterCard extends HTMLElement {
     if (more && st.view_all && !extraHead) slot.r.push(`<span class="plc-viewall" role="button" tabindex="0" data-viewsec="${esc(id)}">View all →</span>`);
     if (st.collapsible) slot.r.push(`${st.show_count ? `<span class="n">${esc(total ? count : 'None')}</span>` : ''}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon>`);
     else if (extraHead) slot.r.push(extraHead);
+    if (!st.collapsible && st.show_count && st.count_pos === 'right') slot.r.push(`<span class="n">${total}</span>`);
     const noc = slot.c.length ? '' : ' noc';
     const slots = `<span class="sl l">${slot.l.join('')}</span><span class="sl c">${slot.c.join('')}</span><span class="sl r">${slot.r.join('')}</span>`;
     const head = st.collapsible
@@ -3129,7 +3152,7 @@ class PlexCenterCard extends HTMLElement {
     const page = st.auto === 'fade' ? this._fadePage?.[id] || 0 : 0;
     const body = this._sectionItems(st, items, listId, page);
     const mode = st.auto === 'scroll' ? 'scroll auto' : st.auto === 'fade' ? 'limit fadeset' : st.scroll ? 'scroll' : 'limit';
-    return `${head}<div class="plc-sec-body ${mode}" data-secbody="${esc(id)}">${body}</div>`;
+    return `${head}<div class="plc-sec-body ${mode}${st.s.item_h !== undefined ? ' fixh' : ''}" data-secbody="${esc(id)}">${body}</div>`;
   }
 
   /** The items of a section: all of them when it scrolls, else one page of `show` (fade pages rotate). */
@@ -3768,18 +3791,20 @@ Object.assign(PlexCenterCard.prototype, {
   _controls(np, big = true) {
     if (!np?.live) return '';
     const playing = np.st.state === 'playing';
-    return `<div class="plc-np-ctl"><button class="plc-icon-btn" data-np="skip:-30" title="Back 30 s"><ha-icon icon="mdi:rewind-30"></ha-icon></button>
-      <button class="plc-icon-btn" data-np="skip:-10" title="Back 10 s"><ha-icon icon="mdi:rewind-10"></ha-icon></button>
-      <button class="plc-icon-btn${big ? ' big' : ''}" data-np="${playing ? 'pause' : 'play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>
-      <button class="plc-icon-btn" data-np="skip:10" title="Forward 10 s"><ha-icon icon="mdi:fast-forward-10"></ha-icon></button>
-      <button class="plc-icon-btn" data-np="skip:30" title="Forward 30 s"><ha-icon icon="mdi:fast-forward-30"></ha-icon></button>
-      <button class="plc-icon-btn" data-np="stop" title="Stop"><ha-icon icon="mdi:stop"></ha-icon></button>
-      <button class="plc-icon-btn" data-np="home" title="Home"><ha-icon icon="mdi:home"></ha-icon></button>
-      ${this._volumeHtml(np)}</div>`;
+    const b = (a, icon, title) => `<button class="plc-icon-btn" data-np="${a}" title="${title}"><ha-icon icon="mdi:${icon}"></ha-icon></button>`;
+    const play = `<button class="plc-icon-btn${big ? ' big' : ''}" data-np="${playing ? 'pause' : 'play'}" title="${playing ? 'Pause' : 'Play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>`;
+    const back = `${b('skip:-30', 'rewind-30', 'Back 30 s')}${b('skip:-10', 'rewind-10', 'Back 10 s')}`;
+    const fwd = `${b('skip:10', 'fast-forward-10', 'Forward 10 s')}${b('skip:30', 'fast-forward-30', 'Forward 30 s')}`;
+    const rest = `${b('stop', 'stop', 'Stop')}${b('home', 'home', 'Home')}${cfg(this._c, 'np_volume') !== false ? this._volumeHtml(np) : ''}`;
+    const sz = `--np-s:${Math.max(0.5, Math.min(2, Number(cfg(this._c, 'np_scale')) / 100 || 1))};--np-ps:${Math.max(0.5, Math.min(2, Number(cfg(this._c, 'np_play_scale')) / 100 || 1))}`;
+    if (big && cfg(this._c, 'np_play_center') !== false)
+      return `<div class="plc-np-ctl center" style="${sz}"><div class="plc-np-row">${back}${play}${fwd}</div><div class="plc-np-row">${rest}</div></div>`;
+    return `<div class="plc-np-ctl" style="${sz}">${back}${play}${fwd}${rest}</div>`;
   },
 
   _volumeHtml(np) {
-    const st = np?.tv?.pipup && this._hass.states[np.tv.pipup];
+    const vent = np?.tv?.volume_entity || np?.tv?.pipup;   // the TV's volume player (an AV processor), else PiPup
+    const st = vent && this._hass.states[vent];
     const muted = st?.attributes?.is_volume_muted, lvl = st?.attributes?.volume_level;
     return `<span class="plc-vol"><button class="plc-icon-btn" data-np="volume_down" title="Volume down"><ha-icon icon="mdi:volume-minus"></ha-icon></button>
       <button class="plc-icon-btn" data-np="mute" title="${muted ? 'Unmute' : 'Mute'}"><ha-icon icon="mdi:${muted ? 'volume-off' : 'volume-high'}"></ha-icon></button>
@@ -4424,7 +4449,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['calendar', 'watching_resume', 'hold_play', 'np_auto_close', 'watching_home', 'watching_cal', 'watching_lib', 'watching_coll_home', 'watching_coll_cal', 'watching_coll_lib', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'card_shadow']);
+const REVEAL_KEYS = new Set(['calendar', 'watching_resume', 'hold_play', 'np_auto_close', 'np_volume', 'watching_home', 'watching_cal', 'watching_lib', 'watching_coll_home', 'watching_coll_cal', 'watching_coll_lib', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; this._onScreen = () => { if (this._rendered) this._render(); }; }
@@ -4821,6 +4846,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${st.chips ? pick('chips_pos', 'Chips', [['center', 'Center'], ['right', 'Right']], 'right') : ''}`}
         ${chk('view_all', st.type === 'recent' ? 'Show “View all” (opens the library, newest first)' : 'Show “View all” when there are more than fit (opens them all in a popup)', true)}
         ${chk('show_count', 'Show the number of items', true)}
+        ${s.show_count === false || st.collapsible ? '' : pick('count_pos', 'Number of items', [['title', 'Next to the title'], ['right', 'Far right']], 'title')}
         ${chk('show_icon', 'Show the icon', st.collapsible || !!s.icon)}
         <div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-sid="${esc(id)}" data-sicon="icon" value="${esc(s.icon || '')}"></plce-icon-pick></div>
         ${sel('head_style', 'Title style', [['', st.collapsible ? 'Plain (bar default)' : 'Section style (caps, accent)'], ['caps', 'Section style (caps, accent)'], ['plain', 'Plain']])}
@@ -4851,8 +4877,9 @@ class PlexCenterCardEditor extends HTMLElement {
         ${st.scroll || st.auto !== 'off' ? sl('total', id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner' ? 'Titles to rotate through' : 'Items to load', st.show, 100, st.total, '') : ''}`)}
       ${sub('lines', 'Text Lines', this._fieldsBody(id))}
       ${sub('shape', 'Content Visuals', `${this._lookBody(id, 'visual')}${sel('flag', '"New" flag', [['', 'Card default'], ['true', 'On'], ['false', 'Off']])}
-        ${st.flag ? `${sel('flag_style', 'Flag shows as', [['corner', 'A corner'], ['info', 'An info icon (i)'], ['icons', 'Icons: what it is'], ['labels', 'Labels: what it is']])}
-          ${['icons', 'labels'].includes(st.flag_style) ? `<div class="plce-tvlist">${FACTS.map(([f, n]) => `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sfact="${f}"${st.flag_items.includes(f) ? ' checked' : ''}>${esc(n)}${f === 'trailer' ? ' (tap plays it)' : ''}</label>`).join('')}</div>
+        ${st.flag ? `${sel('flag_style', 'Flag shows as', [['corner', 'A corner'], ['info', 'An info icon (i)'], ['icons', 'Icons'], ['labels', 'Labels'], ['both', 'Icons and labels']])}
+          ${['icons', 'labels', 'both'].includes(st.flag_style) ? `<div class="plce-tvlist">${FACTS.map(([f, n]) => `<div class="plce-row plce-nowrap"><label class="plce-check" style="flex:1"><input type="checkbox" data-sid="${esc(id)}" data-sfact="${f}"${st.flag_items.includes(f) ? ' checked' : ''}>${esc(n)}${f === 'trailer' ? ' (tap plays it)' : ''}</label>
+            <select data-sid="${esc(id)}" data-sfpos="${f}"><option value="top">${list ? 'Top right' : 'Top left'}</option><option value="bottom"${st.flag_bottom.includes(f) ? ' selected' : ''}>${list ? 'Bottom right' : 'Bottom left'}</option></select></div>`).join('')}</div>
             ${sl('flag_px', 'Icon size', 12, 40, 20)}` : ''}${col('flag_color', 'Flag colour', '#0099cc')}` : ''}${list ? `${sl('list_w', 'Item width', 220, 800, 340)}${sl('item_h', 'Item height', 60, 400, 150)}` : '<p class="plce-hint">Row items take their width from the number of items to show.</p>'}
         ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
         ${list ? `${col('item_bg', 'Item background', '#0d0d0d', true)}${col('border_color', 'Item border', '#000000', true)}` : ''}`)}
@@ -4973,6 +5000,12 @@ class PlexCenterCardEditor extends HTMLElement {
           ${this._check('watching_resume_apps', 'Keep other apps too (HBO Max, Netflix …): Resume opens the app and presses Play, best effort')}`}
         ${this._watchPages()}
         ${this._check('np_power', 'Power button on the Now playing poster (asks before turning the TV off)')}
+        <div class="plce-group">Now playing controls</div>
+        ${this._check('np_volume', 'Volume buttons')}
+        ${this._check('np_play_center', 'Play / Pause in the middle (Stop, Home and volume on a row of their own)')}
+        ${this._slider('np_scale', 'Button size', 50, 200, ' %')}
+        ${this._slider('np_play_scale', 'Play / Pause size', 50, 200, ' %')}
+        <p class="plce-hint">The volume buttons change the TV's own volume, or its <b>Volume player</b> (an AV processor such as StormAudio): Settings → Plex Center → Configure → the TV.</p>
         ${this._check('np_auto_close', 'Close by itself when nothing is playing or paused (a countdown you can cancel)')}
         ${this._c('np_auto_close') ? this._slider('np_close_s', 'Close after', 1, 30, ' s') : ''}`)}`;
   }
@@ -5478,6 +5511,11 @@ class PlexCenterCardEditor extends HTMLElement {
       const id = el.dataset.sid, sel2 = `[data-srel][data-sid="${CSS.escape ? CSS.escape(id) : id}"]`;
       const on = [...this.querySelectorAll(sel2)].filter((x) => x.checked).map((x) => x.dataset.srel);
       setSec(id, 'releases', on.length === REL_TYPES.length ? '' : on);
+    }));
+    all('[data-sfpos]', (el) => el.addEventListener('change', () => {
+      const id = el.dataset.sid, sel2 = `[data-sfpos][data-sid="${CSS.escape ? CSS.escape(id) : id}"]`;
+      const bot = [...this.querySelectorAll(sel2)].filter((x) => x.value === 'bottom').map((x) => x.dataset.sfpos);
+      setSec(id, 'flag_bottom', bot.length ? bot : '');
     }));
     all('[data-sfact]', (el) => el.addEventListener('change', () => {
       const id = el.dataset.sid, sel2 = `[data-sfact][data-sid="${CSS.escape ? CSS.escape(id) : id}"]`;

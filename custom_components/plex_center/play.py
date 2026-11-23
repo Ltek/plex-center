@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (BTN_RESTART, BTN_WATCH, PLEX_PKG, TV_ADB, TV_NAME, TV_PIPUP, TV_PLEX, TV_POWER, TV_POWER_OFF, TV_POWER_ON,
-                    TV_BUSY, TV_FAIL, TV_READY, TV_READY_S, TV_REMOTE, TV_ROOM_OFF, TV_SKIP_BACK, TV_SKIP_FWD, TV_STATUS, TV_USER)
+                    TV_BUSY, TV_FAIL, TV_READY, TV_READY_S, TV_REMOTE, TV_ROOM_OFF, TV_SKIP_BACK, TV_SKIP_FWD, TV_STATUS, TV_USER, TV_VOLUME)
 from .media import SAFE_LINK
 from .tvs import room_ready, route_for, tv_on, tv_playing, values
 
@@ -420,8 +420,13 @@ async def _volume_power(hass: HomeAssistant, tv: dict[str, Any], route: str, act
     if action == "power_off":
         await power_off(hass, tv)
         return
-    pip, adb = tv.get(TV_PIPUP), tv.get(TV_ADB)
-    ent = pip if pip and hass.states.get(pip) else adb if adb and hass.states.get(adb) else tv.get(TV_PLEX)
+    pip, adb, own = tv.get(TV_PIPUP), tv.get(TV_ADB), tv.get(TV_VOLUME)
+    if own:   # the TV's volume player (an AV processor): its volume, not the TV's
+        if not hass.states.get(own):
+            raise HomeAssistantError(f"{_name(tv)}: the volume player {own} isn't there")
+        ent = own
+    else:
+        ent = pip if pip and hass.states.get(pip) else adb if adb and hass.states.get(adb) else tv.get(TV_PLEX)
     if not ent:
         raise HomeAssistantError("No player to change the volume with")
     if ent == adb:

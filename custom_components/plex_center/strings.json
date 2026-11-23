@@ -42,7 +42,8 @@
           "fail_value": "Its failure value",
           "room_off": "The room turns the TV off",
           "skip_forward": "Plex's Skip forward",
-          "skip_back": "Plex's Skip back"
+          "skip_back": "Plex's Skip back",
+          "volume_entity": "Volume player (optional)"
         },
         "data_description": {
           "name": "Shown on the card's TV picker, and used by the plex_center.play and plex_center.control actions.",
@@ -63,7 +64,8 @@
           "fail_value": "When the status shows this, Plex Center stops waiting and shows the room's error. Default: error.",
           "room_off": "Turning the TV off only sets the power entity off; your room's automation (for example AV Scenes) turns the TV off in its own order.",
           "skip_forward": "How far one Fast forward skips in this TV's Plex app (Plex: Settings → Player). Used to seek when Plex doesn't let PiPup seek exactly (the SHIELD).",
-          "skip_back": "How far one Rewind skips back in this TV's Plex app."
+          "skip_back": "How far one Rewind skips back in this TV's Plex app.",
+          "volume_entity": "The player whose volume the card's volume buttons change, such as your AV processor (StormAudio). Empty: the TV's own volume."
         }
       },
       "detect": {

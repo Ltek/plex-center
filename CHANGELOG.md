@@ -1,5 +1,22 @@
 # Changelog
 
+## v2026.11.23.116
+
+**Added**
+- **Now playing controls:** Play / Pause in the middle of the skip buttons, with Stop, Home and volume on a row of
+  their own (`np_play_center`, on); **Button size** (`np_scale`) and **Play / Pause size** (`np_play_scale`), 50–200 %;
+  volume buttons on or off (`np_volume`).
+- **Volume player** per TV (Settings → Plex Center → Configure → the TV): the volume buttons change that player
+  (an AV processor such as StormAudio) instead of the TV, and the level shown is its level.
+- **Coming Soon and other rows:**
+  - Header: the number of items next to the title or on the far right (`count_pos`).
+  - Flags: **Icons and labels** as a third style, and each flag at the top or the bottom of the item
+    (`flag_bottom`).
+  - **Item height** now sets the height of the whole item for poster, fanart and fade alike (it only grew the
+    poster before); text that doesn't fit is cut.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.23.115
 
 **Added**

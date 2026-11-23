@@ -324,3 +324,14 @@ async def test_back_falls_back_to_adb(hass, calls):
     hass.states.async_set("media_player.adb", "idle")
     await play.control(hass, {"name": "Theater", "pipup": "media_player.pip", "adb": "media_player.adb"}, "stop")
     assert adb == ["input keyevent KEYCODE_BACK"]
+
+
+async def test_volume_goes_to_the_volume_player(hass, calls):
+    """A TV with a volume player (StormAudio): the volume buttons change its volume, not the TV's."""
+    _pip(hass)
+    hass.states.async_set("media_player.storm", "on", {"is_volume_muted": False})
+    tv = {"name": "Theater", "pipup": "media_player.pip", "volume_entity": "media_player.storm"}
+    await play.control(hass, tv, "volume_up")
+    await play.control(hass, tv, "mute")
+    assert [(c[1], c[2]["entity_id"]) for c in calls[-2:]] == [("volume_up", "media_player.storm"), ("volume_mute", "media_player.storm")]
+    assert calls[-1][2]["is_volume_muted"] is True
