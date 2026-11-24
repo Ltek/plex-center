@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.24.123
+// Version: v2026.11.24.124
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.24.123';
+const BUILD_NUMBER = 'v2026.11.24.124';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -283,7 +283,7 @@ const lookBase = (kind) => (kind === 'calendar' ? LOOK_BASE : { ...LOOK_BASE, bo
 /** Coming Soon and Recently Added with fanart or a fanart fade: defaults made for them (a dark border, no text
  *  backdrop, bigger text; one item per row, 130 px tall, flags as labels). The accent border stays off. */
 const FAN_LOOK = { text_bg: 'none', title_px: 17, info_px: 14, when_px: 14, meta_px: 14, extra_px: 14 };
-const FAN_SEC = { item_h: 130, list_w: 4000, flag_style: 'labels' };
+const FAN_SEC = { size: 87, list_w: 4000, flag_style: 'labels' };
 const fanKind = (id) => /^(soon|recent)(-\d+)?$/.test(String(id));
 /** A look setting's default for a kind on a screen (what it is when the card doesn't set it): the editor stores
  *  a value only when it differs, so turning a setting off sticks even where the default is on. */
@@ -606,6 +606,8 @@ const DEFAULTS = {
   remote_icon_px: 40,       // button icons (the skips scale from it; Play / Pause keeps its size)
   remote_title_px: 60,      // the title; Ends at 0.8 of it
   np_volume: true,          // Now playing: volume buttons
+  np_volume_style: 'rocker',   // rocker (− level +) | fill (the rocker shaded to the level) | buttons (the old three)
+  np_volume_drag: false,    // fill: drag across it to set the volume
   np_play_center: true,     // Play / Pause in the middle of the skip buttons (Stop, Home and volume on their own row)
   np_scale: 100,            // Now playing control buttons, %
   np_play_scale: 100,       // the Play / Pause button on top of that, %
@@ -772,8 +774,41 @@ const watchPage = (tab) => (tab === 'home' ? 'home' : tab === 'calendar' ? 'cal'
 /** Whether Watching now shows on a page (Home also follows the Home order's visibility). */
 const watchOn = (c, pg) => !!cfg(c, `watching_${pg}`) && (pg !== 'home' || homeVisible(c, 'watching'));
 
+/** 2026.11.24: heights in px became Size (% of the automatic size): a list from 150 px, the banner from 260 px, a
+ *  poster row from 240 px (fanart from 135 px); "every section" heights the same, as for posters. */
+function migrateHeights(c) {
+  const pct = (v, base) => Math.max(50, Math.min(150, Math.round(Number(v) / base * 100)));
+  if (c.home_style && typeof c.home_style === 'object') {   // older cards kept a row's look in home_style
+    const hs = {};
+    for (const [id, o] of Object.entries(c.home_style)) {
+      if (!o || typeof o !== 'object' || o.item_h === undefined) { hs[id] = o; continue; }
+      const { item_h: h, ...rest } = o;
+      hs[id] = rest.size === undefined && Number(h) ? { ...rest, size: pct(h, rest.layout === 'list' ? 150 : 240) } : rest;
+    }
+    c.home_style = hs;
+  }
+  if (c.sec_styles && typeof c.sec_styles === 'object') {
+    const out = {};
+    for (const [k, o] of Object.entries(c.sec_styles)) {
+      if (!o || typeof o !== 'object' || o.item_h === undefined) { out[k] = o; continue; }
+      const [id, sc] = k.split(':'), img = c.looks?.[k]?.image || o.image;
+      const base = id === 'continue' && (o.layout || (String(sc).startsWith('phone') ? 'row' : 'banner')) === 'banner' ? 260
+        : o.layout === 'list' ? 150 : ['fanart', 'fade'].includes(img) ? 135 : 240;
+      const { item_h: h, ...rest } = o;
+      out[k] = rest.size === undefined && Number(h) ? { ...rest, size: pct(h, base) } : rest;
+    }
+    c.sec_styles = out;
+  }
+  for (const k of Object.keys(c)) {
+    const m = /^home_item_h_(.+)$/.exec(k);
+    if (!m) continue;
+    if (Number(c[k]) && c[`home_size_${m[1]}`] === undefined) c[`home_size_${m[1]}`] = pct(c[k], 240);
+    delete c[k];
+  }
+}
 function normalizeConfig(raw) {
   const c = { ...(raw || {}) };
+  migrateHeights(c);
   delete c.type;
   for (const k of ['title_size', 'line_size']) if (typeof c[k] === 'string') c[k] = SIZE_PX[k][c[k]] ?? DEFAULTS[k];
   const hidden = new Set(Array.isArray(c.home_hidden) ? c.home_hidden : []);
@@ -935,7 +970,7 @@ function layoutItems(c, key = 'main') {
 
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
 const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', cycle_mode: ['scroll', 'fade'], cycle_chip: 'bool', chips_pos: ['center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
-  show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', item_h: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
+  show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', size: 'num', width: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
   border_color: 'str', flag: 'bool', flag_style: ['corner', 'info', 'icons', 'labels', 'both'], flag_items: 'words', flag_bottom: 'words', flag_pos: ['top', 'bottom'], flag_px: 'num', releases: 'words',
@@ -1012,11 +1047,17 @@ function secStyle(c, id) {
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
     chips_pos: s.chips_pos || 'right', title_pos: s.title_pos || 'left', view_all: s.view_all ?? true,
     show: (() => { const n = Math.max(1, Number((s.show ?? s.max) || c.across || cfg(c, 'across')) || 6);
-      return wide && !(s.show ?? s.max) ? Math.max(1, Math.round(n / 2)) : n; })(),
+      const w = Math.max(10, Math.min(100, Number(s.width) || 100)) / 100;   // a narrower section shows fewer, same size
+      const own = s.show ?? s.max;
+      return Math.max(1, Math.round((wide && !own ? n / 2 : n) * (own ? 1 : w))); })(),
     scroll: !!s.scroll, auto, scroll_dir: s.scroll_dir || ((s.layout || 'row') === 'list' ? 'up' : 'left'),
     speed: Number(s.speed ?? (auto === 'scroll' && s.layout !== 'banner' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
     flag: s.flag ?? cfg(c, 'flag'), flag_style: s.flag_style || (fanDef ? FAN_SEC.flag_style : 'corner'),
-    item_h: s.item_h ?? (Number(c[`home_item_h_${c._screen || 'tablet_landscape'}`]) || (listFan ? FAN_SEC.item_h : undefined)), flag_items: Array.isArray(s.flag_items) ? s.flag_items : FACTS.map(([f]) => f),
+    // Size (% of the automatic size): its own, else every section's on this screen, else a fanart list's default
+    size: (() => { const v = Number(s.size ?? c[`home_size_${c._screen || 'tablet_landscape'}`]) || (listFan ? FAN_SEC.size : 0); return v ? Math.max(50, Math.min(150, v)) : undefined; })(),
+    width: Math.max(10, Math.min(100, Number(s.width) || 100)),
+    banner: id === 'continue' && (s.layout || (c._phone_layout ? 'row' : 'banner')) === 'banner',
+    get item_h() { return this.size === undefined ? undefined : this.banner ? Math.round(260 * this.size / 100) : (s.layout || 'row') === 'list' ? Math.round(150 * this.size / 100) : undefined; }, flag_items: Array.isArray(s.flag_items) ? s.flag_items : FACTS.map(([f]) => f),
     flag_px: Math.max(12, Math.min(40, Number(s.flag_px) || 20)), flag_bottom: Array.isArray(s.flag_bottom) ? s.flag_bottom : [], flag_pos: s.flag_pos || 'top',
     count_pos: s.count_pos || 'title', list_w: Number(s.list_w ?? (listFan ? FAN_SEC.list_w : 340)), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
@@ -1026,6 +1067,8 @@ function secStyle(c, id) {
 function secVars(st) {
   const s = st.s, clean = (v) => String(v).replace(/[;{}<>]/g, ''), v = [`--plc-li-w:${st.list_w}px`, `--plc-show:${st.show}`, `--plc-fade-ms:${st.fade_ms}ms`];
   if (st.item_h !== undefined) v.push(`--plc-li-h:${Number(st.item_h)}px`);
+  if (st.size !== undefined) v.push(`--plc-size:${st.size / 100}`);
+  if (st.width < 100) v.push(`--plc-secw:${st.width}%`);
   if (s.border_color) v.push('--plc-li-bdw:2px');
   for (const n of [1, 2, 3, 4]) {
     if (s[`l${n}_px`] !== undefined) v.push(`--plc-l${n}-px:${Number(s[`l${n}_px`])}px`);
@@ -1659,12 +1702,25 @@ const CARD_CSS = `
 .plc-li.poster .plc-li-img { position: static; width: auto; aspect-ratio: 2 / 3; -webkit-mask-image: none; mask-image: none; }
 .plc-li.poster .plc-li-text { max-width: none; }
 /* rows with an Item height: each poster / fanart that tall, its width from the shape (Items to show then don't size them) */
-.plc-sec-body.fixh .plc-row > .plc-tile.plc-tile { flex: 0 0 calc(var(--plc-li-h) * 2 / 3); }   /* beats the Items to show width */
-.plc-sec-body.fixh .plc-row.fanart > .plc-tile.plc-tile { flex: 0 0 calc(var(--plc-li-h) * 16 / 9); }
-/* Continue watching's banner with a height */
-.plc-hero.fixh { height: var(--plc-li-h); min-height: 0; }
+.plc-sec-body.sized .plc-row > .plc-tile.plc-tile {   /* Size: the automatic width (Items to show) times Size; the row scrolls */
+  flex: 0 0 calc(((100% - (var(--plc-show, 5) - 1) * 12px) / var(--plc-show, 5) - 4px) * var(--plc-size, 1)); }
+.plc-sec-body.sized .plc-row { overflow-x: auto; }
+/* Continue watching's banner with a Size: smaller or bigger, the same shape inside (the picture 16:9, the text and
+   buttons scaled); when the info side gets narrow, it drops the less needed bits rather than cut them */
+.plc-hero.fixh { height: var(--plc-li-h); min-height: 0; grid-template-columns: min(calc(var(--plc-li-h) * 16 / 9), 62%) minmax(0, 1fr); font-size: calc(1em * var(--plc-size, 1)); }
 .plc-hero.fixh .plc-hero-img { min-height: 0; }
-.plc-hero.fixh .plc-hero-info { overflow: hidden; }
+.plc-hero.fixh .plc-hero-info { overflow: hidden; padding: calc(16px * var(--plc-size, 1)) calc(18px * var(--plc-size, 1)); gap: calc(6px * var(--plc-size, 1)); }
+.plc-hero.fixh .plc-btn { padding: calc(9px * var(--plc-size, 1)) calc(16px * var(--plc-size, 1)); }
+.plc-hero.fixh ha-icon { --mdc-icon-size: calc(20px * var(--plc-size, 1)); }
+.plc-hero.fixh .plc-icon-btn { width: calc(40px * var(--plc-size, 1)); height: calc(40px * var(--plc-size, 1)); }
+.plc-hero-info { container-type: inline-size; }
+@container (max-width: 420px) { .plc-hero-info .plc-btn:not(.main) { font-size: 0; gap: 0; padding-left: .7em; padding-right: .7em; } }
+@container (max-width: 340px) { .plc-hero-info .plc-meta + .plc-bar-track + .plc-meta { display: none; } .plc-hero-info .plc-viewall, .plc-hero-info .plc-cycle { display: none; } }
+@container (max-width: 260px) { .plc-hero-info .plc-pager { display: none; } }
+/* sections sharing a row: each takes its Width of the row, rows wrap, the sections in a row stretch to the tallest */
+.plc-main:has(> .plc-sec[data-sec]) { display: flex; flex-wrap: wrap; align-items: stretch; column-gap: 16px; }
+.plc-main:has(> .plc-sec[data-sec]) > * { flex: 1 1 100%; min-width: 0; }
+.plc-main:has(> .plc-sec[data-sec]) > .plc-sec[style*="--plc-secw"] { flex: 1 1 calc(var(--plc-secw) - 16px); }
 /* an Item border colour on rows: a ring inside each poster */
 .plc-row .plc-poster::before { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: inherit; pointer-events: none;
   border: var(--plc-li-bdw, 0px) solid var(--plc-li-bd, transparent); }
@@ -1910,6 +1966,20 @@ const CARD_CSS = `
 .plc-npfull .plc-side-art { flex: 1 1 auto; min-height: 160px; aspect-ratio: auto; background-size: contain; background-color: #000; }
 .plc-npfull .plc-side-info .plc-big { font-size: 1.4em; }
 .plc-vol { display: inline-flex; align-items: center; gap: 6px; }
+/* the rocker: one pill, − | level | + */
+.plc-vrock { position: relative; gap: 0; height: calc(40px * var(--np-s, 1)); border-radius: 999px; border: 1px solid var(--divider-color, #555); overflow: hidden; }
+.plc-vrock button { position: relative; z-index: 1; height: 100%; border: none; background: none; color: inherit; display: grid; place-items: center; padding: 0; }
+.plc-vr-b { width: calc(42px * var(--np-s, 1)); } .plc-vr-b ha-icon { --mdc-icon-size: calc(20px * var(--np-s, 1)); }
+.plc-vr-n { min-width: calc(54px * var(--np-s, 1)); border-left: 1px solid var(--divider-color, #444) !important; border-right: 1px solid var(--divider-color, #444) !important;
+  grid-auto-flow: row; align-content: center; gap: 1px; line-height: 1; }
+.plc-vr-n .plc-vol-n { min-width: 0; font-size: calc(17px * var(--np-s, 1)); font-weight: 800; opacity: 1; color: var(--plc-a); }
+.plc-vr-n small { font-size: calc(8.5px * var(--np-s, 1)); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; opacity: .65; }
+.plc-vrock.muted { border-color: color-mix(in srgb, var(--error-color, #e55) 60%, transparent); }
+.plc-vrock.muted .plc-vol-n, .plc-vrock.muted small { color: var(--error-color, #e55); }
+.plc-vrock.fill .plc-vr-n { border: none !important; }
+.plc-vfill { position: absolute; left: 0; top: 0; bottom: 0; width: var(--v, 0%); background: linear-gradient(90deg, color-mix(in srgb, var(--plc-a) 40%, transparent), color-mix(in srgb, var(--plc-a) 18%, transparent)); transition: width .2s; }
+.plc-vrock.fill .plc-vr-n { min-width: calc(90px * var(--np-s, 1)); }
+.plc-vrock.drag { cursor: ew-resize; touch-action: none; }
 .plc-vol-n { font-size: .8em; min-width: 2.2em; text-align: center; font-variant-numeric: tabular-nums; opacity: .8; }
 .plc-power.on { color: var(--success-color, #4caf50); }
 .plc-side-art { position: relative; }
@@ -2338,7 +2408,7 @@ class PlexCenterCard extends HTMLElement {
     this._root.addEventListener('click', (e) => this._onClick(e));
     this._root.addEventListener('input', (e) => this._onInput(e));
     this._root.addEventListener('change', (e) => this._onChange(e));
-    this._root.addEventListener('pointerdown', (e) => { if (!this._rmScrub(e)) this._onScrub(e); });
+    this._root.addEventListener('pointerdown', (e) => { if (!this._rmScrub(e) && !this._onVolDrag(e)) this._onScrub(e); });
     this._wireGestures();
     this._wireHold();
     this._root.addEventListener('keydown', (e) => {
@@ -2936,7 +3006,7 @@ class PlexCenterCard extends HTMLElement {
     for (const id of homeOrder(this._c)) {
       if (!homeVisible(this._c, id) || (id === 'watching' && !cfg(this._c, 'watching_home'))) continue;
       if (id === 'cards') parts.push('<div class="plc-cards"></div>');
-      else parts.push(`<div class="plc-sec" data-sec="${esc(id)}"></div>`);
+      else { const w = secStyle(this._c, id).width; parts.push(`<div class="plc-sec" data-sec="${esc(id)}"${w < 100 ? ` style="--plc-secw:${w}%"` : ''}></div>`); }
     }
     if (this._v.query) setTimeout(() => this._homeSearch(), 0);
     main.innerHTML = parts.join('') || '<div class="plc-msg">Nothing on the Home tab. Turn sections on in the card editor, or pick a library above.</div>';
@@ -3233,7 +3303,9 @@ class PlexCenterCard extends HTMLElement {
     }
     applyLook(sec, lk);
     sec.style.setProperty('--plc-fade-ms', `${Math.max(0, Number(st.fade_ms))}ms`);
-    if (st.item_h !== undefined) sec.style.setProperty('--plc-li-h', `${Number(st.item_h)}px`); else sec.style.removeProperty('--plc-li-h');
+    if (st.item_h !== undefined) { sec.style.setProperty('--plc-li-h', `${Number(st.item_h)}px`); sec.style.setProperty('--plc-size', String(st.size / 100)); }
+    else { sec.style.removeProperty('--plc-li-h'); sec.style.removeProperty('--plc-size'); }
+    if (st.width < 100) sec.style.setProperty('--plc-secw', `${st.width}%`); else sec.style.removeProperty('--plc-secw');
     // one timer for the banner, kept across repaints (a repaint must not restart it); it reads the current list each time
     const tsig = JSON.stringify([st.auto, st.scroll_dir, st.speed, st.fade_ms, cfg(this._c, 'stagger_rotate'), cfg(this._c, 'stagger_gap'), this._stepSections()]);
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -3318,7 +3390,7 @@ class PlexCenterCard extends HTMLElement {
     const page = auto === 'fade' ? this._fadePage?.[id] || 0 : 0;
     const body = this._sectionItems(more ? st : { ...st, auto: 'off', scroll: false }, items, listId, page);
     const mode = auto === 'scroll' ? 'scroll auto' : auto === 'fade' ? 'limit fadeset' : st.scroll && more ? 'scroll' : 'limit';
-    return `${head}<div class="plc-sec-body ${mode}${st.item_h !== undefined ? ' fixh' : ''}" data-secbody="${esc(id)}">${body}</div>`;
+    return `${head}<div class="plc-sec-body ${mode}${st.item_h !== undefined ? ' fixh' : st.size !== undefined ? ' sized' : ''}" data-secbody="${esc(id)}">${body}</div>`;
   }
 
   /** The items of a section: all of them when it scrolls, else one page of `show` (fade pages rotate). */
@@ -3973,11 +4045,35 @@ Object.assign(PlexCenterCard.prototype, {
   _volumeHtml(np) {
     const vent = np?.tv?.volume_entity || np?.tv?.pipup;   // the TV's volume player (an AV processor), else PiPup
     const st = vent && this._hass.states[vent];
-    const muted = st?.attributes?.is_volume_muted, lvl = st?.attributes?.volume_level;
-    return `<span class="plc-vol"><button class="plc-icon-btn" data-np="volume_down" title="Volume down"><ha-icon icon="mdi:volume-minus"></ha-icon></button>
-      <button class="plc-icon-btn" data-np="mute" title="${muted ? 'Unmute' : 'Mute'}"><ha-icon icon="mdi:${muted ? 'volume-off' : 'volume-high'}"></ha-icon></button>
-      <button class="plc-icon-btn" data-np="volume_up" title="Volume up"><ha-icon icon="mdi:volume-plus"></ha-icon></button>
-      ${lvl != null ? `<span class="plc-vol-n">${Math.round(Number(lvl) * 100)}</span>` : ''}</span>`;
+    const muted = !!st?.attributes?.is_volume_muted, lvl = st?.attributes?.volume_level;
+    const n = lvl != null && Number.isFinite(Number(lvl)) ? Math.round(Number(lvl) * 100) : null;
+    const style = cfg(this._c, 'np_volume_style');
+    if (style === 'buttons') {
+      return `<span class="plc-vol"><button class="plc-icon-btn" data-np="volume_down" title="Volume down"><ha-icon icon="mdi:volume-minus"></ha-icon></button>
+        <button class="plc-icon-btn" data-np="mute" title="${muted ? 'Unmute' : 'Mute'}"><ha-icon icon="mdi:${muted ? 'volume-off' : 'volume-high'}"></ha-icon></button>
+        <button class="plc-icon-btn" data-np="volume_up" title="Volume up"><ha-icon icon="mdi:volume-plus"></ha-icon></button>
+        ${n != null ? `<span class="plc-vol-n">${n}</span>` : ''}</span>`;
+    }
+    // one rocker: − | the level (tap to mute) | +; the fill bar shades it to the level (and, if allowed, drags to set it)
+    const fill = style === 'fill', drag = fill && !!cfg(this._c, 'np_volume_drag') && n != null;
+    const mid = n != null ? `<span class="plc-vol-n">${n}</span><small>${muted ? 'Muted' : 'Vol'}</small>` : `<ha-icon icon="mdi:${muted ? 'volume-off' : 'volume-high'}"></ha-icon>`;
+    return `<span class="plc-vol plc-vrock${fill ? ' fill' : ''}${muted ? ' muted' : ''}${drag ? ' drag' : ''}"${drag ? ' data-vfill' : ''} style="--v:${n ?? 0}%">
+      ${fill ? '<i class="plc-vfill"></i>' : ''}<button class="plc-vr-b" data-np="volume_down" title="Volume down"><ha-icon icon="mdi:minus"></ha-icon></button>
+      <button class="plc-vr-n" data-np="mute" title="${muted ? 'Unmute' : 'Mute'}">${mid}</button>
+      <button class="plc-vr-b" data-np="volume_up" title="Volume up"><ha-icon icon="mdi:plus"></ha-icon></button></span>`;
+  },
+  /** The fill bar's drag (np_volume_drag): set the volume to where you let go. */
+  _onVolDrag(e) {
+    const bar = e.target.closest?.('[data-vfill]');
+    if (!bar || e.target.closest('.plc-vr-b, .plc-vr-n')) return false;
+    const set = (ev) => { const r = bar.getBoundingClientRect(); const f = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)); bar.style.setProperty('--v', `${Math.round(f * 100)}%`);
+      const nn = bar.querySelector('.plc-vol-n'); if (nn) nn.textContent = Math.round(f * 100); return f; };
+    let f = set(e);
+    const move = (ev) => { f = set(ev); };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); this._control('volume_set', Math.round(f * 100) / 100); };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    e.preventDefault();
+    return true;
   },
 
   _powerHtml(np) {
@@ -5096,7 +5192,9 @@ class PlexCenterCardEditor extends HTMLElement {
         ${st.divider ? col('divider_color', 'Divider color', '#2196f3', false, 'Section text color') : ''}
         <label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsible"${s.collapsible ? ' checked' : ''}>Collapsible, with a header bar</label>
         ${s.collapsible ? `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsed"${s.collapsed ? ' checked' : ''}>Start collapsed</label>` : ''}`)}
-      ${sub('items', 'Layout', `${pick('cycle_mode', 'Cycle content', [['scroll', 'Scroll'], ['fade', 'Fade']], st.cycle_mode)}
+      ${sub('items', 'Layout', `${sl('width', 'Width (share a row)', 10, 100, st.width, ' %')}
+        <p class="plce-hint plce-tight">Under 100 %, sections share a row in Home order (40 % + 60 %, …); a row's sections are as tall as its tallest. A narrower section shows fewer posters, the same size.</p>
+        ${pick('cycle_mode', 'Cycle content', [['scroll', 'Scroll'], ['fade', 'Fade']], st.cycle_mode)}
         ${chk('cycle_chip', 'Cycle chip in the header (turns cycling on and off; shown when there are more than fit)', true)}
         <p class="plce-hint">Cycle content is what the chip (and Auto rotate below) does when it's on.</p>
         ${id === 'continue' ? sel('layout', 'Layout', [['', this._eds().startsWith('phone') ? 'Row (phones\' default)' : 'Banner, one at a time (tablets\' default)'], ['banner', 'Banner, one at a time'], ['row', 'Row'], ['list', 'Column']])
@@ -5125,8 +5223,8 @@ class PlexCenterCardEditor extends HTMLElement {
             ${sl('flag_px', 'Icon size', 12, 40, 20)}` : sel('flag_pos', 'Flag position', [['', 'Top right'], ['bottom', 'Bottom right']])}${col('flag_color', 'Flag colour', '#0099cc')}` : ''}
         <div class="plce-group">Item size</div>
         ${list ? sl('list_w', 'Item width', 220, 4000, st.list_w) : ''}
-        ${sl('item_h', banner ? 'Banner height' : list ? 'Item height' : (st.image === 'fanart' ? 'Fanart height' : 'Poster height'), 60, 600, st.item_h ?? (banner ? 260 : list ? 150 : 240))}
-        <p class="plce-hint">${banner ? 'The banner is this tall; text that doesn\'t fit is cut.' : list ? 'Every item is this tall, whatever its image style; text that doesn\'t fit is cut.' : 'Set: each poster or fanart is this tall and as wide as its shape, and the row scrolls. Not set (reset): they share the width by Items to show.'}</p>
+        ${sl('size', 'Size', 50, 150, st.size ?? 100, ' %')}
+        <p class="plce-hint">${banner ? 'The banner smaller or bigger, the same inside: the picture, the text and the buttons scale with it.' : list ? 'Every item this much of the automatic height (150 px), whatever its image style.' : 'Each poster or fanart this much of its automatic size (from Items to show); a bigger size scrolls.'} Reset: automatic.</p>
         ${this._allHeight()}
         ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
         ${col('border_color', 'Item border', '#000000', true)}
@@ -5233,7 +5331,10 @@ class PlexCenterCardEditor extends HTMLElement {
 
   /** Watching now: what it shows (every screen), and its look per screen. */
   _watchBody() {
-    return `${this._profile(this._visualSubs('watching'), 'watching')}
+    const ws = this._config.sec_styles?.[`watching:${this._eds()}`] || {}, wv = ws.width ?? 100;
+    const width = `<div class="plce-row plce-nowrap"><label class="lbl">Width (share a row)</label><input type="range" data-sid="watching" data-ssk="width" data-unit=" %" min="10" max="100" step="1" value="${wv}">
+      <span class="plce-val" data-sval="watching:width">${wv} %</span>${ws.width !== undefined ? '<button class="plce-reset" data-sreset="watching:width" title="Card default"><ha-icon icon="mdi:restore"></ha-icon></button>' : ''}</div>`;
+    return `${this._profile(`${width}${this._visualSubs('watching')}`, 'watching')}
       ${this._everyScreen(`<p class="plce-hint">Tap a Watching now card to open that TV's controls (full screen on phones).</p>
         ${this._select('watching_tvs', 'Show', [['all', 'Every TV (and other Plex players)'], ['selected', 'Only the TV in the selector']])}
         ${this._check('watching_apps', 'Include TVs playing other apps (HBO Max, Netflix …), from the TV itself')}
@@ -5244,12 +5345,12 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._watchPages()}
         <p class="plce-hint">The controls a card opens are set in <b>Now playing</b>.</p>`)}`;
   }
-  /** One height for every Home section on the screen type being edited (a section's own height wins). */
+  /** One Size for every Home section on the screen type being edited (a section's own Size wins). */
   _allHeight() {
-    const k = `home_item_h_${this._eds()}`, v = this._config[k];
-    return `<div class="plce-row plce-nowrap"><label class="lbl">Every section, this screen</label><input type="range" data-skey="${k}" data-unit="px" min="60" max="600" step="1" value="${v ?? 160}">
-      <span class="plce-val" data-val="${k}">${v ? `${v}px` : 'not set'}</span>${v !== undefined ? `<button class="plce-reset" data-reset="${k}" title="Not set"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>
-      <p class="plce-hint">The height of every Home section on this screen type at once (posters, fanart, lists and the banner). A section's own height above wins.</p>`;
+    const k = `home_size_${this._eds()}`, v = this._config[k];
+    return `<div class="plce-row plce-nowrap"><label class="lbl">Every section, this screen</label><input type="range" data-skey="${k}" data-unit=" %" min="50" max="150" step="1" value="${v ?? 100}">
+      <span class="plce-val" data-val="${k}">${v ? `${v} %` : 'automatic'}</span>${v !== undefined ? `<button class="plce-reset" data-reset="${k}" title="Automatic"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>
+      <p class="plce-hint">The Size of every Home section on this screen type at once. A section's own Size above wins.</p>`;
   }
   /** Showtime Remote: a full-screen remote for a dark room (opening, buttons, lighting, screen, look, sleep timer). */
   _remoteBody() {
@@ -5333,7 +5434,9 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._slider('np_scale', 'Button size', 50, 200, ' %')}
         ${this._slider('np_play_scale', 'Play / Pause size', 50, 200, ' %')}
         ${this._check('np_volume', 'Volume buttons')}
-        <p class="plce-hint">They change the TV's own volume, or its <b>Volume player</b> (an AV processor such as StormAudio), set per TV under Apps &amp; devices → TVs.</p>
+        ${this._c('np_volume') ? `${this._chips('np_volume_style', 'Volume shows as', [['rocker', 'A rocker (− level +)'], ['fill', 'A fill bar'], ['buttons', 'Three buttons']])}
+          ${this._c('np_volume_style') === 'fill' ? this._check('np_volume_drag', 'Drag across the bar to set the volume') : ''}` : ''}
+        <p class="plce-hint">Tap the level to mute. They change the TV's own volume, or its <b>Volume player</b> (an AV processor such as StormAudio), set per TV under Apps &amp; devices → TVs.</p>
         ${this._check('np_power', 'Power button on the poster (asks before turning the TV off)')}
         ${this._check('up_next', 'Up next: near the end of an episode, show the next one with Play next / Stop after this')}
         ${this._c('up_next') ? `${this._slider('up_next_secs', 'Show Up next this long before the end', 15, 600, ' s')}

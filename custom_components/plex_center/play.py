@@ -409,10 +409,10 @@ async def _skip_keys(hass: HomeAssistant, tv: dict[str, Any], key, delta: float,
             _LAST_SEEK[_tv_key(tv)] = (max(0.0, start + a * fwd - b * back), time.time())
 
 
-VOLUME_ACTIONS = {"volume_up", "volume_down", "mute", "power_on", "power_off"}
+VOLUME_ACTIONS = {"volume_up", "volume_down", "volume_set", "mute", "power_on", "power_off"}
 
 
-async def _volume_power(hass: HomeAssistant, tv: dict[str, Any], route: str, action: str) -> None:
+async def _volume_power(hass: HomeAssistant, tv: dict[str, Any], route: str, action: str, value: float | None = None) -> None:
     """Volume through the player that controls the TV (PiPup, ADB or the Plex client); power through power_on / power_off."""
     if action == "power_on":
         await power_on(hass, tv)
@@ -429,6 +429,11 @@ async def _volume_power(hass: HomeAssistant, tv: dict[str, Any], route: str, act
         ent = pip if pip and hass.states.get(pip) else adb if adb and hass.states.get(adb) else tv.get(TV_PLEX)
     if not ent:
         raise HomeAssistantError("No player to change the volume with")
+    if action == "volume_set":   # 0–1 (the fill bar's drag)
+        if ent == adb:
+            raise HomeAssistantError(f"{_name(tv)}: setting the volume to a level needs PiPup or a Volume player")
+        await _svc(hass, "media_player", "volume_set", {"volume_level": max(0.0, min(1.0, float(value or 0)))}, ent)
+        return
     if ent == adb:
         key = {"volume_up": "VOLUME_UP", "volume_down": "VOLUME_DOWN", "mute": "VOLUME_MUTE"}[action]
         await _svc(hass, "androidtv", "adb_command", {"command": f"input keyevent KEYCODE_{key}"}, ent)
@@ -469,7 +474,7 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
     if route is None and action not in VOLUME_ACTIONS:
         raise HomeAssistantError(f"{tv.get(TV_NAME) or 'This TV'} has no usable player")
     if action in VOLUME_ACTIONS:
-        await _volume_power(hass, tv, route, action)
+        await _volume_power(hass, tv, route, action, value)
         return
     if route == "plex":
         ent = tv[TV_PLEX]

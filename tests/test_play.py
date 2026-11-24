@@ -335,3 +335,14 @@ async def test_volume_goes_to_the_volume_player(hass, calls):
     await play.control(hass, tv, "mute")
     assert [(c[1], c[2]["entity_id"]) for c in calls[-2:]] == [("volume_up", "media_player.storm"), ("volume_mute", "media_player.storm")]
     assert calls[-1][2]["is_volume_muted"] is True
+
+
+async def test_volume_set(hass, calls):
+    got = []
+
+    async def vs(call):
+        got.append(dict(call.data))
+    hass.services.async_register("media_player", "volume_set", vs)
+    hass.states.async_set("media_player.storm", "on")
+    await play.control(hass, {"name": "Theater", "pipup": "media_player.pip", "volume_entity": "media_player.storm"}, "volume_set", 0.42)
+    assert got == [{"volume_level": 0.42, "entity_id": "media_player.storm"}]

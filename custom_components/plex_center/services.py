@@ -26,7 +26,7 @@ SLEEP_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("minutes"
                            vol.Optional("after", default=False): cv.boolean})
 CONTROL_SCHEMA = vol.Schema({vol.Required("tv"): cv.string,
                              vol.Required("action"): vol.In(["play", "pause", "play_pause", "stop", "home", "seek", "skip",
-                                                             "volume_up", "volume_down", "mute", "power_on", "power_off"]),
+                                                             "volume_up", "volume_down", "volume_set", "mute", "power_on", "power_off"]),
                              vol.Optional("value"): vol.Coerce(float)})
 
 

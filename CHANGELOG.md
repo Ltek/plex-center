@@ -1,5 +1,27 @@
 # Changelog
 
+## v2026.11.24.124
+
+**Changed**
+- **Size instead of heights:** every section has a **Size** (50–150 % of its automatic size) per screen type, and
+  "Every section, this screen" sets one Size for all. Poster and fanart rows scale their posters (a bigger size
+  scrolls), lists their items (from 150 px), and **Continue watching's banner keeps its shape**: the picture stays
+  16:9 and the text, buttons and spacing scale with it, instead of the picture being cropped and the buttons cut.
+  When the banner's info side gets narrow it drops the less needed bits (button labels, then the time left and the
+  Cycle / View all chips, then the pager). Old heights convert to a Size (lists from 150 px, the banner from
+  260 px, poster rows from 240 px, fanart rows from 135 px).
+- **Now playing volume:** one **rocker**, − | the level | +, with the level in the middle (tap it to mute; it
+  turns red when muted). Volume shows as: Rocker (default), **Fill bar** (the rocker shaded to the level, with an
+  option to drag across it to set the volume, off by default) or the old three buttons.
+
+**Added**
+- **Sections share a row:** a **Width** (10–100 %) per section and screen type, in its Layout (and in Watching
+  now). Sections fill rows in Home order and wrap; a row's sections are as tall as its tallest; a narrower section
+  shows fewer posters, the same size.
+- Control action `volume_set` (0–1), for the fill bar.
+
+Restart Home Assistant after updating (the integration changed).
+
 ## v2026.11.24.123
 
 **Fixed**
