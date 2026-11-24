@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.24.127
+
+**Fixed**
+- **Content Layout, matched rows:** a poster row as the height master was sized by its posters alone, so with the text
+  under them it ran off the bottom of the screen. Now a matched row has one height for every section in it, **the
+  title, pictures and text under them included**: 280 px at Row height 100 %, measured on screen. The master is
+  fitted to it like the others.
+- The measuring didn't start (it looked for the sections before they were on the page), so matched sections kept
+  their first estimate.
+
 ## v2026.11.24.126
 
 **Changed**

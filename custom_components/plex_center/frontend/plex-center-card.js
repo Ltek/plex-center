@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.24.126
+// Version: v2026.11.24.127
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.24.126';
+const BUILD_NUMBER = 'v2026.11.24.127';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1159,7 +1159,7 @@ function rowMaster(c, row, ids = row.ids) {
 /** Rows as saved: a plain list of ids, or { items, match: false, h } when a row has its own options. */
 const packRows = (rows) => rows.filter((r) => r.ids.length).map((r) => (r.master ? { items: [...r.ids], master: r.master } : [...r.ids]));
 const r4 = (x) => Math.round(x * 10000) / 10000;
-const ROW_HEAD = 34, rowBelow = (a) => (a < 1 ? 58 : 0);   // a section's header; the text under a poster (fanart's is on it)
+const ROW_H = 280, ROW_HEAD = 34, rowBelow = (a) => (a < 1 ? 58 : 0);   // a section's header; the text under a poster (fanart's is on it)
 /** Sections sharing a Home row: each one's share of the row (--plc-secw); poster / fanart sizes from the WHOLE row's
  *  width (100cqw), so a narrower section shows fewer items the same size. With a height master, the others are sized
  *  so each whole section (header, pictures, text) is as tall as it: estimated here, then measured (_matchRows).
@@ -1176,9 +1176,10 @@ function rowFit(c, ids, row, W) {
     }
   });
   const m = master && out[master];
-  const H = !m ? 0 : m.kind === 'banner' ? 260 * m.size : ROW_HEAD + m.twn * m.size / m.a + rowBelow(m.a);
+  // the row's height: every matched section, its title, pictures and text included, this tall (the master's Height × 280 px)
+  const H = m ? Math.round(ROW_H * m.size) : 0;
   for (const id of ids) {
-    const o = out[id], secW = W * o.secw / 100 - gs, follow = m && id !== master;
+    const o = out[id], secW = W * o.secw / 100 - gs, follow = !!m && !!o.kind;
     if (o.kind === 'tile') {
       if (follow) {   // as tall as the master: the picture gets what the header and the text leave
         const tw = Math.max(40, H - ROW_HEAD - rowBelow(o.a)) * o.a;
@@ -1191,11 +1192,10 @@ function rowFit(c, ids, row, W) {
         if (o.size > 1) { o.show = Math.max(1, Math.floor((secW + 12) / (want + 12))); o.tw = `calc(${o.twx} * ${r4(o.size)})`; }   // bigger: the row scrolls
       }
     } else if (o.kind === 'banner' && m) {
-      const h = follow ? H : 260 * o.size;
-      o.lih = `${Math.round(h)}px`; o.size = r4(Math.max(0.5, Math.min(1.5, h / 260))); o.follow = !!follow;
+      o.lih = `${H}px`; o.size = r4(Math.max(0.5, Math.min(1.5, H / 260))); o.follow = true;
     }
   }
-  return { ids: out, style: `--plc-gs:${gs}px`, master: m ? master : null };
+  return { ids: out, style: `--plc-gs:${gs}px`, master: m ? master : null, h: H };
 }
 
 /** Inline style for this card's ha-card (background, border, radius, shadow); sanitized, never a stylesheet. */
@@ -3103,15 +3103,15 @@ class PlexCenterCard extends HTMLElement {
     });
     main.querySelectorAll('.plc-crow[data-master] > .plc-sec').forEach((x) => this._rowRO.observe(x));
   }
-  /** Make each follower section as tall as its row's height master: a poster / fanart row by its picture height (the
-   *  header and the text stay as they are), a banner by its height. Converges in a pass or two; capped. */
+  /** Make each matched section exactly the row's height, measured: a poster / fanart row by its picture height (the
+   *  header and the text under the posters stay as they are), a banner by its height. Converges in a pass or two; capped. */
   _matchRows() {
     for (const row of this._root?.querySelectorAll?.('.plc-crow[data-master]') || []) {
-      const m = row.querySelector(`.plc-sec[data-sec="${row.dataset.master}"]`), H = m?.getBoundingClientRect().height;
+      const H = Number(row.dataset.h);
       if (!H) continue;
       for (const sec of row.querySelectorAll('.plc-sec[data-sec]')) {
         const f = this._c._fit?.[sec.dataset.sec];
-        if (sec === m || !f?.follow || (f.tries = (f.tries || 0) + 1) > 8) continue;
+        if (!f?.follow || (f.tries = (f.tries || 0) + 1) > 8) continue;
         const sh = sec.getBoundingClientRect().height;
         if (!sh || Math.abs(sh - H) < 1.5) continue;
         if (f.kind === 'banner') {
@@ -3135,12 +3135,12 @@ class PlexCenterCard extends HTMLElement {
       if (!ids.length) continue;
       if (ids.length === 1) { parts.push(box(ids[0])); continue; }   // alone in its row: the whole width, as always
       const f = rowFit(this._c, ids, r, W); Object.assign(fit, f.ids);
-      parts.push(`<div class="plc-crow${f.master ? ' match' : ''}"${f.master ? ` data-master="${esc(f.master)}"` : ''} style="${f.style}">${ids.map((id) => box(id, f.ids[id].secw, f.ids[id].follow)).join('')}</div>`);
+      parts.push(`<div class="plc-crow${f.master ? ' match' : ''}"${f.master ? ` data-master="${esc(f.master)}" data-h="${f.h}"` : ''} style="${f.style}">${ids.map((id) => box(id, f.ids[id].secw, f.ids[id].follow)).join('')}</div>`);
     }
     this._c._fit = fit;
-    this._watchRows(main);
     if (this._v.query) setTimeout(() => this._homeSearch(), 0);
     main.innerHTML = parts.join('') || '<div class="plc-msg">Nothing on the Home tab. Turn sections on in the card editor, or pick a library above.</div>';
+    this._watchRows(main);
     this._paintWatching();
     this._paintUpcoming();
     this._paintPlexHubs();
@@ -5245,7 +5245,7 @@ class PlexCenterCardEditor extends HTMLElement {
       const mst = M ? secStyle(c, M) : null, ms = M ? this._secS(M) : {};
       const rowH = M ? `<div class="plce-row plce-nowrap"><label class="lbl">Row height</label><input type="range" data-sid="${esc(M)}" data-ssk="size" data-unit=" %" min="50" max="150" step="1" value="${mst.size ?? 100}">
           <span class="plce-val" data-sval="${esc(M)}:size">${mst.size ?? 100} %</span>${ms.size !== undefined ? `<button class="plce-reset" data-sreset="${esc(M)}:size" title="Default"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>
-        <p class="plce-hint plce-tight">The Height of <b>${esc(labels.get(M) || M)}</b>, the row's height master; ${esc(row.ids.filter((x) => x !== M && rowKind(c, x)).map((x) => labels.get(x) || x).join(', '))} ${row.ids.filter((x) => x !== M && rowKind(c, x)).length > 1 ? 'are' : 'is'} sized so the whole section (title, pictures and text) is as tall.</p>` : '';
+        <p class="plce-hint plce-tight">Every matched section in this row is ${Math.round(280 * (mst.size ?? 100) / 100)} px tall, its title, pictures and the text under them included (100 % = 280 px). Saved as the Height of <b>${esc(labels.get(M) || M)}</b>, the row's height master.</p>` : '';
       const height = !k || (M && rowKind(c, sel)) ? '' : `${range('size', 'Height', 50, 150, st.size ?? 100, s.size !== undefined)}
           <p class="plce-hint plce-tight">${k === 'banner' ? 'The banner smaller or bigger, the same inside: the picture, the text and the buttons scale with it.' : k === 'list' ? 'Every item this much of 150 px.' : k === 'own' ? 'This section has its own Items to show (in its Layout), so its items share out its width; Height scales them from there.' : 'Each poster or fanart this much of its automatic size; when they don\'t all fit, the row scrolls.'}</p>`;
       const rowBox = pickM || rowH ? `<div class="plce-group">This row</div>${pickM}${rowH}` : '';
