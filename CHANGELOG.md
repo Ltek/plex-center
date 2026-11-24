@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.24.129
+
+**Fixed**
+- **Continue watching banner:** when its row is short, its text and buttons scale down until they all fit inside the
+  banner, instead of the pager row hanging off the bottom.
+- **Bottom margin** is now from the card's edge: at 0 the last row touches the bottom of the card. Before, the card's
+  padding and a hidden 14 px gap still sat under it.
+- **Fill the screen height:** the space taken by the dashboard under the card is measured, not added up pass after
+  pass, so rows no longer end up too short.
+
+**Changed**
+- The Content Layout chips (Row height from, Copy the layout from, Own row, Content Layout) look like the editor's
+  other chips.
+
 ## v2026.11.24.128
 
 **Added**
