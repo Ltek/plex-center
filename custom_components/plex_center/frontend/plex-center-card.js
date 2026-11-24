@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.24.125
+// Version: v2026.11.24.126
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.24.125';
+const BUILD_NUMBER = 'v2026.11.24.126';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -922,8 +922,9 @@ function normalizeConfig(raw) {
     const lk = `home_layout_${sc}`;   // Content Layout rows
     if (Array.isArray(c[lk])) {
       const seen = new Set();
-      const rows = c[lk].map((r) => (Array.isArray(r) ? { ids: r } : r && typeof r === 'object' && Array.isArray(r.items) ? { ids: r.items, match: r.match, h: Number(r.h) || 100 } : null))
-        .filter(Boolean).map((r) => ({ ...r, h: Math.max(30, Math.min(200, r.h ?? 100)), ids: r.ids.filter((id) => typeof id === 'string' && ok.has(id) && !seen.has(id) && seen.add(id)) }));
+      const rows = c[lk].map((r) => (Array.isArray(r) ? { ids: r } : r && typeof r === 'object' && Array.isArray(r.items) ? { ids: r.items, master: r.match === false ? 'none' : r.master } : null))
+        .filter(Boolean).map((r) => ({ ...r, ids: r.ids.filter((id) => typeof id === 'string' && ok.has(id) && !seen.has(id) && seen.add(id)) }))
+        .map((r) => ({ ...r, master: r.master === 'none' || r.ids.includes(r.master) ? r.master : undefined }));
       const packed = packRows(rows);
       if (packed.length) c[lk] = packed; else delete c[lk];
     } else delete c[lk];
@@ -1076,7 +1077,7 @@ function secVars(st) {
   const s = st.s, clean = (v) => String(v).replace(/[;{}<>]/g, ''), v = [`--plc-li-w:${st.list_w}px`, `--plc-show:${st.show}`, `--plc-fade-ms:${st.fade_ms}ms`];
   if (st.item_h !== undefined) v.push(`--plc-li-h:${Number(st.item_h)}px`);
   if (st.size !== undefined) v.push(`--plc-size:${st.size / 100}`);
-  if (st.fit) { v.push(`--plc-secw:${st.fit.secw}%`); if (st.fit.tw) v.push(`--plc-tw:${st.fit.tw}`); }
+  if (st.fit) { v.push(`--plc-secw:${st.fit.secw}%`); if (st.fit.tw) v.push(`--plc-tw:${st.fit.twm || st.fit.tw}`); }
   if (s.border_color) v.push('--plc-li-bdw:2px');
   for (const n of [1, 2, 3, 4]) {
     if (s[`l${n}_px`] !== undefined) v.push(`--plc-l${n}-px:${Number(s[`l${n}_px`])}px`);
@@ -1130,57 +1131,71 @@ function homeRows(c) {
     const o = Array.isArray(r) ? { items: r } : r && typeof r === 'object' ? r : null;
     if (!o || !Array.isArray(o.items)) continue;
     const ids = o.items.filter((id) => known.has(id) && !seen.has(id) && seen.add(id));
-    if (ids.length) rows.push({ ids, match: o.match !== false, h: Number(o.h) || 100 });
+    if (ids.length) rows.push({ ids, master: o.match === false ? 'none' : typeof o.master === 'string' ? o.master : undefined });
   }
   let cur = null, used = 0;
   for (const id of order) {
     if (seen.has(id)) continue;
     const w = secStyle(c, id).width;
-    if (!cur || used + w > 100.5) { cur = { ids: [], match: true, h: 100 }; rows.push(cur); used = 0; }
+    if (!cur || used + w > 100.5) { cur = { ids: [] }; rows.push(cur); used = 0; }
     cur.ids.push(id); used += w;
   }
   return rows;
 }
+/** What a section is to a row's height: a banner, a poster / fanart row (tile), or neither (lists, Watching now, its own Items to show). */
+function rowKind(c, id) {
+  if (id === 'watching' || id === 'cards') return '';
+  const st = secStyle({ ...c, _fit: undefined }, id);
+  return st.banner ? 'banner' : st.layout === 'row' && !(st.s.show ?? st.s.max) ? 'tile' : '';
+}
+/** The row's height master: the one picked, else the first banner / poster row in it; null when matching is off or
+ *  nothing else in the row can follow it. */
+function rowMaster(c, row, ids = row.ids) {
+  if (row.master === 'none' || ids.length < 2) return null;
+  const ok = ids.filter((id) => rowKind(c, id));
+  const m = ok.includes(row.master) ? row.master : ok[0];
+  return m && ok.some((id) => id !== m) ? m : null;
+}
 /** Rows as saved: a plain list of ids, or { items, match: false, h } when a row has its own options. */
-const packRows = (rows) => rows.filter((r) => r.ids.length).map((r) => (r.match !== false && (r.h ?? 100) === 100 ? [...r.ids]
-  : { items: [...r.ids], ...(r.match === false ? { match: false } : {}), ...((r.h ?? 100) !== 100 ? { h: r.h } : {}) }));
+const packRows = (rows) => rows.filter((r) => r.ids.length).map((r) => (r.master ? { items: [...r.ids], master: r.master } : [...r.ids]));
 const r4 = (x) => Math.round(x * 10000) / 10000;
+const ROW_HEAD = 34, rowBelow = (a) => (a < 1 ? 58 : 0);   // a section's header; the text under a poster (fanart's is on it)
 /** Sections sharing a Home row: each one's share of the row (--plc-secw); poster / fanart sizes from the WHOLE row's
- *  width (100cqw), so a narrower section shows fewer items the same size; with Match heights, one picture height for the
- *  row (the smallest section's, times the row's Height), banners included. W: the row's width in px, to count what fits. */
+ *  width (100cqw), so a narrower section shows fewer items the same size. With a height master, the others are sized
+ *  so each whole section (header, pictures, text) is as tall as it: estimated here, then measured (_matchRows).
+ *  W: the row's width in px, to count what fits. */
 function rowFit(c, ids, row, W) {
   const n = ids.length, gs = r4(16 * (n - 1) / n), base = { ...c, _fit: undefined };
   const sts = ids.map((id) => secStyle(base, id)), sum = sts.reduce((a, st) => a + st.width, 0) || 100;
-  const out = {}, nat = [];
+  const out = {}, master = rowMaster(c, row, ids);
   sts.forEach((st, i) => {
-    const id = ids[i], o = out[id] = { secw: r4(st.width / sum * 100) };
-    if (id === 'watching' || id === 'cards') return;
-    if (st.banner) { Object.assign(o, { kind: 'banner' }); nat.push(['260px', 260]); return; }
-    if (st.layout !== 'row' || (st.s.show ?? st.s.max)) return;   // a list, or its own Items to show: fills its width
-    const N = st.show, a = st.image === 'fanart' ? 16 / 9 : 2 / 3;
-    Object.assign(o, { kind: 'tile', a, N, twx: `((100cqw - ${(N - 1) * 12}px) / ${N} - 4px)`, twn: (W - (N - 1) * 12) / N - 4, size: (st.size ?? 100) / 100 });
-    nat.push([`(${o.twx} / ${r4(a)})`, o.twn / a]);
-  });
-  const match = row.match !== false && nat.length > 0 && n > 1, h = (row.h ?? 100) / 100;
-  const r0 = match ? Math.min(...nat.map((x) => x[1])) * h : 0, fill = [];
-  for (const id of ids) {
-    const o = out[id], secW = W * o.secw / 100 - gs;
+    const id = ids[i], o = out[id] = { secw: r4(st.width / sum * 100), kind: rowKind(c, id), size: (st.size ?? 100) / 100 };
     if (o.kind === 'tile') {
-      // how many fit at the wanted size, rounded; then the tiles share the section's width exactly (no gap at the end)
-      const want = match ? r0 * o.a : o.twn * o.size;
-      o.show = Math.max(1, Math.round((secW + 12) / (want + 12)));
-      o.fx = `((100cqw * ${r4(o.secw / 100)} - ${gs}px - ${(o.show - 1) * 12}px) / ${o.show})`;
-      if (o.size > 1 && !match) { o.show = Math.max(1, Math.floor((secW + 12) / (want + 12))); o.fx = `(${o.twx} * ${r4(o.size)})`; }   // bigger than automatic: the row scrolls
-      fill.push(`(${o.fx} / ${r4(o.a)})`);
-    } else if (o.kind === 'banner') fill.push(`${r4(260 * h)}px`);
-  }
+      const N = st.show;
+      Object.assign(o, { a: st.image === 'fanart' ? 16 / 9 : 2 / 3, twx: `((100cqw - ${(N - 1) * 12}px) / ${N} - 4px)`, twn: (W - (N - 1) * 12) / N - 4 });
+    }
+  });
+  const m = master && out[master];
+  const H = !m ? 0 : m.kind === 'banner' ? 260 * m.size : ROW_HEAD + m.twn * m.size / m.a + rowBelow(m.a);
   for (const id of ids) {
-    const o = out[id];
-    if (o.kind === 'tile') o.tw = match ? `calc(var(--plc-rh) * ${r4(o.a)})` : `calc${o.fx}`;
-    else if (o.kind === 'banner' && match) { o.lih = 'var(--plc-rh)'; o.size = r4(Math.max(0.5, Math.min(1.5, r0 / 260))); }
+    const o = out[id], secW = W * o.secw / 100 - gs, follow = m && id !== master;
+    if (o.kind === 'tile') {
+      if (follow) {   // as tall as the master: the picture gets what the header and the text leave
+        const tw = Math.max(40, H - ROW_HEAD - rowBelow(o.a)) * o.a;
+        o.show = Math.max(1, Math.round((secW + 12) / (tw + 12)));
+        o.tw = `${Math.round(tw * 10) / 10}px`; o.follow = true;
+      } else {
+        const want = o.twn * o.size;   // how many fit at the wanted size, rounded; then they share the width exactly
+        o.show = Math.max(1, Math.round((secW + 12) / (want + 12)));
+        o.tw = `calc((100cqw * ${r4(o.secw / 100)} - ${gs}px - ${(o.show - 1) * 12}px) / ${o.show})`;
+        if (o.size > 1) { o.show = Math.max(1, Math.floor((secW + 12) / (want + 12))); o.tw = `calc(${o.twx} * ${r4(o.size)})`; }   // bigger: the row scrolls
+      }
+    } else if (o.kind === 'banner' && m) {
+      const h = follow ? H : 260 * o.size;
+      o.lih = `${Math.round(h)}px`; o.size = r4(Math.max(0.5, Math.min(1.5, h / 260))); o.follow = !!follow;
+    }
   }
-  const style = `--plc-gs:${gs}px${match ? `;--plc-rh:min(${fill.join(', ')})` : ''}`;
-  return { ids: out, style, match };
+  return { ids: out, style: `--plc-gs:${gs}px`, master: m ? master : null };
 }
 
 /** Inline style for this card's ha-card (background, border, radius, shadow); sanitized, never a stylesheet. */
@@ -1789,12 +1804,14 @@ const CARD_CSS = `
 /* Content Layout: sections sharing a row take their Width of it (between them they fill it); posters / fanart are sized
    from the whole row's width (cqw), so a narrower section shows fewer of them, the same size */
 .plc-crow { display: flex; gap: 16px; align-items: flex-start; container-type: inline-size; }
-.plc-crow.match { align-items: stretch; }
+.plc-crow.match { align-items: flex-start; }
 .plc-crow > * { flex: 1 1 calc(var(--plc-secw, 100%) - var(--plc-gs, 0px)); min-width: 0; }
 .plc-sec-body.fit .plc-row > .plc-tile.plc-tile { flex: 0 0 var(--plc-tw); }
 .plc-sec-body.fit .plc-row { overflow-x: auto; }
 .plc-sec-body.fit.limit .plc-row { overflow-x: hidden; }
 .plc-main.searching > .plc-crow { display: none; }
+/* a section sized to its row's height master: one line per text line, so narrower posters don't wrap into more lines */
+.plc-sec[data-follow] .plc-tile .plc-t, .plc-sec[data-follow] .plc-tile .plc-s { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: none; }
 /* an Item border colour on rows: a ring inside each poster */
 .plc-row .plc-poster::before { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: inherit; pointer-events: none;
   border: var(--plc-li-bdw, 0px) solid var(--plc-li-bd, transparent); }
@@ -3076,19 +3093,52 @@ class PlexCenterCard extends HTMLElement {
     return items.filter((it) => (it.type === 'movie' ? k.movie : ['episode', 'show', 'season'].includes(it.type) ? k.show : k.movie && k.show));
   }
 
+  /** Watch the rows with a height master: whenever a section changes size, size the others to match it. */
+  _watchRows(main) {
+    this._rowRO?.disconnect();
+    if (typeof ResizeObserver !== 'function') return;
+    this._rowRO = new ResizeObserver(() => {
+      if (this._mrq) return;
+      this._mrq = (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : setTimeout)(() => { this._mrq = null; this._matchRows(); });
+    });
+    main.querySelectorAll('.plc-crow[data-master] > .plc-sec').forEach((x) => this._rowRO.observe(x));
+  }
+  /** Make each follower section as tall as its row's height master: a poster / fanart row by its picture height (the
+   *  header and the text stay as they are), a banner by its height. Converges in a pass or two; capped. */
+  _matchRows() {
+    for (const row of this._root?.querySelectorAll?.('.plc-crow[data-master]') || []) {
+      const m = row.querySelector(`.plc-sec[data-sec="${row.dataset.master}"]`), H = m?.getBoundingClientRect().height;
+      if (!H) continue;
+      for (const sec of row.querySelectorAll('.plc-sec[data-sec]')) {
+        const f = this._c._fit?.[sec.dataset.sec];
+        if (sec === m || !f?.follow || (f.tries = (f.tries || 0) + 1) > 8) continue;
+        const sh = sec.getBoundingClientRect().height;
+        if (!sh || Math.abs(sh - H) < 1.5) continue;
+        if (f.kind === 'banner') {
+          f.lihm = `${Math.round(H)}px`; sec.style.setProperty('--plc-li-h', f.lihm); sec.style.setProperty('--plc-size', String(r4(Math.max(0.5, Math.min(1.5, H / 260)))));
+        } else if (f.kind === 'tile') {
+          const ih = sec.querySelector('.plc-row .plc-poster')?.getBoundingClientRect().height;
+          if (!ih) continue;
+          f.twm = `${Math.round(Math.max(40, ih + H - sh) * f.a * 10) / 10}px`; sec.style.setProperty('--plc-tw', f.twm);
+        }
+      }
+    }
+  }
+
   _renderHome(main) {
     const parts = [], fit = {};
     this._c._fit = undefined;
     const W = main.clientWidth || this._root?.querySelector?.('.plc')?.clientWidth || 1200;
-    const box = (id, w) => (id === 'cards' ? `<div class="plc-cards"${w ? ` style="--plc-secw:${w}%"` : ''}></div>` : `<div class="plc-sec" data-sec="${esc(id)}"${w ? ` style="--plc-secw:${w}%"` : ''}></div>`);
+    const box = (id, w, fol) => (id === 'cards' ? `<div class="plc-cards"${w ? ` style="--plc-secw:${w}%"` : ''}></div>` : `<div class="plc-sec" data-sec="${esc(id)}"${fol ? ' data-follow' : ''}${w ? ` style="--plc-secw:${w}%"` : ''}></div>`);
     for (const r of homeRows(this._c)) {
       const ids = r.ids.filter((id) => homeVisible(this._c, id) && !(id === 'watching' && !cfg(this._c, 'watching_home')));
       if (!ids.length) continue;
       if (ids.length === 1) { parts.push(box(ids[0])); continue; }   // alone in its row: the whole width, as always
       const f = rowFit(this._c, ids, r, W); Object.assign(fit, f.ids);
-      parts.push(`<div class="plc-crow${f.match ? ' match' : ''}" style="${f.style}">${ids.map((id) => box(id, f.ids[id].secw)).join('')}</div>`);
+      parts.push(`<div class="plc-crow${f.master ? ' match' : ''}"${f.master ? ` data-master="${esc(f.master)}"` : ''} style="${f.style}">${ids.map((id) => box(id, f.ids[id].secw, f.ids[id].follow)).join('')}</div>`);
     }
     this._c._fit = fit;
+    this._watchRows(main);
     if (this._v.query) setTimeout(() => this._homeSearch(), 0);
     main.innerHTML = parts.join('') || '<div class="plc-msg">Nothing on the Home tab. Turn sections on in the card editor, or pick a library above.</div>';
     this._paintWatching();
@@ -3384,7 +3434,7 @@ class PlexCenterCard extends HTMLElement {
     }
     applyLook(sec, lk);
     sec.style.setProperty('--plc-fade-ms', `${Math.max(0, Number(st.fade_ms))}ms`);
-    if (st.fit?.lih) { sec.style.setProperty('--plc-li-h', st.fit.lih); sec.style.setProperty('--plc-size', String(st.fit.size)); }   // Match heights
+    if (st.fit?.lih) { sec.style.setProperty('--plc-li-h', st.fit.lihm || st.fit.lih); sec.style.setProperty('--plc-size', String(st.fit.size)); }   // Match heights
     else if (st.item_h !== undefined) { sec.style.setProperty('--plc-li-h', `${Number(st.item_h)}px`); sec.style.setProperty('--plc-size', String(st.size / 100)); }
     else { sec.style.removeProperty('--plc-li-h'); sec.style.removeProperty('--plc-size'); }
     if (st.fit) sec.style.setProperty('--plc-secw', `${st.fit.secw}%`); else sec.style.removeProperty('--plc-secw');
@@ -4568,6 +4618,9 @@ const EDITOR_CSS = `
 .plce-lblk .d { font-size: 11px; color: var(--secondary-text-color); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .plce-lblk.on { border-color: var(--ltek-c-accent, var(--primary-color)); box-shadow: inset 0 0 0 1px var(--ltek-c-accent, var(--primary-color)); }
 .plce-lblk.off { opacity: .45; }
+.plce-lblk.match { border-left: 4px solid var(--ltek-c-accent, var(--primary-color)); }
+.plce-lblk .hm { --mdc-icon-size: 14px; color: var(--secondary-text-color); margin-right: 3px; vertical-align: -2px; }
+.plce-lblk .hm.master { color: var(--ltek-c-accent, var(--primary-color)); }
 .plce-lsel { border: 1px solid var(--divider-color, #444); border-radius: 10px; padding: 8px 10px; margin: 0 0 10px; }
         .plce {
           /* Font sizes (by role, not by pixel) */
@@ -5170,13 +5223,15 @@ class PlexCenterCardEditor extends HTMLElement {
     this._laySel = sel;
     const ri = rows.findIndex((r) => r.ids.includes(sel)), row = rows[ri], ci = row ? row.ids.indexOf(sel) : -1;
     const kindOf = (id) => { if (id === 'watching' || id === 'cards') return ''; const st = secStyle(c, id); return st.banner ? 'banner' : st.layout === 'list' ? 'list' : (st.s.show ?? st.s.max) ? 'own' : 'tile'; };
-    const inMatch = (id, r) => r.match && r.ids.length > 1 && ['tile', 'banner'].includes(kindOf(id)) && r.ids.some((x) => ['tile', 'banner'].includes(kindOf(x)));
-    const hTxt = (id, r) => { const k = kindOf(id); return !k ? '' : inMatch(id, r) ? ` · H row ${r.h} %` : ` · H ${secStyle(c, id).size ?? 100} %`; };
+    const masters = rows.map((r) => rowMaster(c, r));   // each row's height master (null: no matching)
+    const follows = (id, i) => masters[i] && id !== masters[i] && !!rowKind(c, id);
+    const hTxt = (id, i) => { const k = kindOf(id); return !k || follows(id, i) ? '' : ` · H ${secStyle(c, id).size ?? 100} %`; };
     const prev = rows.map((r, i) => `<div class="plce-lrow"><div class="plce-lrow-b">${r.ids.map((id) => {
-      const st = secStyle(c, id), hid = !homeVisible(c, id);
-      return `<button class="plce-lblk${id === sel ? ' on' : ''}${hid ? ' off' : ''}" data-lsel="${esc(id)}" style="flex:${st.width} 1 0"><span class="n">${esc(labels.get(id) || id)}</span>
-        <span class="d">${hid ? 'Hidden' : `W ${st.width} %${hTxt(id, r)}`}</span></button>`;
-    }).join('')}</div>${r.ids.length > 1 ? `<button class="plce-chip${r.match ? ' on' : ''}" data-lmatch="${i}" title="Match heights: every poster, fanart and banner in this row as tall as each other"><ha-icon icon="mdi:arrow-expand-vertical"></ha-icon>Match</button>` : ''}</div>`).join('');
+      const st = secStyle(c, id), hid = !homeVisible(c, id), isM = masters[i] === id, fol = follows(id, i);
+      return `<button class="plce-lblk${id === sel ? ' on' : ''}${hid ? ' off' : ''}${isM || fol ? ' match' : ''}" data-lsel="${esc(id)}" style="flex:${st.width} 1 0">
+        <span class="n">${isM || fol ? `<ha-icon class="hm${isM ? ' master' : ''}" icon="mdi:arrow-expand-vertical" title="${isM ? 'Height master: the row is this tall' : 'Follows the height master'}"></ha-icon>` : ''}${esc(labels.get(id) || id)}</span>
+        <span class="d">${hid ? 'Hidden' : `W ${st.width} %${hTxt(id, i)}`}</span></button>`;
+    }).join('')}</div></div>`).join('');
     let tools = '';
     if (row) {
       const st = secStyle(c, sel), k = kindOf(sel), hid = !homeVisible(c, sel), name = labels.get(sel) || sel, s = this._secS(sel);
@@ -5184,12 +5239,16 @@ class PlexCenterCardEditor extends HTMLElement {
       const range = (key, label, min, max, v, own) => `<div class="plce-row plce-nowrap"><label class="lbl">${label}</label><input type="range" data-sid="${esc(sel)}" data-ssk="${key}" data-unit=" %" min="${min}" max="${max}" step="1" value="${v}">
         <span class="plce-val" data-sval="${esc(sel)}:${key}">${v} %</span>${own ? `<button class="plce-reset" data-sreset="${esc(sel)}:${key}" title="Default"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>`;
       const alone = row.ids.length === 1;
-      const height = !k ? '' : inMatch(sel, row)
-        ? `<div class="plce-row plce-nowrap"><label class="lbl">Row height</label><input type="range" data-lrowh="${ri}" data-unit=" %" min="30" max="200" step="1" value="${row.h}">
-            <span class="plce-val" data-lrowv="${ri}">${row.h} %</span></div>
-          <p class="plce-hint plce-tight">Match is on for this row: its posters, fanart and banner are all as tall as the smallest of them, times Row height.</p>`
-        : `${range('size', 'Height', 50, 150, st.size ?? 100, s.size !== undefined)}
+      const M = masters[ri], elig = row.ids.filter((id) => rowKind(c, id));
+      const pickM = row.ids.length > 1 && elig.length > 1 ? `<div class="plce-chiprow"><span class="plce-chiplbl">Row height from</span>
+          <button class="plce-chip${!M ? ' on' : ''}" data-lmaster="${ri}|none">No matching</button>${elig.map((id) => `<button class="plce-chip${M === id ? ' on' : ''}" data-lmaster="${ri}|${esc(id)}"><ha-icon icon="mdi:arrow-expand-vertical"></ha-icon>${esc(labels.get(id) || id)}</button>`).join('')}</div>` : '';
+      const mst = M ? secStyle(c, M) : null, ms = M ? this._secS(M) : {};
+      const rowH = M ? `<div class="plce-row plce-nowrap"><label class="lbl">Row height</label><input type="range" data-sid="${esc(M)}" data-ssk="size" data-unit=" %" min="50" max="150" step="1" value="${mst.size ?? 100}">
+          <span class="plce-val" data-sval="${esc(M)}:size">${mst.size ?? 100} %</span>${ms.size !== undefined ? `<button class="plce-reset" data-sreset="${esc(M)}:size" title="Default"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>
+        <p class="plce-hint plce-tight">The Height of <b>${esc(labels.get(M) || M)}</b>, the row's height master; ${esc(row.ids.filter((x) => x !== M && rowKind(c, x)).map((x) => labels.get(x) || x).join(', '))} ${row.ids.filter((x) => x !== M && rowKind(c, x)).length > 1 ? 'are' : 'is'} sized so the whole section (title, pictures and text) is as tall.</p>` : '';
+      const height = !k || (M && rowKind(c, sel)) ? '' : `${range('size', 'Height', 50, 150, st.size ?? 100, s.size !== undefined)}
           <p class="plce-hint plce-tight">${k === 'banner' ? 'The banner smaller or bigger, the same inside: the picture, the text and the buttons scale with it.' : k === 'list' ? 'Every item this much of 150 px.' : k === 'own' ? 'This section has its own Items to show (in its Layout), so its items share out its width; Height scales them from there.' : 'Each poster or fanart this much of its automatic size; when they don\'t all fit, the row scrolls.'}</p>`;
+      const rowBox = pickM || rowH ? `<div class="plce-group">This row</div>${pickM}${rowH}` : '';
       tools = `<div class="plce-lsel"><div class="plce-item-h"><span class="plce-name">${esc(name)}</span>
           ${mv('left', 'arrow-left', 'Move left', ci > 0)}${mv('right', 'arrow-right', 'Move right', ci < row.ids.length - 1)}
           ${mv('up', 'arrow-up', 'Move to the row above', !(ri === 0 && alone))}${mv('down', 'arrow-down', 'Move to the row below', !(ri === rows.length - 1 && alone))}
@@ -5199,10 +5258,10 @@ class PlexCenterCardEditor extends HTMLElement {
         ${alone ? '' : '<div class="plce-row"><button class="plce-chip" data-lmv="split"><ha-icon icon="mdi:table-row-plus-after"></ha-icon>Own row</button></div>'}
         ${range('width', 'Width', 10, 100, st.width, s.width !== undefined)}
         <p class="plce-hint plce-tight">Its share of the row: the sections in a row fill it between them. Posters keep their size, so a narrower section shows fewer.</p>
-        ${height}</div>`;
+        ${height}${rowBox}</div>`;
     }
     const others = SCREENS.filter(([x]) => x !== sc);
-    return this._profile(`<p class="plce-hint plce-tight">Tap a section to move it or size it. ← → move it along its row, ↑ ↓ into the row above or below (or a new row).</p>
+    return this._profile(`<p class="plce-hint plce-tight">Tap a section to move it or size it. ← → move it along its row, ↑ ↓ into the row above or below (or a new row). A coloured left edge marks sections matched in height; the coloured <ha-icon icon="mdi:arrow-expand-vertical" style="--mdc-icon-size:14px;color:var(--ltek-c-accent, var(--primary-color))"></ha-icon> is the row's height master.</p>
       <div class="plce-lay">${prev}</div>${tools}
       ${this._allHeight()}
       <div class="plce-chiprow"><span class="plce-chiplbl">Copy the layout from</span>${others.map(([x, nm]) => `<button class="plce-chip" data-lcopy="${x}">${esc(nm)}</button>`).join('')}</div>`, 'content');
@@ -5897,12 +5956,12 @@ class PlexCenterCardEditor extends HTMLElement {
     }));
     // Content Layout
     const layRows = () => homeRows(this._layCfg()).map((r) => ({ ...r, ids: [...r.ids] }));
-    const saveRows = (rows) => { const sc = this._eds(); this._config[`home_layout_${sc}`] = packRows(rows); delete this._config[`home_order_${sc}`]; this._emit(); this._render(); };
+    const saveRows = (rows) => { const sc = this._eds(); this._config[`home_layout_${sc}`] = packRows(rows.map((r) => ({ ...r, master: r.master === 'none' || r.ids.includes(r.master) ? r.master : undefined }))); delete this._config[`home_order_${sc}`]; this._emit(); this._render(); };
     all('[data-lsel]', (b) => b.addEventListener('click', () => { this._laySel = b.dataset.lsel; this._render(); }));
     all('[data-lmv]', (b) => b.addEventListener('click', () => {
       const rows = layRows(), id = this._laySel, ri = rows.findIndex((r) => r.ids.includes(id));
       if (ri < 0) return;
-      const r = rows[ri], ci = r.ids.indexOf(id), m = b.dataset.lmv, solo = () => ({ ids: [id], match: true, h: 100 });
+      const r = rows[ri], ci = r.ids.indexOf(id), m = b.dataset.lmv, solo = () => ({ ids: [id] });
       if (m === 'left' || m === 'right') { const j = ci + (m === 'left' ? -1 : 1); if (j < 0 || j >= r.ids.length) return; [r.ids[ci], r.ids[j]] = [r.ids[j], r.ids[ci]]; }
       else if (m === 'split') { if (r.ids.length < 2) return; r.ids.splice(ci, 1); rows.splice(ri + 1, 0, solo()); }
       else {
@@ -5913,11 +5972,10 @@ class PlexCenterCardEditor extends HTMLElement {
       }
       saveRows(rows.filter((x) => x.ids.length));
     }));
-    all('[data-lmatch]', (b) => b.addEventListener('click', () => { const rows = layRows(), r = rows[Number(b.dataset.lmatch)]; if (!r) return; r.match = !r.match; saveRows(rows); }));
-    all('[data-lrowh]', (el) => {
-      el.addEventListener('input', () => { const o = this.querySelector(`[data-lrowv="${el.dataset.lrowh}"]`); if (o) o.textContent = `${el.value} %`; });
-      el.addEventListener('change', () => { const rows = layRows(), r = rows[Number(el.dataset.lrowh)]; if (!r) return; r.h = Number(el.value); saveRows(rows); });
-    });
+    all('[data-lmaster]', (b) => b.addEventListener('click', () => {
+      const [i, m] = b.dataset.lmaster.split('|'), rows = layRows(), r = rows[Number(i)];
+      if (!r) return; r.master = m; saveRows(rows);
+    }));
     all('[data-lcopy]', (b) => b.addEventListener('click', () => {
       const from = b.dataset.lcopy, to = this._eds(), c = this._config;
       for (const k of ['home_layout', 'home_order', 'home_hidden', 'home_size']) {
@@ -6537,7 +6595,7 @@ Object.assign(PlexCenterCard.prototype, {
   },
 });
 
-PlexCenterCard._test = { homeRows, rowFit, packRows, rmEntityCall, RM_SLOTS, lookDefault, SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { homeRows, rowFit, rowMaster, packRows, rmEntityCall, RM_SLOTS, lookDefault, SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 

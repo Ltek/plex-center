@@ -1,5 +1,16 @@
 # Changelog
 
+## v2026.11.24.126
+
+**Changed**
+- **Content Layout: a height master per row.** Each shared row takes its height from one section, the **height
+  master** (the first banner or poster row by default; pick another, or **No matching**, under **This row → Row
+  height from**). The other sections are sized so the **whole section** (title, pictures and text) is as tall as the
+  master: Next Episode beside the Continue watching banner now shrinks to the banner's height. **Row height** sets the
+  master's Height, so each row has its own. In the rows picture, matched sections have a coloured left edge, and the
+  coloured ↕ icon marks the master. The Match chip is gone.
+- Sections that follow a master keep each text line to one line, so narrower posters don't wrap and shrink further.
+
 ## v2026.11.24.125
 
 **Added**
