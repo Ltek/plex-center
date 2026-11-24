@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.24.127
+// Version: v2026.11.24.128
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.24.127';
+const BUILD_NUMBER = 'v2026.11.24.128';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -533,8 +533,10 @@ function lookVars(l) {
   return LOOK_LINES.map(([id]) => `--li-${id}-px:${Number(l[`${id}_px`])}px;--li-${id}-w:${esc(String(l[`${id}_weight`]))};${l[`${id}_color`] ? `--li-${id}-c:${String(l[`${id}_color`]).replace(/[;{}<>"]/g, '')};` : ''}`).join('');
 }
 
+const HOME_SPACING = Object.fromEntries(SCREENS.flatMap(([sc]) => [[`home_fill_${sc}`, true], [`home_mt_${sc}`, 0], [`home_rgap_${sc}`, 20], [`home_mb_${sc}`, 8]]));
 const DEFAULTS = {
   ...SCREEN_DEFAULTS,
+  ...HOME_SPACING,
   page_style: 'standard',
   title: 'Plex',
   layout: 'auto',
@@ -1164,7 +1166,7 @@ const ROW_H = 280, ROW_HEAD = 34, rowBelow = (a) => (a < 1 ? 58 : 0);   // a sec
  *  width (100cqw), so a narrower section shows fewer items the same size. With a height master, the others are sized
  *  so each whole section (header, pictures, text) is as tall as it: estimated here, then measured (_matchRows).
  *  W: the row's width in px, to count what fits. */
-function rowFit(c, ids, row, W) {
+function rowFit(c, ids, row, W, hFill = 0) {
   const n = ids.length, gs = r4(16 * (n - 1) / n), base = { ...c, _fit: undefined };
   const sts = ids.map((id) => secStyle(base, id)), sum = sts.reduce((a, st) => a + st.width, 0) || 100;
   const out = {}, master = rowMaster(c, row, ids);
@@ -1177,7 +1179,8 @@ function rowFit(c, ids, row, W) {
   });
   const m = master && out[master];
   // the row's height: every matched section, its title, pictures and text included, this tall (the master's Height × 280 px)
-  const H = m ? Math.round(ROW_H * m.size) : 0;
+  const H = m ? Math.round(hFill || ROW_H * m.size) : 0;
+  const share = m ? m.size : 1;   // Fill the screen: the height it worked out last time
   for (const id of ids) {
     const o = out[id], secW = W * o.secw / 100 - gs, follow = !!m && !!o.kind;
     if (o.kind === 'tile') {
@@ -1195,7 +1198,7 @@ function rowFit(c, ids, row, W) {
       o.lih = `${H}px`; o.size = r4(Math.max(0.5, Math.min(1.5, H / 260))); o.follow = true;
     }
   }
-  return { ids: out, style: `--plc-gs:${gs}px`, master: m ? master : null, h: H };
+  return { ids: out, style: `--plc-gs:${gs}px`, master: m ? master : null, h: H, share };
 }
 
 /** Inline style for this card's ha-card (background, border, radius, shadow); sanitized, never a stylesheet. */
@@ -1810,6 +1813,11 @@ const CARD_CSS = `
 .plc-sec-body.fit .plc-row { overflow-x: auto; }
 .plc-sec-body.fit.limit .plc-row { overflow-x: hidden; }
 .plc-main.searching > .plc-crow { display: none; }
+/* Content Layout spacing: top, between rows, bottom (no gap under the last row beyond it) */
+.plc-main.lay { display: flow-root; padding-top: var(--plc-mt, 0px); }
+.plc-main.lay > .plc-sec, .plc-main.lay > .plc-crow, .plc-main.lay > .plc-cards { margin-top: 0; margin-bottom: var(--plc-rgap, 20px); }
+.plc-main.lay > .plc-crow > .plc-sec, .plc-main.lay > .plc-crow > .plc-cards { margin: 0; }
+.plc-main.lay > :is(.plc-sec, .plc-crow, .plc-cards):last-child { margin-bottom: var(--plc-mb, 8px); }
 /* a section sized to its row's height master: one line per text line, so narrower posters don't wrap into more lines */
 .plc-sec[data-follow] .plc-tile .plc-t, .plc-sec[data-follow] .plc-tile .plc-s { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: none; }
 /* an Item border colour on rows: a ring inside each poster */
@@ -3078,6 +3086,7 @@ class PlexCenterCard extends HTMLElement {
     if (this._err) { main.innerHTML = `<div class="plc-msg err">${esc(this._err)}</div>`; return; }
     if (!this._conf) { main.innerHTML = '<div class="plc-msg">Loading…</div>'; return; }
     if (!this._tvs().length) { main.innerHTML = '<div class="plc-msg">No TVs yet: add them in Plex Center\'s options (Settings → Devices & services → Plex Center → Configure).</div>'; return; }
+    if (this._v.tab !== 'home') { main.classList.remove('lay'); ['--plc-mt', '--plc-rgap', '--plc-mb'].forEach((k) => main.style.removeProperty(k)); }
     if (this._v.tab === 'home') this._renderHome(main); else if (this._v.tab === 'calendar') this._renderCalendar(main); else this._renderLibrary(main);
     if (this._built) this._renderNP();
   }
@@ -3102,10 +3111,49 @@ class PlexCenterCard extends HTMLElement {
       this._mrq = (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : setTimeout)(() => { this._mrq = null; this._matchRows(); });
     });
     main.querySelectorAll('.plc-crow[data-master] > .plc-sec').forEach((x) => this._rowRO.observe(x));
+    this._rowRO.observe(main);
+    if (!this._onWinResize && typeof window !== 'undefined') {
+      this._onWinResize = () => { if (this._root?.querySelector?.('.plc-crow[data-master]')) this._matchRows(); };
+      window.addEventListener('resize', this._onWinResize);
+    }
+  }
+  /** Fill the screen height: the rows with a height master share what's left down to the bottom of the screen (or of
+   *  the card, when it fits the screen and scrolls inside), each by its Row height (a share; 100 % = an equal one),
+   *  between 160 and 500 px. Rows that can't shrink enough leave the page to scroll, as before. */
+  _fillRows() {
+    const main = this._root?.querySelector?.('.plc-main.lay');
+    if (!main || !cfg(this._c, `home_fill_${this._c._screen}`) || typeof window === 'undefined') return;
+    const rows = [...main.querySelectorAll(':scope > .plc-crow[data-master]')];
+    if (!rows.length) return;
+    const r = main.getBoundingClientRect(), cs = getComputedStyle(main);
+    if (!r.height) return;
+    const inner = /(auto|scroll)/.test(cs.overflowY) && main.scrollHeight > main.clientHeight + 1;   // the card fits the screen, Home scrolls inside
+    const content = inner ? main.scrollHeight : r.height;
+    const have = rows.reduce((a, x) => a + x.getBoundingClientRect().height, 0), other = content - have;
+    // the page still scrolls after filling, and the rows could be shorter: something below the card (the dashboard's own
+    // padding) we didn't count; remember it
+    const over = (document.documentElement?.scrollHeight || 0) - window.innerHeight;
+    if (!inner && over > 1 && this._filled && rows.some((x) => Number(x.dataset.h) > 160)) this._fillFix = Math.min(200, (this._fillFix || 0) + over);
+    const avail = inner ? main.clientHeight : window.innerHeight - (r.top + (window.scrollY || 0)) - Math.max(0, this.getBoundingClientRect().bottom - r.bottom) - (this._fillFix || 0);
+    const shares = rows.map((x) => Number(x.dataset.share) || 1), sum = shares.reduce((a, b) => a + b, 0);
+    const room = avail - other;
+    this._filled = true;
+    rows.forEach((x, i) => {
+      const h = Math.round(Math.max(160, Math.min(500, room * shares[i] / sum)));
+      if (Math.abs(h - Number(x.dataset.h)) < 2) return;
+      x.dataset.h = String(h); (this._rowH ||= {})[x.dataset.key] = h;
+      for (const sec of x.querySelectorAll('.plc-sec[data-sec]')) {   // measure again from the new height
+        const f = this._c._fit?.[sec.dataset.sec];
+        if (!f) continue;
+        f.tries = 0;
+        if (f.kind === 'banner') { f.lihm = `${h}px`; sec.style.setProperty('--plc-li-h', f.lihm); sec.style.setProperty('--plc-size', String(r4(Math.max(0.5, Math.min(1.5, h / 260))))); }
+      }
+    });
   }
   /** Make each matched section exactly the row's height, measured: a poster / fanart row by its picture height (the
    *  header and the text under the posters stay as they are), a banner by its height. Converges in a pass or two; capped. */
   _matchRows() {
+    this._fillRows();
     for (const row of this._root?.querySelectorAll?.('.plc-crow[data-master]') || []) {
       const H = Number(row.dataset.h);
       if (!H) continue;
@@ -3126,16 +3174,20 @@ class PlexCenterCard extends HTMLElement {
   }
 
   _renderHome(main) {
-    const parts = [], fit = {};
+    const parts = [], fit = {}, sc = this._c._screen, fillOn = !!cfg(this._c, `home_fill_${sc}`);
     this._c._fit = undefined;
+    main.classList.add('lay');   // Content Layout spacing (Home only)
+    main.style.setProperty('--plc-mt', `${Number(cfg(this._c, `home_mt_${sc}`)) || 0}px`);
+    main.style.setProperty('--plc-rgap', `${Number(cfg(this._c, `home_rgap_${sc}`)) || 0}px`);
+    main.style.setProperty('--plc-mb', `${Number(cfg(this._c, `home_mb_${sc}`)) || 0}px`);
     const W = main.clientWidth || this._root?.querySelector?.('.plc')?.clientWidth || 1200;
     const box = (id, w, fol) => (id === 'cards' ? `<div class="plc-cards"${w ? ` style="--plc-secw:${w}%"` : ''}></div>` : `<div class="plc-sec" data-sec="${esc(id)}"${fol ? ' data-follow' : ''}${w ? ` style="--plc-secw:${w}%"` : ''}></div>`);
     for (const r of homeRows(this._c)) {
       const ids = r.ids.filter((id) => homeVisible(this._c, id) && !(id === 'watching' && !cfg(this._c, 'watching_home')));
       if (!ids.length) continue;
       if (ids.length === 1) { parts.push(box(ids[0])); continue; }   // alone in its row: the whole width, as always
-      const f = rowFit(this._c, ids, r, W); Object.assign(fit, f.ids);
-      parts.push(`<div class="plc-crow${f.master ? ' match' : ''}"${f.master ? ` data-master="${esc(f.master)}" data-h="${f.h}"` : ''} style="${f.style}">${ids.map((id) => box(id, f.ids[id].secw, f.ids[id].follow)).join('')}</div>`);
+      const f = rowFit(this._c, ids, r, W, fillOn ? this._rowH?.[`${ids.join(',')}`] : 0); Object.assign(fit, f.ids);
+      parts.push(`<div class="plc-crow${f.master ? ' match' : ''}"${f.master ? ` data-master="${esc(f.master)}" data-h="${f.h}" data-share="${f.share}" data-key="${esc(ids.join(','))}"` : ''} style="${f.style}">${ids.map((id) => box(id, f.ids[id].secw, f.ids[id].follow)).join('')}</div>`);
     }
     this._c._fit = fit;
     if (this._v.query) setTimeout(() => this._homeSearch(), 0);
@@ -4870,7 +4922,7 @@ const INTEGRATION_USES = {
   plex_recently_added: ['Plex Recently Added', 'can be a Home row'],
   upcoming_media: ['Upcoming media', 'can be a Home row'],
 };
-const REVEAL_KEYS = new Set(['calendar', 'watching_resume', 'hold_play', 'np_auto_close', 'np_volume', 'watching_home', 'watching_cal', 'watching_lib', 'watching_coll_home', 'watching_coll_cal', 'watching_coll_lib', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'card_shadow']);
+const REVEAL_KEYS = new Set(['calendar', 'watching_resume', 'hold_play', 'np_auto_close', 'np_volume', 'watching_home', 'watching_cal', 'watching_lib', 'watching_coll_home', 'watching_coll_cal', 'watching_coll_lib', 'page_style', ...PAGE_ALL.filter((k) => !/_px$|_blur$|_spread$|_opacity$|_width$|_x$|_y$|radius|height|gap/.test(k)), ...SCREENS.flatMap(([sc]) => [`${sc}_header`, `${sc}_now_playing`]), 'up_next', 'tv_label', 'surprise', 'surprise_style', 'fit_screen', ...SCREENS.map(([sc]) => `home_fill_${sc}`), 'layout', 'image_style', 'now_playing', 'tv_picker', 'lock', 'client_choice', 'card_shadow']);
 
 class PlexCenterCardEditor extends HTMLElement {
   constructor() { super(); this._config = {}; this._open = new Set(); this._cmode = {}; this._rendered = false; this._onScreen = () => { if (this._rendered) this._render(); }; }
@@ -5245,7 +5297,7 @@ class PlexCenterCardEditor extends HTMLElement {
       const mst = M ? secStyle(c, M) : null, ms = M ? this._secS(M) : {};
       const rowH = M ? `<div class="plce-row plce-nowrap"><label class="lbl">Row height</label><input type="range" data-sid="${esc(M)}" data-ssk="size" data-unit=" %" min="50" max="150" step="1" value="${mst.size ?? 100}">
           <span class="plce-val" data-sval="${esc(M)}:size">${mst.size ?? 100} %</span>${ms.size !== undefined ? `<button class="plce-reset" data-sreset="${esc(M)}:size" title="Default"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>
-        <p class="plce-hint plce-tight">Every matched section in this row is ${Math.round(280 * (mst.size ?? 100) / 100)} px tall, its title, pictures and the text under them included (100 % = 280 px). Saved as the Height of <b>${esc(labels.get(M) || M)}</b>, the row's height master.</p>` : '';
+        <p class="plce-hint plce-tight">${this._c(`home_fill_${sc}`) ? `This row's share of the screen height (100 % = an equal share; Fill the screen height is on).` : `Every matched section in this row is ${Math.round(280 * (mst.size ?? 100) / 100)} px tall (100 % = 280 px).`} Titles, pictures and the text under them are all included. Saved as the Height of <b>${esc(labels.get(M) || M)}</b>, the row's height master.</p>` : '';
       const height = !k || (M && rowKind(c, sel)) ? '' : `${range('size', 'Height', 50, 150, st.size ?? 100, s.size !== undefined)}
           <p class="plce-hint plce-tight">${k === 'banner' ? 'The banner smaller or bigger, the same inside: the picture, the text and the buttons scale with it.' : k === 'list' ? 'Every item this much of 150 px.' : k === 'own' ? 'This section has its own Items to show (in its Layout), so its items share out its width; Height scales them from there.' : 'Each poster or fanart this much of its automatic size; when they don\'t all fit, the row scrolls.'}</p>`;
       const rowBox = pickM || rowH ? `<div class="plce-group">This row</div>${pickM}${rowH}` : '';
@@ -5264,6 +5316,11 @@ class PlexCenterCardEditor extends HTMLElement {
     return this._profile(`<p class="plce-hint plce-tight">Tap a section to move it or size it. ← → move it along its row, ↑ ↓ into the row above or below (or a new row). A coloured left edge marks sections matched in height; the coloured <ha-icon icon="mdi:arrow-expand-vertical" style="--mdc-icon-size:14px;color:var(--ltek-c-accent, var(--primary-color))"></ha-icon> is the row's height master.</p>
       <div class="plce-lay">${prev}</div>${tools}
       ${this._allHeight()}
+      <div class="plce-group">Height and spacing</div>
+      ${this._check(`home_fill_${sc}`, 'Fill the screen height')}
+      <p class="plce-hint plce-tight">${this._c(`home_fill_${sc}`) ? 'Rows with a height master share the space down to the bottom of the screen, each by its Row height (100 % = an equal share), between 160 and 500 px. If they can\'t all fit, the page scrolls.' : 'Each row with a height master is 280 px × its Row height.'}</p>
+      ${this._slider(`home_mt_${sc}`, 'Top margin', 0, 80)}${this._slider(`home_rgap_${sc}`, 'Between rows', 0, 60)}${this._slider(`home_mb_${sc}`, 'Bottom margin', 0, 80)}
+      <p class="plce-hint plce-tight">Above the first row, between rows and under the last one, for this screen type: room for a dashboard header, a device's rounded corners or a navigation bar.</p>
       <div class="plce-chiprow"><span class="plce-chiplbl">Copy the layout from</span>${others.map(([x, nm]) => `<button class="plce-chip" data-lcopy="${x}">${esc(nm)}</button>`).join('')}</div>`, 'content');
   }
   _homeCfg() { const sc = this._homeScreen(); return { ...this._config, home_order: this._config[`home_order_${sc}`], home_hidden: this._config[`home_hidden_${sc}`] }; }
@@ -5486,7 +5543,7 @@ class PlexCenterCardEditor extends HTMLElement {
     if (what.startsWith('row:')) { const id = what.slice(4); drop('sec_styles', `${id}:${sc}`); drop('looks', `${id}:${sc}`); }
     else if (what === 'home') { delete c[`home_order_${sc}`]; delete c[`home_hidden_${sc}`]; }
     else if (what === 'content') {   // Content Layout on this screen: rows, order, show / hide, Width and Height
-      for (const k of ['home_layout', 'home_order', 'home_hidden', 'home_size']) delete c[`${k}_${sc}`];
+      for (const k of ['home_layout', 'home_order', 'home_hidden', 'home_size', 'home_fill', 'home_mt', 'home_rgap', 'home_mb']) delete c[`${k}_${sc}`];
       if (c.sec_styles) {
         for (const k of Object.keys(c.sec_styles)) if (k.endsWith(`:${sc}`)) { const o = { ...c.sec_styles[k] }; delete o.width; delete o.size; if (Object.keys(o).length) c.sec_styles[k] = o; else delete c.sec_styles[k]; }
         if (!Object.keys(c.sec_styles).length) delete c.sec_styles;
@@ -5978,7 +6035,7 @@ class PlexCenterCardEditor extends HTMLElement {
     }));
     all('[data-lcopy]', (b) => b.addEventListener('click', () => {
       const from = b.dataset.lcopy, to = this._eds(), c = this._config;
-      for (const k of ['home_layout', 'home_order', 'home_hidden', 'home_size']) {
+      for (const k of ['home_layout', 'home_order', 'home_hidden', 'home_size', 'home_fill', 'home_mt', 'home_rgap', 'home_mb']) {
         if (c[`${k}_${from}`] !== undefined) c[`${k}_${to}`] = JSON.parse(JSON.stringify(c[`${k}_${from}`])); else delete c[`${k}_${to}`];
       }
       const ss = { ...(c.sec_styles || {}) };

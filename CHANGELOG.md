@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.24.128
+
+**Added**
+- **Content Layout → Height and spacing** (per screen type):
+  - **Fill the screen height**, on by default: the rows with a height master share the space down to the bottom of
+    the screen, each by its Row height (100 % = an equal share), between 160 and 500 px; they resize with the screen.
+    If they can't all fit, the page scrolls as before. Off: each row is 280 px × its Row height. If the dashboard
+    has padding of its own under the card, the card notices the page still scrolls and allows for it.
+  - **Top margin**, **Between rows** and **Bottom margin**, for a dashboard header, a device's rounded corners or a
+    navigation bar.
+
+**Changed**
+- Home ends at the last row plus the Bottom margin (8 px by default) instead of the section's 16 px margin.
+
 ## v2026.11.24.127
 
 **Fixed**
