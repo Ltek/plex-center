@@ -1,5 +1,24 @@
 # Changelog
 
+## v2026.11.24.123
+
+**Fixed**
+- **Poster height** didn't apply to poster rows (the Items to show width won); it does now, as for fanart.
+- **Continue watching:** its banner takes a height too (Banner height).
+
+**Added**
+- **One height for every section** on a screen type: Content Visuals → Item size → "Every section, this screen"
+  (`home_item_h_<screen>`), in every section's panel. A section's own height still wins.
+
+**Changed**
+- **Showtime Remote:**
+  - The lighting buttons are on the remote itself by default (a wider right column, two across when there are
+    many); Lighting → "Show them" → In a popup brings back the Lighting button.
+  - **Full controls** is gone (the X closes the remote).
+  - A **seek bar** under Play / Pause, with the time and the length: drag or tap to a time (no hold needed).
+  - Bigger defaults: 30 px button text, 15 px second line, 40 px icons; Play / Pause keeps its size.
+  - Upright screens: the title on its own line, compact lighting buttons, the bottom buttons in one row.
+
 ## v2026.11.24.122
 
 **Changed**

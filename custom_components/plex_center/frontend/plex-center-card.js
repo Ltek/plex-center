@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.24.122
+// Version: v2026.11.24.123
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.24.122';
+const BUILD_NUMBER = 'v2026.11.24.123';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -600,9 +600,10 @@ const DEFAULTS = {
   remote_font: 'card',      // card | condensed (the big text)
   remote_tv: '',            // the TV it controls ('' = the card's)
   remote_idle_title: '',
-  remote_label_px: 26,      // remote button text
-  remote_sub_px: 13,        // its second line
-  remote_icon_px: 32,       // button icons (Play / Pause and the skips scale from it)
+  remote_lights_popup: false,   // false: the lighting buttons on the remote itself; true: a Lighting button opens them
+  remote_label_px: 30,      // remote button text
+  remote_sub_px: 15,        // its second line
+  remote_icon_px: 40,       // button icons (the skips scale from it; Play / Pause keeps its size)
   remote_title_px: 60,      // the title; Ends at 0.8 of it
   np_volume: true,          // Now playing: volume buttons
   np_play_center: true,     // Play / Pause in the middle of the skip buttons (Stop, Home and volume on their own row)
@@ -1015,7 +1016,7 @@ function secStyle(c, id) {
     scroll: !!s.scroll, auto, scroll_dir: s.scroll_dir || ((s.layout || 'row') === 'list' ? 'up' : 'left'),
     speed: Number(s.speed ?? (auto === 'scroll' && s.layout !== 'banner' ? 30 : 5)), fade_ms: Math.max(0, Number(s.fade_ms ?? 1200)),
     flag: s.flag ?? cfg(c, 'flag'), flag_style: s.flag_style || (fanDef ? FAN_SEC.flag_style : 'corner'),
-    item_h: s.item_h ?? (listFan ? FAN_SEC.item_h : undefined), flag_items: Array.isArray(s.flag_items) ? s.flag_items : FACTS.map(([f]) => f),
+    item_h: s.item_h ?? (Number(c[`home_item_h_${c._screen || 'tablet_landscape'}`]) || (listFan ? FAN_SEC.item_h : undefined)), flag_items: Array.isArray(s.flag_items) ? s.flag_items : FACTS.map(([f]) => f),
     flag_px: Math.max(12, Math.min(40, Number(s.flag_px) || 20)), flag_bottom: Array.isArray(s.flag_bottom) ? s.flag_bottom : [], flag_pos: s.flag_pos || 'top',
     count_pos: s.count_pos || 'title', list_w: Number(s.list_w ?? (listFan ? FAN_SEC.list_w : 340)), type, s,
     get total() { return this.scroll || this.auto !== 'off' ? Math.max(this.show, Number(s.total ?? 30)) : this.show; },
@@ -1658,8 +1659,12 @@ const CARD_CSS = `
 .plc-li.poster .plc-li-img { position: static; width: auto; aspect-ratio: 2 / 3; -webkit-mask-image: none; mask-image: none; }
 .plc-li.poster .plc-li-text { max-width: none; }
 /* rows with an Item height: each poster / fanart that tall, its width from the shape (Items to show then don't size them) */
-.plc-sec-body.fixh .plc-row > .plc-tile { flex: 0 0 calc(var(--plc-li-h) * 2 / 3); }
-.plc-sec-body.fixh .plc-row.fanart > .plc-tile { flex-basis: calc(var(--plc-li-h) * 16 / 9); }
+.plc-sec-body.fixh .plc-row > .plc-tile.plc-tile { flex: 0 0 calc(var(--plc-li-h) * 2 / 3); }   /* beats the Items to show width */
+.plc-sec-body.fixh .plc-row.fanart > .plc-tile.plc-tile { flex: 0 0 calc(var(--plc-li-h) * 16 / 9); }
+/* Continue watching's banner with a height */
+.plc-hero.fixh { height: var(--plc-li-h); min-height: 0; }
+.plc-hero.fixh .plc-hero-img { min-height: 0; }
+.plc-hero.fixh .plc-hero-info { overflow: hidden; }
 /* an Item border colour on rows: a ring inside each poster */
 .plc-row .plc-poster::before { content: ''; position: absolute; inset: 0; z-index: 1; border-radius: inherit; pointer-events: none;
   border: var(--plc-li-bdw, 0px) solid var(--plc-li-bd, transparent); }
@@ -1953,8 +1958,21 @@ const CARD_CSS = `
 .plc-rm-right > * { flex: 1 1 0; }
 .plc-rm-right .plc-rm-btn .top { flex-direction: column; gap: 8px; } .plc-rm-right .plc-rm-btn .lbl { font-size: min(calc(var(--rm-lbl, 26px) * .65), 4vw); letter-spacing: .12em; }
 .plc-rm-bottom { grid-column: 1 / -1; display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.plc-rm-bottom:empty { display: none; }
 .plc-rm-bottom .wide { grid-column: span 1; }
-.plc-rm-center { display: flex; align-items: center; justify-content: center; gap: clamp(24px, 8%, 110px); border-radius: 20px; background: var(--rm-p); border: 1px solid var(--rm-line); min-height: 0; }
+.plc-rm-center { display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 18px; padding: 18px clamp(18px, 5%, 60px); border-radius: 20px; background: var(--rm-p); border: 1px solid var(--rm-line); min-height: 0; }
+.plc-rm-ctl { display: flex; align-items: center; justify-content: center; gap: clamp(24px, 8%, 110px); }
+.plc-rm-seek { display: flex; align-items: center; gap: 14px; font-size: var(--rm-sub, 15px); font-variant-numeric: tabular-nums; opacity: .9; }
+.plc-rm-track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: rgba(255,255,255,.12); cursor: pointer; touch-action: none; }
+.plc-rm-track::before { content: ''; position: absolute; inset: -14px 0; }   /* a bigger touch target */
+.plc-rm-track i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: inherit; background: var(--rm-a); }
+.plc-rm-track b { position: absolute; top: 50%; left: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--rm-a); transform: translate(-50%, -50%); box-shadow: 0 0 0 4px rgba(0,0,0,.5); }
+/* the lighting buttons on the remote itself: a wider right column, two across when there are many */
+.plc-rm-grid:has(.plc-rm-right.lights) { grid-template-columns: minmax(84px, 1fr) minmax(0, 4fr) minmax(150px, 1.6fr); }
+.plc-rm-grid:has(.plc-rm-right.lights.two) { grid-template-columns: minmax(84px, 1fr) minmax(0, 3.6fr) minmax(240px, 2.2fr); }
+.plc-rm-right.lights { display: grid; grid-auto-rows: minmax(0, 1fr); gap: 10px; overflow-y: auto; }
+.plc-rm-right.lights.two { grid-template-columns: 1fr 1fr; }
+.plc-rm-right.lights .plc-rm-btn { min-height: 52px; }
 .plc-rm-btn { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 56px;
   padding: 8px; border-radius: 16px; border: 1px solid var(--rm-line); background: var(--rm-p); color: var(--rm-a); font: inherit; cursor: pointer; }
 .plc-rm-btn .top { display: inline-flex; align-items: center; gap: 10px; }
@@ -1967,7 +1985,7 @@ const CARD_CSS = `
 .plc-rm-btn:active, .plc-rm-skip:active, .plc-rm-play:active { filter: brightness(1.3); }
 .plc-rm-play { width: clamp(110px, 15vw, 180px); aspect-ratio: 1; border-radius: 50%; background: #000; border: 1.5px solid var(--rm-a); color: var(--rm-a); display: grid; place-items: center;
   position: relative; overflow: hidden; cursor: pointer; }
-.plc-rm-play ha-icon { --mdc-icon-size: min(calc(var(--rm-ic, 32px) * 2.8), 16vw); }
+.plc-rm-play ha-icon { --mdc-icon-size: min(90px, 16vw); }   /* its own size: not from the icon setting */
 .plc-rm-skip { display: flex; flex-direction: column; align-items: center; gap: 6px; background: none; border: none; color: var(--rm-a); font: inherit; font-size: var(--rm-sub, 13px); letter-spacing: .1em;
   position: relative; overflow: hidden; padding: 14px; border-radius: 16px; cursor: pointer; }
 .plc-rm-skip ha-icon { --mdc-icon-size: calc(var(--rm-ic, 32px) * 1.5); }
@@ -1989,6 +2007,21 @@ const CARD_CSS = `
   .plc-rm-left { grid-row: 3; grid-template-rows: none; grid-template-columns: 1fr 1fr 1fr; }
   .plc-rm-center { grid-row: 2; }
   .plc-rm-right { grid-row: 1; flex-direction: row; } .plc-rm-right > * { min-height: 64px; }
+  .plc-rm-grid:has(.plc-rm-right.lights), .plc-rm-grid:has(.plc-rm-right.lights.two) { grid-template-columns: 1fr; }
+  .plc-rm-right.lights, .plc-rm-right.lights.two { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 48px; max-height: calc(3 * 48px + 20px); }
+  .plc-rm-right.lights .plc-rm-btn { min-height: 48px; flex-direction: row; gap: 6px; padding: 6px; }
+  .plc-rm-right.lights .plc-rm-btn ha-icon { --mdc-icon-size: 22px; }
+  .plc-rm-right.lights .plc-rm-btn .sub { font-size: 11px; letter-spacing: .08em; }
+  .plc-rm-head { flex-wrap: wrap; row-gap: 4px; }
+  .plc-rm-ttl { flex: 1 1 100%; order: 0; }
+  .plc-rm-ends { order: 1; flex: 1; flex-direction: row; align-items: baseline; gap: 10px; }
+  .plc-rm-ends b { font-size: min(calc(var(--rm-ttl, 60px) * .55), 8vw); }
+  .plc-rm-x { order: 2; position: absolute; top: max(14px, env(safe-area-inset-top, 0px)); right: 14px; }
+  .plc-rm-ttl { padding-right: 48px; }
+  .plc-rm-bottom { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  .plc-rm-bottom .plc-rm-btn .top { flex-direction: column; gap: 4px; }
+  .plc-rm-bottom .plc-rm-btn .lbl { font-size: min(var(--rm-lbl, 30px), 4.2vw); }
+  .plc-rm-bottom .plc-rm-btn .sub { font-size: min(var(--rm-sub, 15px), 2.8vw); letter-spacing: .06em; }
   .plc-rm-bottom { grid-row: 4; grid-template-columns: 1fr 1fr; }
   .plc-rm-popslot { left: 16px; right: 16px; width: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
   .plc-rm-popgrid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2305,7 +2338,7 @@ class PlexCenterCard extends HTMLElement {
     this._root.addEventListener('click', (e) => this._onClick(e));
     this._root.addEventListener('input', (e) => this._onInput(e));
     this._root.addEventListener('change', (e) => this._onChange(e));
-    this._root.addEventListener('pointerdown', (e) => this._onScrub(e));
+    this._root.addEventListener('pointerdown', (e) => { if (!this._rmScrub(e)) this._onScrub(e); });
     this._wireGestures();
     this._wireHold();
     this._root.addEventListener('keydown', (e) => {
@@ -3200,6 +3233,7 @@ class PlexCenterCard extends HTMLElement {
     }
     applyLook(sec, lk);
     sec.style.setProperty('--plc-fade-ms', `${Math.max(0, Number(st.fade_ms))}ms`);
+    if (st.item_h !== undefined) sec.style.setProperty('--plc-li-h', `${Number(st.item_h)}px`); else sec.style.removeProperty('--plc-li-h');
     // one timer for the banner, kept across repaints (a repaint must not restart it); it reads the current list each time
     const tsig = JSON.stringify([st.auto, st.scroll_dir, st.speed, st.fade_ms, cfg(this._c, 'stagger_rotate'), cfg(this._c, 'stagger_gap'), this._stepSections()]);
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -3237,7 +3271,7 @@ class PlexCenterCard extends HTMLElement {
       sec.addEventListener('pointerover', (e) => { this._cwHold = e.pointerType === 'mouse' && !!e.target.closest?.('.plc-btns, .plc-pager'); });
       sec.addEventListener('pointerleave', () => { this._cwHold = false; });
     }
-    sec.innerHTML = `<div class="plc-hero"><div class="plc-hero-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
+    sec.innerHTML = `<div class="plc-hero${st.item_h !== undefined ? ' fixh' : ''}"><div class="plc-hero-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
       <div class="plc-hero-info"><div class="plc-eyebrow">Continue watching on ${esc(tvLabel(this._tv()))}</div>
         <h2 class="plc-big">${esc(it.show || it.title)}</h2><div class="plc-meta">${esc(sub)}</div>
         ${it.progress ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div><div class="plc-meta">${esc(left)}</div>` : ''}
@@ -5012,6 +5046,7 @@ class PlexCenterCardEditor extends HTMLElement {
         modes.map(([m, n]) => `<option value="${m}"${m === mode ? ' selected' : ''}>${n}</option>`).join('')}</select>${field}</div></div>`;
     };
     const list = s.layout === 'list';
+    const banner = id === 'continue' && (s.layout || (this._eds().startsWith('phone') ? 'row' : 'banner')) === 'banner';
     const st = secStyle({ ...this._config, _screen: this._eds() }, id);
     const chk = (k, label, def) => `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-stri="${k}" data-def="${def ? 1 : 0}"${(s[k] ?? def) ? ' checked' : ''}>${label}</label>`;
     const sensorsAll = this._conf?.upcoming_sensors || [];
@@ -5090,8 +5125,9 @@ class PlexCenterCardEditor extends HTMLElement {
             ${sl('flag_px', 'Icon size', 12, 40, 20)}` : sel('flag_pos', 'Flag position', [['', 'Top right'], ['bottom', 'Bottom right']])}${col('flag_color', 'Flag colour', '#0099cc')}` : ''}
         <div class="plce-group">Item size</div>
         ${list ? sl('list_w', 'Item width', 220, 4000, st.list_w) : ''}
-        ${sl('item_h', list ? 'Item height' : (st.image === 'fanart' ? 'Fanart height' : 'Poster height'), 60, 600, st.item_h ?? (list ? 150 : 240))}
-        <p class="plce-hint">${list ? 'Every item is this tall, whatever its image style; text that doesn\'t fit is cut.' : 'Set: each poster or fanart is this tall and as wide as its shape, and the row scrolls. Not set (reset): they share the width by Items to show.'}</p>
+        ${sl('item_h', banner ? 'Banner height' : list ? 'Item height' : (st.image === 'fanart' ? 'Fanart height' : 'Poster height'), 60, 600, st.item_h ?? (banner ? 260 : list ? 150 : 240))}
+        <p class="plce-hint">${banner ? 'The banner is this tall; text that doesn\'t fit is cut.' : list ? 'Every item is this tall, whatever its image style; text that doesn\'t fit is cut.' : 'Set: each poster or fanart is this tall and as wide as its shape, and the row scrolls. Not set (reset): they share the width by Items to show.'}</p>
+        ${this._allHeight()}
         ${sl('radius', 'Corner radius', 0, 30, this._c('corner_radius'))}
         ${col('border_color', 'Item border', '#000000', true)}
         ${list ? col('item_bg', 'Item background', '#0d0d0d', true) : ''}`)}
@@ -5208,11 +5244,18 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._watchPages()}
         <p class="plce-hint">The controls a card opens are set in <b>Now playing</b>.</p>`)}`;
   }
+  /** One height for every Home section on the screen type being edited (a section's own height wins). */
+  _allHeight() {
+    const k = `home_item_h_${this._eds()}`, v = this._config[k];
+    return `<div class="plce-row plce-nowrap"><label class="lbl">Every section, this screen</label><input type="range" data-skey="${k}" data-unit="px" min="60" max="600" step="1" value="${v ?? 160}">
+      <span class="plce-val" data-val="${k}">${v ? `${v}px` : 'not set'}</span>${v !== undefined ? `<button class="plce-reset" data-reset="${k}" title="Not set"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>
+      <p class="plce-hint">The height of every Home section on this screen type at once (posters, fanart, lists and the banner). A section's own height above wins.</p>`;
+  }
   /** Showtime Remote: a full-screen remote for a dark room (opening, buttons, lighting, screen, look, sleep timer). */
   _remoteBody() {
     const tvs = this._conf?.tvs || [], btns = this._config.remote_buttons || {}, defHold = Number(this._c('remote_hold_ms'));
     const NAMES = { vol_up: 'Volume up', mute: 'Mute', vol_down: 'Volume down', back: 'Skip back', play: 'Play / Pause', fwd: 'Skip forward', lighting: 'Lighting',
-      intermission: 'Intermission', endshow: 'End show', sleep: 'Sleep', full: 'Full controls' };
+      intermission: 'Intermission', endshow: 'End show', sleep: 'Sleep' };
     const ALSO = { mute: 1, back: 1, play: 1, fwd: 1, intermission: 1, endshow: 1 };
     const slot = ([id, label, sub, icon, hold]) => {
       const o = btns[id] || {};
@@ -5259,8 +5302,9 @@ class PlexCenterCardEditor extends HTMLElement {
         <p class="plce-hint">Guards against a touch in the dark: a button acts only after this long (a ring fills while you hold). Volume up / down are a tap. Each button can have its own time.</p>
         ${this._chips('remote_skip', 'Skip buttons', [[10, '10 s'], [30, '30 s']])}
         ${RM_SLOTS.map(slot).join('')}`)}
-      ${this._sub('rm-lights', 'Lighting', list('lights', 'Lighting buttons', 'The Lighting button opens these: each runs a script, scene or automation, or toggles a light, and lights up while its entity is on.'))}
-      ${this._sub('rm-extra', 'More buttons (right column)', list('extra', 'Under Lighting', 'Up to two more buttons in the right column.'))}
+      ${this._sub('rm-lights', 'Lighting', `${this._chips('remote_lights_popup', 'Show them', [[false, 'On the remote (right column)'], [true, 'In a popup (a Lighting button)']])}
+        ${list('lights', 'Lighting buttons', 'Each runs a script, scene or automation, or toggles a light, and lights up while its entity is on.')}`)}
+      ${this._sub('rm-extra', 'More buttons (right column)', list('extra', 'More buttons', 'Up to two more buttons in the right column, after the lighting.'))}
       ${this._sub('rm-screen', 'Screen', `${this._check('remote_blackout', 'Go black when not used (the first tap only wakes it)')}
         ${this._c('remote_blackout') ? `${this._slider('remote_blackout_s', 'After', 5, 600, ' s')}${this._chips('remote_blackout_style', 'Black screen shows', [['black', 'Nothing'], ['clock', 'A dim clock (it drifts)']])}` : ''}
         ${this._check('remote_keep_awake', 'Keep the screen on while the remote is open')}
@@ -5268,7 +5312,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._sub('rm-look', 'Appearance', `${this._chips('remote_font', 'Font', [['card', "The card's font"], ['condensed', 'Condensed']])}
         ${this._slider('remote_label_px', 'Button text', 12, 48)}${this._slider('remote_sub_px', 'Second line', 9, 28)}
         ${this._slider('remote_icon_px', 'Button icons', 16, 64)}${this._slider('remote_title_px', 'Title and Ends at', 20, 96)}
-        <p class="plce-hint">Each button's text is set under Buttons. Phones shrink the sizes to fit.</p>
+        <p class="plce-hint">Each button's text is set under Buttons. Play / Pause keeps its size. Phones shrink the sizes to fit.</p>
         ${this._colorControl('remote_bg')}${this._colorControl('remote_panel')}${this._colorControl('remote_accent')}`)}
       ${this._sub('rm-sleep', 'Sleep timer', `<p class="plce-hint">The Sleep button turns the room off after this long, or when what's playing ends. It runs in Home Assistant, so it keeps going when the screen is off.</p>
         <div class="plce-row"><label class="lbl">Minutes</label><input type="text" data-rmsleepmin value="${esc((Array.isArray(this._config.remote_sleep_min) ? this._config.remote_sleep_min : [30, 60, 90]).join(', '))}"></div>`)}
@@ -5734,7 +5778,9 @@ class PlexCenterCardEditor extends HTMLElement {
       looks[lk] = o; this._config.looks = looks; this._emit(); this._render();
     }));
     all('[data-chipk]', (b) => b.addEventListener('click', () => {
-      const i = b.dataset.chipk.indexOf('|'); this._setK(b.dataset.chipk.slice(0, i), b.dataset.chipk.slice(i + 1)); this._render();
+      const i = b.dataset.chipk.indexOf('|'), raw = b.dataset.chipk.slice(i + 1);
+      const v = raw === 'true' ? true : raw === 'false' ? false : /^\d+$/.test(raw) ? Number(raw) : raw;
+      this._setK(b.dataset.chipk.slice(0, i), v); this._render();
     }));
     all('[data-lookimg]', (b) => b.addEventListener('click', () => {
       const [k, v] = b.dataset.lookimg.split('|'); this._setK(k, v); this._render();
@@ -5963,11 +6009,11 @@ const RM_SLOTS = [
   ['back', '', '', 'mdi:rotate-left', true], ['play', '', '', 'mdi:play', true], ['fwd', '', '', 'mdi:rotate-right', true],
   ['lighting', 'Lighting', '', 'mdi:lightbulb-outline', true],
   ['intermission', 'Intermission', 'Pause', 'mdi:coffee-outline', true], ['endshow', 'End show', 'Stop', 'mdi:white-balance-sunny', true],
-  ['sleep', 'Sleep', '', 'mdi:weather-night', true], ['full', 'Full controls', '', 'mdi:home-outline', true],
+  ['sleep', 'Sleep', '', 'mdi:weather-night', true],
 ];
 const RM_SLOT = Object.fromEntries(RM_SLOTS.map((x) => [x[0], x]));
 /** Buttons that can be hidden (the rest are the remote itself). */
-const RM_OPTIONAL = ['lighting', 'intermission', 'endshow', 'sleep', 'full'];
+const RM_OPTIONAL = ['lighting', 'intermission', 'endshow', 'sleep'];
 const RM_LIGHT_EXAMPLES = ['Aisle', 'Steps', 'Entry', 'Bar', 'Ceiling', 'Walkway'];
 /** Run an entity the way its kind runs: a script / scene / automation, a light or switch (toggled), a button. */
 function rmEntityCall(entity) {
@@ -6038,7 +6084,7 @@ Object.assign(PlexCenterCard.prototype, {
     const tv = this._rmTv(), np = tv ? nowPlaying(this._hass, tv, this._c) : null, live = !!np?.live, playing = live && np.st.state === 'playing';
     const lights = this._rmItems('lights'), extra = this._rmItems('extra');
     const litSig = [...lights, ...extra].map((x) => this._hass.states[x.lit || x.entity]?.state);
-    const sig = JSON.stringify([live, playing, np?.title, np?.sub, litSig, this._rmPop, this._sleep?.[tv?.id], cfg(this._c, 'remote_font'), JSON.stringify(this._c.remote_buttons || {}), lights.length, extra.length, tv?.id]);
+    const sig = JSON.stringify([live, playing, np?.title, np?.sub, litSig, this._rmPop, this._sleep?.[tv?.id], cfg(this._c, 'remote_font'), cfg(this._c, 'remote_lights_popup'), JSON.stringify(this._c.remote_buttons || {}), lights.length, extra.length, tv?.id]);
     if (!force && sig === this._rmSig) return;
     this._rmSig = sig;
     const b = (id) => this._rmBtn(id), step = Number(cfg(this._c, 'remote_skip')) || 10;
@@ -6048,7 +6094,9 @@ Object.assign(PlexCenterCard.prototype, {
     const sleepSub = !sl ? 'Off' : sl.mode === 'after' ? 'After this' : `${Math.max(1, Math.round((sl.at * 1000 - Date.now()) / 60000))} min`;
     const play = b('play'), playBtn = `<button class="plc-rm-play" data-rm="play" data-rmhold="${play.hold}" data-rmlabel="${playing ? 'Pause' : 'Play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>`;
     const skip = (id, dir) => { const s = b(id); return `<button class="plc-rm-skip" data-rm="${id}" data-rmhold="${s.hold}" data-rmlabel="${dir}${step} s"><ha-icon icon="${esc(s.icon)}"></ha-icon><span>${step}s</span></button>`; };
-    const right = [b('lighting'), ...extra].filter((x) => !x.hidden).slice(0, 3);
+    const popup = !!cfg(this._c, 'remote_lights_popup'), lightOn = !b('lighting').hidden;
+    const right = popup ? [b('lighting'), ...extra].filter((x) => !x.hidden).slice(0, 3) : [...(lightOn ? lights : []), ...extra];
+    const rightHtml = right.map((x) => (x.id === 'lighting' ? this._rmBtnHtml(x) : this._rmItemHtml(x, lights.includes(x) ? 'lights' : 'extra'))).join('');
     const px = (k) => Math.max(6, Number(cfg(this._c, k)) || DEFAULTS[k]);
     const sizes = `--rm-lbl:${px('remote_label_px')}px;--rm-sub:${px('remote_sub_px')}px;--rm-ic:${px('remote_icon_px')}px;--rm-ttl:${px('remote_title_px')}px`;
     slot.innerHTML = `<div class="plc-remote${cfg(this._c, 'remote_font') === 'condensed' ? ' condensed' : ''}" style="${sizes}" data-rmroot>
@@ -6059,10 +6107,11 @@ Object.assign(PlexCenterCard.prototype, {
       <div class="plc-rm-bar"><i data-rmbar></i></div>
       <div class="plc-rm-grid">
         <div class="plc-rm-left">${this._rmBtnHtml(b('vol_up'), 'vol')}${this._rmBtnHtml(b('mute'), 'mute')}${this._rmBtnHtml(b('vol_down'), 'vol')}</div>
-        <div class="plc-rm-center">${skip('back', '−')}${playBtn}${skip('fwd', '+')}</div>
-        <div class="plc-rm-right">${right.map((x) => (x.id === 'lighting' ? this._rmBtnHtml(x) : this._rmItemHtml(x, 'extra'))).join('')}</div>
+        <div class="plc-rm-center"><div class="plc-rm-ctl">${skip('back', '−')}${playBtn}${skip('fwd', '+')}</div>
+          ${live ? `<div class="plc-rm-seek"><span data-rmpos>0:00</span><div class="plc-rm-track" data-rmseek><i data-rmfill></i><b data-rmknob></b></div><span data-rmdur>${esc(fmtTime(Number(np.st.attributes.media_duration) || 0))}</span></div>` : ''}</div>
+        <div class="plc-rm-right${popup ? '' : ' lights'}${right.length > 5 ? ' two' : ''}">${rightHtml}</div>
         <div class="plc-rm-bottom">${this._rmBtnHtml(b('intermission'), 'wide')}${this._rmBtnHtml(b('endshow'), 'wide')}
-          ${this._rmBtnHtml({ ...b('sleep'), sub: sleepSub }, `wide${sl ? ' lit' : ''}`)}${this._rmBtnHtml(b('full'), 'dark')}</div>
+          ${this._rmBtnHtml({ ...b('sleep'), sub: sleepSub }, `wide${sl ? ' lit' : ''}`)}</div>
       </div>
       <div class="plc-rm-popslot"></div>
       <div class="plc-rm-black" data-rmwake><span class="plc-rm-clock" data-rmclock></span></div></div>`;
@@ -6080,6 +6129,12 @@ Object.assign(PlexCenterCard.prototype, {
     const ends = np?.live && d ? endsAt(d - p, cfg(this._c, 'clock')) : '--:--';
     const e = box.querySelector('[data-rmends]'); if (e) e.textContent = ends;
     const bar = box.querySelector('[data-rmbar]'); if (bar) bar.style.width = d ? `${Math.min(100, (p / d) * 100)}%` : '0';
+    const sp = this._rmSeekTo ?? (this._rmHeld && Date.now() - this._rmHeld.at < 20000 && Math.abs(p - this._rmHeld.to) > 15 ? this._rmHeld.to : p);
+    if (this._rmHeld && Math.abs(p - this._rmHeld.to) <= 15) this._rmHeld = null;
+    const pct = d ? `${Math.min(100, (sp / d) * 100)}%` : '0';
+    const fill = box.querySelector('[data-rmfill]'), knob = box.querySelector('[data-rmknob]');
+    if (fill) fill.style.width = pct; if (knob) knob.style.left = pct;
+    const pos = box.querySelector('[data-rmpos]'); if (pos) pos.textContent = fmtTime(sp);
     const c = box.querySelector('[data-rmclock]');
     if (c) {
       const now = new Date(), t = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: cfg(this._c, 'clock') !== '24' });
@@ -6105,6 +6160,24 @@ Object.assign(PlexCenterCard.prototype, {
     const lights = this._rmItems('lights');
     box.innerHTML = `<div class="plc-rm-pop">${head('Lighting')}<div class="plc-rm-popgrid three">${lights.map((x) => this._rmItemHtml(x, 'lights')).join('')
       || '<p class="plc-rm-empty">Add lighting buttons in the card editor: Showtime Remote → Lighting.</p>'}</div></div>`;
+  },
+  /** The seek bar under Play: drag (or tap) to a time; it seeks when you let go. */
+  _rmScrub(e) {
+    const track = e.target.closest?.('[data-rmseek]');
+    if (!track) return false;
+    const tv = this._rmTv(), np = tv && nowPlaying(this._hass, tv, this._c), d = Number(np?.st?.attributes?.media_duration) || 0;
+    if (!d) return true;
+    const at = (ev) => { const r = track.getBoundingClientRect(); return Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * d; };
+    this._rmSeekTo = at(e); this._rmTickNow();
+    const move = (ev) => { this._rmSeekTo = at(ev); this._rmTickNow(); };
+    const up = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
+      const to = this._rmSeekTo; this._rmSeekTo = null; this._rmHeld = { to, at: Date.now() };
+      this._hass.callService('plex_center', 'control', { tv: tv.id, action: 'seek', value: to }).catch((err) => this._toast(`seek: ${err?.message || err}`));
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    e.preventDefault();
+    return true;
   },
   /** Run an action for the remote: the main one, then its "also run" entity. */
   async _rmCall(domain, service, data) {
