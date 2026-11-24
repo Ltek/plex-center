@@ -1,5 +1,24 @@
 # Changelog
 
+## v2026.11.24.125
+
+**Added**
+- **Content Layout** (editor, under Controls layout): the Home sections as rows, per screen type. A small picture of
+  the rows shows each section at its Width; tap one to move it (← → along its row, ↑ ↓ into the row above or below,
+  or a new row), give it its **Own row**, hide it, or open its panel, and set its **Width** (its share of the row)
+  and **Height** (% of its automatic size). Each shared row has **Match**, on by default: its posters, fanart and
+  Continue watching's banner are all as tall as the smallest of them, with a **Row height** % for the row.
+  **Copy the layout from** another screen type. Height for every section on the screen is here too.
+
+**Changed**
+- Width, Height (Size) and the Home order moved from the section panels and the Home panel to Content Layout.
+
+**Fixed**
+- Sections sharing a row: a section left alone on a row (because the next one didn't fit) no longer grows to the full
+  width, and its posters no longer grow with it. Posters and fanart are sized from the whole row, so a narrower
+  section shows fewer of them, and they fill it edge to edge; Coming Soon as fanart at 50 % no longer shows a single
+  huge item.
+
 ## v2026.11.24.124
 
 **Changed**
