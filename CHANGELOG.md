@@ -1,5 +1,22 @@
 # Changelog
 
+## v2026.11.24.130
+
+**Added**
+- **Every content section can be a banner:** Next Episode, Recently Added and Coming Soon can show as a banner like
+  Continue watching (one title at a time, big, with a pager, Cycle and View all). Next Episode and Recently Added get
+  Play, Details and Open show; Coming Soon gets Details, Trailer when there is one, and Play once it's in Plex.
+- **Item style** chips in each of these sections' Content Visuals: **Banner**, **Poster**, **Fanart** or **Fanart
+  fade**. Picking an image style on a section that was a banner (Continue watching on a tablet) turns it into a row
+  of them, so Continue watching is no longer stuck as a banner.
+
+**Fixed**
+- Posters sized to a row's height master showed each text line cut to one line; their text wraps like other rows
+  again (the posters are sized to leave room for it).
+- In a matched row, fanart in a half-width section showed one huge picture: at least two show side by side, their
+  pictures filling the row's height (cropped).
+- A banner's text and buttons are never bigger than its info side has room for, so its pager no longer disappears.
+
 ## v2026.11.24.129
 
 **Fixed**
