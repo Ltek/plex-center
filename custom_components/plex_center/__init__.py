@@ -26,6 +26,7 @@ class PlexCenterData:
     conn: PlexConnections
     tvs: list[dict[str, Any]] = field(default_factory=list)
     resumes: Any = None          # resume.Resumes: what was playing when each TV was turned off
+    markers: Any = None          # markers.Markers: intros / credits of what plays, the credits event
 
 
 type PlexCenterConfigEntry = ConfigEntry[PlexCenterData]
@@ -181,6 +182,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: PlexCenterConfigEntry) -
     resumes.track(entry.runtime_data.tvs)
     entry.runtime_data.resumes = resumes
     entry.async_on_unload(resumes.stop)
+    from .markers import Markers  # noqa: PLC0415
+
+    markers = Markers(hass, entry.runtime_data.conn)
+    markers.track(entry.runtime_data.tvs)
+    entry.runtime_data.markers = markers
+    entry.async_on_unload(markers.stop)
     entry.async_on_unload(entry.add_update_listener(_options_updated))
     return True
 
@@ -190,6 +197,8 @@ async def _options_updated(hass: HomeAssistant, entry: PlexCenterConfigEntry) ->
     entry.runtime_data.conn.forget()
     if entry.runtime_data.resumes:
         entry.runtime_data.resumes.track(entry.runtime_data.tvs)
+    if entry.runtime_data.markers:
+        entry.runtime_data.markers.track(entry.runtime_data.tvs)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PlexCenterConfigEntry) -> bool:

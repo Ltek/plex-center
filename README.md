@@ -112,6 +112,38 @@ data:
   watched: true        # for the TV's Plex user
 ```
 
+```yaml
+action: plex_center.search          # returns the results: use response_variable
+data:
+  query: Ratatouille
+  tv: Theater                       # optional: search as this TV's Plex user (their libraries, watched state)
+  type: any                         # any | movie | show | episode
+  limit: 10
+response_variable: found            # found.results: [{key, type, title, year, watched, show, season, episode, library, ...}]
+```
+
+## Intros and credits
+
+Plex Center reads Plex's intro and credits markers for what plays on each TV (once per title). Now playing shows
+**Skip intro** during an intro, and **Skip credits** during credits that come before the end. Up next shows from the
+start of the final credits.
+
+When the final credits start, Home Assistant gets a `plex_center_credits_started` event (`tv`, `tv_name`, `key`,
+`title`, `show`, `user`, `credits_start`, `credits_end`), and the TV's **At the credits** scene or script runs, if set
+(TV settings in the card editor). It fires when playback reaches the credits, not when a title is resumed inside them.
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: plex_center_credits_started
+    event_data:
+      tv: theater
+actions:
+  - action: scene.turn_on
+    target:
+      entity_id: scene.theater_lights_up
+```
+
 ## Rooms with several devices (a theater)
 
 A TV can have a **Room power** entity and a **Room status** entity (in the TV's settings). Plex Center doesn't

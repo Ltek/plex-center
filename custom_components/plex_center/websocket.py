@@ -37,19 +37,20 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
     for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar,
-               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update, ws_sleep):
+               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update, ws_sleep, ws_markers):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
 
 # ------------------------------------------------------------------------------------------- TV settings (card editor)
 
-from .const import (TV_BUSY, TV_FAIL, TV_POWER, TV_POWER_OFF, TV_POWER_ON, TV_READY, TV_READY_S, TV_ROOM_OFF,  # noqa: E402
+from .const import (TV_BUSY, TV_CREDITS, TV_FAIL, TV_POWER, TV_POWER_OFF, TV_POWER_ON, TV_READY, TV_READY_S, TV_ROOM_OFF,  # noqa: E402
                     TV_SKIP_BACK, TV_SKIP_FWD, TV_STATUS, TV_VOLUME)
 
 ROOM_DOMAINS = ("input_boolean", "input_select", "select", "switch", "script", "scene")
 EDIT_ENTITY = {TV_PIPUP: ("media_player",), TV_ADB: ("media_player",), TV_REMOTE: ("media_player",), TV_CAST: ("media_player",),
-               TV_PLEX: ("media_player",), TV_VOLUME: ("media_player",), TV_POWER: ROOM_DOMAINS, TV_STATUS: ()}
+               TV_PLEX: ("media_player",), TV_VOLUME: ("media_player",), TV_POWER: ROOM_DOMAINS, TV_STATUS: (),
+               TV_CREDITS: ("scene", "script")}
 EDIT_TEXT = (TV_NAME, TV_USER, TV_POWER_ON, TV_POWER_OFF, TV_READY, TV_BUSY, TV_FAIL)
 EDIT_NUM = {TV_SKIP_FWD: (5, 600, 30), TV_SKIP_BACK: (5, 600, 10), TV_READY_S: (10, 900, 120)}
 EDIT_BOOL = (TV_ROOM_OFF,)
@@ -591,6 +592,22 @@ async def ws_search(hass: HomeAssistant, connection, msg) -> None:
         return [{"library": k, "items": v} for k, v in groups.items()]
 
     await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/markers", vol.Optional("entry_id"): str, vol.Required("tv"): str})
+@websocket_api.async_response
+async def ws_markers(hass: HomeAssistant, connection, msg) -> None:
+    """The intro / credits of what the TV's Plex player has on: {key, intro: [s, e] | None, credits: [s, e] | None}."""
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    st = tv.get(TV_PLEX) and hass.states.get(tv[TV_PLEX])
+    key = str((st and st.attributes.get("media_content_id")) or "")
+    mk = entry.runtime_data.markers
+    if not key.isdigit() or mk is None or st.state not in ("playing", "paused"):
+        connection.send_result(msg["id"], {"key": None, "intro": None, "credits": None})
+        return
+    found = await mk.async_get(tv, key)
+    connection.send_result(msg["id"], {"key": key, **found})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/filters", vol.Optional("entry_id"): str, vol.Optional("tv"): str,

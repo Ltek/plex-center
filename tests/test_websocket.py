@@ -267,3 +267,9 @@ def test_recently_added_tv_gives_episodes_newest_per_show():
     assert [e.ratingKey for e in _recent_in(TVSec(), 2)] == [1, 3]
     assert calls[0]["libtype"] == "episode" and calls[0]["sort"] == "addedAt:desc"
     assert _recent_in(MOVIES, 1)[0] is BILL
+
+
+async def test_markers_without_a_plex_player(ws):
+    r = await ws(type="plex_center/markers", tv="living_room_tv")
+    assert r["success"], r
+    assert r["result"] == {"key": None, "intro": None, "credits": None}

@@ -92,3 +92,29 @@ sleep_timer:
     after:
       selector:
         boolean:
+search:
+  fields:
+    query:
+      required: true
+      example: Ratatouille
+      selector:
+        text:
+    tv:
+      example: Theater
+      selector:
+        text:
+    type:
+      default: any
+      selector:
+        select:
+          options:
+            - any
+            - movie
+            - show
+            - episode
+    limit:
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 50

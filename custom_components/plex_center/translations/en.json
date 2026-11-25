@@ -204,6 +204,28 @@
           "description": "Turn off when what's playing ends."
         }
       }
+    },
+    "search": {
+      "name": "Search",
+      "description": "Find movies, shows and episodes by title, as a TV's Plex user sees them. Returns the results (use response_variable), each with its key for plex_center.play.",
+      "fields": {
+        "query": {
+          "name": "Title",
+          "description": "All or part of a title."
+        },
+        "tv": {
+          "name": "TV",
+          "description": "Whose Plex user to search as (their libraries and watched state). Empty: the first TV."
+        },
+        "type": {
+          "name": "Type",
+          "description": "any, movie, show or episode."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "The most results to return (1–50)."
+        }
+      }
     }
   }
 }

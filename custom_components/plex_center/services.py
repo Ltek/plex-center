@@ -6,7 +6,7 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.helpers.config_validation as cv
 
@@ -22,6 +22,9 @@ MARK_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Required("key"): vo
 TRAILER_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
                              vol.Optional("url"): cv.string})
 RESUME_SCHEMA = vol.Schema({vol.Required("tv"): cv.string})
+SEARCH_SCHEMA = vol.Schema({vol.Required("query"): vol.All(cv.string, vol.Length(min=1, max=100)), vol.Optional("tv"): cv.string,
+                            vol.Optional("type", default="any"): vol.In(["any", "movie", "show", "episode"]),
+                            vol.Optional("limit", default=10): vol.All(vol.Coerce(int), vol.Range(min=1, max=50))})
 SLEEP_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("minutes", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=600)),
                            vol.Optional("after", default=False): cv.boolean})
 CONTROL_SCHEMA = vol.Schema({vol.Required("tv"): cv.string,
@@ -153,6 +156,38 @@ def async_register(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, "play", _logged(hass, "play", play), schema=PLAY_SCHEMA)
     hass.services.async_register(DOMAIN, "control", _logged(hass, "control", ctl), schema=CONTROL_SCHEMA)
     hass.services.async_register(DOMAIN, "resume", _logged(hass, "resume", resume), schema=RESUME_SCHEMA)
+
+    async def search(call: ServiceCall) -> ServiceResponse:
+        """Find movies / shows / episodes by title, as the TV's Plex user sees them (watched or not)."""
+        from . import loaded_entries  # noqa: PLC0415
+
+        if call.data.get("tv"):
+            entry, tv = find_tv(hass, call.data["tv"])
+        else:
+            entry = next(iter(loaded_entries(hass)), None)
+            if entry is None:
+                raise HomeAssistantError("Plex Center isn't set up")
+            tv = entry.runtime_data.tvs[0] if entry.runtime_data.tvs else {}
+        want = call.data["type"]
+
+        def run(server):
+            out = []
+            for hit in server.search(call.data["query"], limit=max(call.data["limit"] * 2, 10)):
+                t = getattr(hit, "type", None)
+                if t not in ("movie", "show", "episode") or (want != "any" and t != want):
+                    continue
+                d = item_dict(hit)
+                row = {k: d[k] for k in ("key", "type", "title", "year", "watched", "duration", "offset", "show", "season",
+                                         "episode", "show_key", "rating", "episodes", "watched_episodes") if k in d}
+                row["library"] = getattr(hit, "librarySectionTitle", None) or ""
+                out.append(row)
+                if len(out) >= call.data["limit"]:
+                    break
+            return out
+        results = await entry.runtime_data.conn.async_call(tv.get(TV_USER), run)
+        return {"results": results}
+
+    hass.services.async_register(DOMAIN, "search", search, schema=SEARCH_SCHEMA, supports_response=SupportsResponse.ONLY)
 
     async def sleep_timer(call: ServiceCall) -> None:
         """Turn the TV (and its room) off after `minutes`, or when what's playing ends (`after`); neither cancels."""

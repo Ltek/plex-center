@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.138
+// Version: v2026.11.25.139
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.138';
+const BUILD_NUMBER = 'v2026.11.25.139';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1247,6 +1247,15 @@ function addRecent(q) {
 }
 
 const tabIcon = (t, c = {}) => (c.page_icons?.[t.id]) || (t.id === 'calendar' ? 'mdi:calendar-month' : t.id === 'home' ? 'mdi:home' : t.type === 'movie' ? 'mdi:movie-open' : t.type === 'show' ? 'mdi:television-classic' : 'mdi:folder-play');
+/** Skip intro / Skip credits at position p (s) of an item d long: {label, to} or null. Credits that run to the end
+ *  aren't offered (Up next takes over there). */
+function markerSkip(mk, p, d) {
+  if (!mk) return null;
+  const [is, ie] = mk.intro || [], [cs, ce] = mk.credits || [];
+  if (mk.intro && p >= is && p < ie - 2) return { label: 'Skip intro', to: ie };
+  if (mk.credits && p >= cs && p < ce - 2 && (!d || ce < d - 10)) return { label: 'Skip credits', to: ce };
+  return null;
+}
 const isPortrait = () => (typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)').matches : true);
 /** The config the card renders with: the current screen's settings, under the names the renderer reads. */
 function screenOf(phone, portrait) { return `${phone ? 'phone' : 'tablet'}_${portrait ? 'portrait' : 'landscape'}`; }
@@ -1567,6 +1576,9 @@ const CARD_CSS = `
 .plc-times.mid > :first-child { text-align: left; } .plc-times.mid > :last-child { text-align: right; }
 .plc-times.mid .plc-np-run { font-size: 1.15em; background: var(--plc-bg2); color: var(--primary-text-color); }
 .plc-side-info .plc-np-ctl.center { gap: 16px; margin-top: 14px; }
+.plc-skipslot { display: flex; justify-content: center; min-height: 0; }
+.plc-skipslot:empty { display: none; }
+.plc-skipmk { border-color: var(--plc-a); color: var(--plc-a); margin-top: 6px; }
 .plc-np-facts .plc-rate.big, .plc-np-facts .plc-fact { background: var(--plc-bg2); color: var(--primary-text-color); }
 .plc-cal-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .plc-cal-chip { padding: 2px 8px; border-radius: 999px; font-size: .75em; font-weight: 600; color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
@@ -4466,7 +4478,7 @@ Object.assign(PlexCenterCard.prototype, {
   },
   _upNextHtml(np, compact = false) {
     const u = this._upNext(np);
-    if (!u || u.left == null || u.left > (Number(cfg(this._c, 'up_next_secs')) || 120)) return '';
+    if (!u || u.left == null || (u.left > (Number(cfg(this._c, 'up_next_secs')) || 120) && !this._inCredits(np))) return '';
     const n = u.next, stop = this._stopAfter === u.cur;
     return `<div class="plc-upnext${compact ? ' compact' : ''}">${!compact && n.still ? `<div class="plc-upnext-img" style="background-image:url('${cssUrl(n.still)}')"></div>` : ''}
       <div class="plc-upnext-txt"><div class="plc-eyebrow">Up next <span data-upnext-t>${stop ? '· stopping after this' : `in ${fmtTime(u.left)}`}</span></div>
@@ -4474,10 +4486,17 @@ Object.assign(PlexCenterCard.prototype, {
       <div class="plc-upnext-btns"><button class="plc-btn main" data-upnext-play><ha-icon icon="mdi:skip-next"></ha-icon>Play next</button>
         <button class="plc-btn${stop ? ' on' : ''}" data-upnext-stop><ha-icon icon="mdi:stop-circle-outline"></ha-icon>${stop ? 'Keep playing' : 'Stop after this'}</button></div></div>`;
   },
+  /** The final credits have started (Plex's marker): Up next shows from there, not only near the end. */
+  _inCredits(np) {
+    const mk = this._mk, c = mk?.tv === np?.tv?.id && mk.credits;
+    if (!c) return false;
+    const d = Number(np.st?.attributes?.media_duration) || 0, p = livePosition(np.st) ?? 0;
+    return p >= c[0] && (!d || c[1] >= d - 10);
+  },
   /** Every second: the countdown, Stop after this, and the optional auto-play. */
   _upTick(np) {
     const u = this._upNext(np), limit = Number(cfg(this._c, 'up_next_secs')) || 120;
-    const shown = !!(u && u.left != null && u.left <= limit);
+    const shown = !!(u && u.left != null && (u.left <= limit || this._inCredits(np)));
     if (shown !== !!this._upShown) { this._upShown = shown; this._renderNP(true); return; }
     if (!u || u.left == null) return;
     this._root.querySelectorAll('[data-upnext-t]').forEach((x) => { x.textContent = this._stopAfter === u.cur ? '· stopping after this' : `in ${fmtTime(u.left)}`; });
@@ -4528,7 +4547,7 @@ Object.assign(PlexCenterCard.prototype, {
           const pills = (sx ? this._ratingPills(sx) : []).join('');
           const row = `${np.sub ? `<span class="plc-info-sub">${esc(np.sub)}</span>` : ''}${sx ? this._openShowHtml(sx, 'plc-chip') : ''}`;
           const run = dur ? `<span class="plc-fact plc-np-run"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(fmtRun(dur))}</span>` : '<span></span>';
-          return `${pills ? `<div class="plc-np-rates">${pills}</div>` : ''}${row ? `<div class="plc-rates plc-np-facts">${row}</div>` : ''}${this._bar(np, run)}`; })()}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${app && np.live ? `<span class="plc-np-app">${esc(app)}</span>` : ''}${this._upNextHtml(np)}</div></div>`;
+          return `${pills ? `<div class="plc-np-rates">${pills}</div>` : ''}${row ? `<div class="plc-rates plc-np-facts">${row}</div>` : ''}${this._bar(np, run)}${np.live ? '<div class="plc-skipslot" data-skipmk></div>' : ''}`; })()}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${app && np.live ? `<span class="plc-np-app">${esc(app)}</span>` : ''}${this._upNextHtml(np)}</div></div>`;
   },
 
   /** Now playing for a TV that's off (or just woken) with something to resume. */
@@ -4567,6 +4586,18 @@ Object.assign(PlexCenterCard.prototype, {
     r.querySelectorAll('[data-pos]').forEach((x) => { x.textContent = fmtTime(p); });
     r.querySelectorAll('[data-dur]').forEach((x) => { x.textContent = d ? fmtTime(d) : ''; });
     r.querySelectorAll('[data-ends]').forEach((x) => { x.textContent = d ? `Ends ${endsAt(d - p, cfg(this._c, 'clock'))}` : ''; });
+    this._markersFor(np);
+    const skip = markerSkip(this._mk?.tv === np.tv?.id ? this._mk : null, p, d);
+    const html = skip ? `<button class="plc-btn plc-skipmk" data-np="seek:${skip.to}"><ha-icon icon="mdi:skip-forward"></ha-icon>${skip.label}</button>` : '';
+    r.querySelectorAll('[data-skipmk]').forEach((x) => { if (x.dataset.v !== html) { x.dataset.v = html; x.innerHTML = html; } });
+  },
+  /** The intro / credits of what plays on the TV (asked once per title; the integration caches them). */
+  _markersFor(np) {
+    const sig = `${np.tv?.id}|${np.title}`;
+    if (!np.tv || this._mkSig === sig) return;
+    this._mkSig = sig;
+    ws(this._hass, 'markers', { tv: np.tv.id }).then((m) => { if (this._mkSig === sig) this._mk = m?.key ? { ...m, tv: np.tv.id } : null; })
+      .catch(() => { if (this._mkSig === sig) this._mk = null; });
   },
 
   _onScrub(e) {
@@ -5267,11 +5298,14 @@ class PlexCenterCardEditor extends HTMLElement {
       ${ent('status_entity', 'Room status', 'plce-dl-status')}
       ${room ? `${txt('ready_value', 'Ready value', 'on')}${txt('busy_value', 'Starting value', 'starting')}${txt('fail_value', 'Failure value', 'error')}
         ${num('ready_wait', 'Wait for ready', 120)}
-        <label class="plce-check"><input type="checkbox" data-tvset="${esc(t.id)}|room_off"${set.room_off ? ' checked' : ''}${dis}>The room turns the TV off</label>` : ''}`;
+        <label class="plce-check"><input type="checkbox" data-tvset="${esc(t.id)}|room_off"${set.room_off ? ' checked' : ''}${dis}>The room turns the TV off</label>` : ''}
+      <div class="plce-group">At the credits</div>
+      <p class="plce-hint">When the final credits start (Plex's credits marker), run this scene or script, for example to bring the lights up. Automations can also use the plex_center_credits_started event.</p>
+      ${ent('credits_entity', 'Run', 'plce-dl-credits', 'scene or script')}`;
   }
   /** Something to look at for a TV: a player that's missing or unavailable. */
   _tvWarn(t) {
-    return ['pipup', 'adb', 'remote', 'cast', 'plex_client', 'volume_entity', 'power_entity', 'status_entity'].some((k) => {
+    return ['pipup', 'adb', 'remote', 'cast', 'plex_client', 'volume_entity', 'power_entity', 'status_entity', 'credits_entity'].some((k) => {
       const e = t.settings?.[k]; return e && !this._hass.states[e];
     });
   }
@@ -5283,6 +5317,7 @@ class PlexCenterCardEditor extends HTMLElement {
     return `${['pipup', 'androidtv', 'androidtv_remote', 'cast', 'plex'].map((p) => `<datalist id="plce-dl-${p}">${ids(byPlat(p))}</datalist>`).join('')}
       <datalist id="plce-dl-mp">${ids((e) => e.startsWith('media_player.'))}</datalist>
       <datalist id="plce-dl-room">${ids((e) => /^(input_boolean|input_select|select|switch|script|scene)\./.test(e))}</datalist>
+      <datalist id="plce-dl-credits">${ids((e) => /^(script|scene)\./.test(e))}</datalist>
       <datalist id="plce-dl-status">${ids((e) => /^(binary_sensor|sensor|input_boolean|input_select|select|switch)\./.test(e))}</datalist>`;
   }
   async _saveTv(id, key, value) {
@@ -6862,7 +6897,7 @@ Object.assign(PlexCenterCard.prototype, {
   },
 });
 
-PlexCenterCard._test = { rowShares, homeRows, rowFit, rowMaster, packRows, rmEntityCall, RM_SLOTS, lookDefault, SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { markerSkip, rowShares, homeRows, rowFit, rowMaster, packRows, rmEntityCall, RM_SLOTS, lookDefault, SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 

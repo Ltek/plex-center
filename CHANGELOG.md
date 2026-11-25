@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.25.139
+
+- **Intros and credits** (Plex's markers, read once per title and cached): Now playing shows **Skip intro** during an intro and **Skip credits** during credits that come before the end; Up next shows from the start of the final credits.
+- **Credits event**: when the final credits start on a TV, Home Assistant gets `plex_center_credits_started` (tv, title, user and the credits' times). It fires when playback reaches the credits, not when a title is resumed inside them.
+- **At the credits** (TV settings): a scene or script to run when the final credits start, for example bringing the theater lights up.
+- **New action `plex_center.search`**: find movies, shows and episodes by title as a TV's Plex user sees them; it returns the results (keys for `plex_center.play`, watched state). Ideas for both from Scogun/plexex.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.25.138
 
 - **Now playing, laid out like your mockup**: the ratings sit in the top-left corner (above the title on phones); the running time is between the position and the end time under the bar; the app (Plex) is in the bottom-right corner; more space between the rows of buttons; all text about 3 px bigger.
