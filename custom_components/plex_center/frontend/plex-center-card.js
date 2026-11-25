@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.143
+// Version: v2026.11.25.144
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.143';
+const BUILD_NUMBER = 'v2026.11.25.144';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -544,6 +544,7 @@ const DEFAULTS = {
   layout: 'auto',
   tv_picker: 'chips',
   tv_label: 'name',
+  tv_indicator: 'dot',       // dot | cast: a cast / cast-off icon (same colours) that opens Now playing for that TV
   filters_mode: 'auto',
   phone_header: false,
   phone_compact: true,
@@ -1406,6 +1407,11 @@ const CARD_CSS = `
 .plc-chip.on { border-color: var(--plc-a); background: color-mix(in srgb, var(--plc-a) 18%, transparent); }
 .plc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--disabled-text-color, #777); }
 .plc-dot.on { background: var(--success-color, #4caf50); } .plc-dot.play { background: var(--plc-a); }
+.plc-cast { --mdc-icon-size: 18px; flex: none; color: var(--disabled-text-color, #777); cursor: pointer; padding: 4px; margin: -4px; border-radius: 50%; }
+.plc-cast.on { color: var(--success-color, #4caf50); } .plc-cast.play { color: var(--plc-a); } .plc-cast.resume { color: var(--warning-color, #ff9800); }
+.plc-cast:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.plc-menu-ind { width: 24px; flex: none; display: flex; align-items: center; justify-content: center; }
+.plc-menu-ind .plc-cast { --mdc-icon-size: 22px; }
 .plc-dot.resume { background: var(--warning-color, #ff9800); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning-color, #ff9800) 35%, transparent); }
 .plc-tv-resume { --mdc-icon-size: 15px; color: var(--warning-color, #ff9800); margin-left: 2px; }
 .plc-sess.resume { opacity: .9; border: 1px dashed color-mix(in srgb, var(--warning-color, #ff9800) 60%, transparent); cursor: pointer; }
@@ -2739,7 +2745,7 @@ class PlexCenterCard extends HTMLElement {
     const mode = cfg(this._c, 'lock') ? 'hidden' : cfg(this._c, 'tv_picker');
     const how = cfg(this._c, 'tv_label');
     const icons = this._c.tv_icons || {};
-    const dot = (tv) => `<span class="plc-dot ${this._dotCls(tv)}" data-dot="${esc(tv.id)}"${this._resumeFor(tv) && (!realOn(this._hass, tv) || this._stuck(tv)) ? ' title="Ready to resume"' : ''}></span>`;
+    const dot = (tv) => this._indicator(tv);
     const rmark = (t) => (this._resumeFor(t) && (!realOn(this._hass, t) || this._stuck(t)) ? '<ha-icon class="plc-tv-resume" icon="mdi:play-pause" title="Off · ready to resume"></ha-icon>' : '');
     const face = (t) => {
       const ic = `<ha-icon icon="${esc(icons[t.id] || 'mdi:television')}"></ha-icon>`;
@@ -2749,7 +2755,7 @@ class PlexCenterCard extends HTMLElement {
     let picker = '';
     if (tvs.length > 1 && mode !== 'hidden') {
       picker = mode === 'chip' || mode === 'dropdown'
-        ? `<button class="plc-chip plc-menuchip" data-tvsheet>${dot(cur)}<ha-icon icon="${esc(icons[cur?.id] || 'mdi:television')}"></ha-icon><span class="plc-menuchip-n">${esc(tvLabel(cur))}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
+        ? `<button class="plc-chip plc-menuchip" data-tvsheet>${dot(cur)}<span class="plc-menuchip-n">${esc(tvLabel(cur))}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
         : `<div class="plc-tvs">${tvs.map((t) => `<button class="plc-chip${cls}${t === cur ? ' on' : ''}" data-tv="${esc(t.id)}" title="${esc(tvLabel(t))}">${face(t)}</button>`).join('')}</div>`;
     } else if (cur && mode !== 'hidden') picker = `<span class="plc-chip${cls} on" title="${esc(tvLabel(cur))}">${face(cur)}</span>`;
     const title = this._c.title === undefined ? DEFAULTS.title : this._c.title;
@@ -2808,7 +2814,7 @@ class PlexCenterCard extends HTMLElement {
     this._closeMenu();
     const root = this._root, scale = (Number(cfg(this._c, 'scale')) || 100) / 100;
     root.insertAdjacentHTML('beforeend', `<div class="plc-menu" role="menu"><div class="plc-menu-h">${esc(title)}</div>${rows.map((r) => `<button class="plc-menu-i${r.on ? ' on' : ''}" role="menuitem" ${r.attr}>
-      <ha-icon icon="${esc(r.icon)}"></ha-icon><span class="plc-menu-t"><b>${esc(r.label)}</b>${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span>${r.on ? '<ha-icon class="tick" icon="mdi:check"></ha-icon>' : ''}${r.dot || ''}</button>`).join('')}</div>`);
+      ${r.lead || `<ha-icon icon="${esc(r.icon)}"></ha-icon>`}<span class="plc-menu-t"><b>${esc(r.label)}</b>${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span>${r.on ? '<ha-icon class="tick" icon="mdi:check"></ha-icon>' : ''}${r.dot || ''}</button>`).join('')}</div>`);
     const m = root.querySelector('.plc-menu'), a = anchor.getBoundingClientRect(), rr = root.getBoundingClientRect();
     const w = Math.min(320, rr.width / scale - 16);
     let left = (a.left - rr.left) / scale;
@@ -2967,16 +2973,34 @@ class PlexCenterCard extends HTMLElement {
     this._paintWatching(this._root.querySelector('.plc-watchpop [data-wpop]'));
   }
 
+  /** A TV's status: the dot, or (TV indicator: Cast) a cast / cast-off icon in the same colours that opens Now playing
+   *  for that TV. data-dot: kept up to date by _updateStates. */
+  _indicator(tv) {
+    if (!tv) return '';
+    const cls = this._dotCls(tv), ready = this._resumeFor(tv) && (!realOn(this._hass, tv) || this._stuck(tv));
+    if (cfg(this._c, 'tv_indicator') === 'cast') {
+      return `<ha-icon class="plc-cast ${cls}" icon="${cls ? 'mdi:cast' : 'mdi:cast-off'}" data-dot="${esc(tv.id)}" data-npfor="${esc(tv.id)}" role="button" tabindex="0" title="Now playing on ${esc(tvLabel(tv))}${ready ? ' · ready to resume' : ''}"></ha-icon>`;
+    }
+    return `<span class="plc-dot ${cls}" data-dot="${esc(tv.id)}"${ready ? ' title="Ready to resume"' : ''}></span>`;
+  }
+  /** Make this page that TV's, then open its Now playing (the TV icons, Watching now cards). */
+  _openNpFor(tv) {
+    if (!tv) return;
+    this._closeMenu?.();
+    if (tv.id !== this._tv()?.id) this._setTv(tv);
+    this._v.npHidden = null; this._v.npOpen = tv.id;
+    if (!this._panelVisible()) { this._v.npFull = true; this._npFullAt = Date.now(); }
+    this._renderNP(true);
+  }
+
   /** TV picker menu: every TV, its state and who is watching. */
   _tvSheet(anchor) {
     const cur = this._tv(), sessions = peek('sessions') || [];
-    const icons = this._c.tv_icons || {};
     this._menu(anchor, 'Play on', this._tvs().map((t) => {
       const s2 = this._sessionFor(t);
       const live = realOn(this._hass, t) && !this._stuck(t);
       const sub = live && s2 ? `${s2.user} · ${s2.show || s2.title}` : live ? 'Playing' : this._tvSub(t);
-      const dotCls = this._dotCls(t);
-      return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub, on: t === cur, attr: `data-tvpick="${esc(t.id)}"`, dot: `<span class="plc-dot ${dotCls}"></span>` };
+      return { lead: `<span class="plc-menu-ind">${this._indicator(t)}</span>`, label: tvLabel(t), sub, on: t === cur, attr: `data-tvpick="${esc(t.id)}"` };
     }));
   }
 
@@ -4677,8 +4701,10 @@ Object.assign(PlexCenterCard.prototype, {
     if (this._psig !== undefined && psig !== this._psig) { clearTimeout(this._rsT); this._rsT = setTimeout(() => this._fetchResumes(true), 2500); }
     this._psig = psig;
     for (const tv of this._tvs()) {
-      const el = this._root.querySelector(`[data-dot="${tv.id}"]`);
-      if (el) el.className = `plc-dot ${this._dotCls(tv)}`;
+      const cls = this._dotCls(tv);
+      for (const el of this._root.querySelectorAll(`[data-dot="${tv.id}"]`)) {
+        if (el.classList.contains('plc-cast')) { el.className = `plc-cast ${cls}`; el.setAttribute('icon', cls ? 'mdi:cast' : 'mdi:cast-off'); } else el.className = `plc-dot ${cls}`;
+      }
     }
     this._appMetaFetch();
     this._renderNP();
@@ -4705,6 +4731,7 @@ Object.assign(PlexCenterCard.prototype, {
       if ((el = t('[data-rm]'))) { this._rmPress(el.dataset.rm); return; }
       return;
     }
+    if ((el = t('[data-npfor]'))) { e.stopPropagation(); this._openNpFor(this._tvs().find((x) => x.id === el.dataset.npfor)); return; }
     if (t('[data-remoteopen]')) { this._openRemote(); return; }
     if (t('.plc-vasheet .plc-tile') && !t('[data-qplay]')) this._closeSheet(true);
     if ((el = t('[data-openshow]'))) { e.stopPropagation(); this._closeMenu?.(); this._openShow(el.dataset.openshow, el.dataset.showtitle); return; }
@@ -4750,10 +4777,7 @@ Object.assign(PlexCenterCard.prototype, {
       if (el.closest('.plc-watchpop')) this._closeSheet(true);
       const tv = this._tvs().find((x) => x.id === el.dataset.sesstv);
       if (!tv) return;
-      if (tv.id !== this._tv()?.id) this._setTv(tv);
-      this._v.npHidden = null; this._v.npOpen = tv.id;
-      if (!this._panelVisible()) { this._v.npFull = true; this._npFullAt = Date.now(); }
-      this._renderNP(true); return;
+      this._openNpFor(tv); return;
     }
     if ((el = t('[data-seasonmenu]'))) {
       const list = this._seasonsOf || [];
@@ -5295,6 +5319,7 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-group">TV picker</div>
       <p class="plce-hint">How the TV picker looks (a button for each TV, a chip or icon that opens a menu, or hidden) is set per screen in Layout.</p>
       ${this._select('tv_label', 'TV buttons show', [['name', 'Name'], ['icon', 'Icon only'], ['both', 'Icon and name']])}
+      ${this._select('tv_indicator', 'TV status', [['dot', 'Dot'], ['cast', 'Cast icon (tap: that TV’s Now playing)']])}
       ${this._c('tv_label') !== 'name' ? tvs.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.name)} icon</label><plce-icon-pick data-tvicon="${esc(t.id)}" value="${esc((this._config.tv_icons || {})[t.id] || '')}" placeholder="mdi:television"></plce-icon-pick></div>`).join('') : ''}
       ${this._select('default_tv', 'Default TV', [['', 'First in the list'], ...tvs.map((t) => [t.id, t.name])])}
       ${this._c('lock') ? '' : this._select('client_choice', 'When playing', [['card', "Use the card's TV"], ['ask', 'Ask which TV each time']])}

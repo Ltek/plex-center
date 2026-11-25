@@ -1,5 +1,10 @@
 # Changelog
 
+## v2026.11.25.144
+
+- **TV picker**: the TV icon is gone from the dropdown button and the TV menu (it did nothing); the menu shows each TV's status in its place.
+- **TV status: Cast icon** (new option, Card editor → TVs → TV status): a cast / cast-off icon in the status dot's colours, in place of the dot, on the TV chips, the dropdown button and the TV menu. Tapping it switches the page to that TV and opens its Now playing.
+
 ## v2026.11.25.143
 
 - **Banner with the picture on the left shows the same things as the Top banner**: buttons with their labels, the pager, the Cycle chip, the Movies / TV chips and View all. A narrow text side used to hide them and show icon-only buttons; now they wrap, and the text is sized to fit with them (it was also capped too small on a narrow side).
