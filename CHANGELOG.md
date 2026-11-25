@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.25.131
+
+- **Section widths are respected.** A section with its own Width keeps it; a section without one takes the rest of its row.
+- **Same format in every content section.** Next Episode and Continue watching rows use the same text lines as Recently Added, and their Fanart / Fanart fade get the same defaults (no text backdrop, the same text sizes, labels for flags).
+- **Narrow banners stack**: the picture sits above the text when a banner has a small share of its row.
+- Empty text lines (a lone "," left by missing fields) are no longer shown.
+
 ## v2026.11.24.130
 
 **Added**
