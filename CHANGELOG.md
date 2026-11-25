@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.25.148
+
+- **Top banner picture kept near the top**: when the picture is cropped top and bottom, the crop now comes off the bottom, so heads and title logos stay in view. New **Picture position** (Top / Center / Bottom) in a section's Content Visuals, under Banner picture.
+- **Fix: tapping a TV's icon opened nothing when that TV was off or idle.** Now playing opens for it anyway (Turn on, the remote and the other controls) and stays open until you close it.
+- **The TV menu is as wide as its names need** (at least as wide as the button), not always 320 px.
+
 ## v2026.11.25.147
 
 - **TV picker settings in one place** (Card editor → Screens → TV picker): the picker's form per screen (a button per TV, Dropdown, Icon button, Hidden), and for every screen: **Shows** Icon only / Icon & label / Label only, **Icon** Cast icon (default) or Status dot, **Tap the icon** to switch the page to that TV and open its Now playing (on by default), Default TV, When playing and Lock. They're no longer in the TVs panel.

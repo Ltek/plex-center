@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.147
+// Version: v2026.11.25.148
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.147';
+const BUILD_NUMBER = 'v2026.11.25.148';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1004,7 +1004,7 @@ function layoutItems(c, key = 'main') {
 }
 
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
-const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', cycle_mode: ['scroll', 'fade'], cycle_chip: 'bool', banner_img: ['left', 'top'], chips_pos: ['left', 'center', 'right'], cycle_pos: ['left', 'center', 'right'], viewall_pos: ['left', 'center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
+const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', cycle_mode: ['scroll', 'fade'], cycle_chip: 'bool', banner_img: ['left', 'top'], img_pos: ['top', 'center', 'bottom'], chips_pos: ['left', 'center', 'right'], cycle_pos: ['left', 'center', 'right'], viewall_pos: ['left', 'center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', size: 'num', width: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
@@ -1077,7 +1077,7 @@ function secStyle(c, id) {
   // Cycle: the header chip turns the section's auto-rotate on / off; Cycle content says how (scroll or fade)
   const cycleMode = s.cycle_mode || (s.auto && s.auto !== 'off' ? s.auto : id === 'continue' ? 'fade' : 'scroll');
   const want = c._cycle?.[id], auto = want === undefined ? (s.auto || 'off') : want ? cycleMode : 'off';
-  return { layout: s.layout || 'row', banner_img: s.banner_img === 'top' ? 'top' : 'left', cycle_mode: cycleMode, cycle_chip: s.cycle_chip ?? true, image, fade: lkImg === 'fade', wide, lkind: SEC_KIND[type] || type, look: own, collapsible, collapsed: !!s.collapsed,
+  return { layout: s.layout || 'row', banner_img: s.banner_img === 'top' ? 'top' : 'left', img_pos: ['center', 'bottom'].includes(s.img_pos) ? s.img_pos : 'top', cycle_mode: cycleMode, cycle_chip: s.cycle_chip ?? true, image, fade: lkImg === 'fade', wide, lkind: SEC_KIND[type] || type, look: own, collapsible, collapsed: !!s.collapsed,
     icon: s.icon || SEC_TYPE_ICON[type] || '', show_icon: s.show_icon ?? (collapsible || !!s.icon), show_title: s.show_title ?? true,
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
     chips_pos: s.chips_pos || 'right', cycle_pos: s.cycle_pos || 'right', viewall_pos: s.viewall_pos || 'right', title_pos: s.title_pos || 'left', view_all: s.view_all ?? true,
@@ -1882,6 +1882,10 @@ const CARD_CSS = `
 .plc-sec.banner { container-type: inline-size; }
 .plc-hero.top { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
 .plc-hero.top .plc-hero-img { height: min(calc(100cqw * 9 / 16), 340px); min-height: 0; }   /* the whole picture, up to 340 px tall */
+/* a Top banner's picture is cropped top and bottom when its box is wider than the picture: by default near the top stays
+   in view (heads, title logos), so the crop comes off the bottom; Picture position: Top / Center / Bottom */
+.plc-hero.top.pos-top .plc-hero-img { background-position: center 20%; }
+.plc-hero.top.pos-bottom .plc-hero-img { background-position: center 85%; }
 .plc-hero.top.fixh { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
 .plc-hero.top.fixh .plc-hero-img { height: auto; min-height: 0; }   /* fixed height: the picture fills what the text leaves */
 .plc-hero.top.fixh .plc-hero-info { overflow: visible; padding: calc(10px * var(--plc-size, 1)) calc(16px * var(--plc-size, 1)) calc(12px * var(--plc-size, 1)); gap: calc(2px * var(--plc-size, 1)); }
@@ -2831,10 +2835,12 @@ class PlexCenterCard extends HTMLElement {
     root.insertAdjacentHTML('beforeend', `<div class="plc-menu" role="menu"><div class="plc-menu-h">${esc(title)}</div>${rows.map((r) => `<button class="plc-menu-i${r.on ? ' on' : ''}" role="menuitem" ${r.attr}>
       ${r.lead || `<ha-icon icon="${esc(r.icon)}"></ha-icon>`}<span class="plc-menu-t"><b>${esc(r.label)}</b>${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span>${r.on ? '<ha-icon class="tick" icon="mdi:check"></ha-icon>' : ''}${r.dot || ''}</button>`).join('')}</div>`);
     const m = root.querySelector('.plc-menu'), a = anchor.getBoundingClientRect(), rr = root.getBoundingClientRect();
-    const w = Math.min(320, rr.width / scale - 16);
+    const maxW = Math.min(320, rr.width / scale - 16);
+    Object.assign(m.style, { width: 'max-content', minWidth: `${Math.min(maxW, a.width / scale)}px`, maxWidth: `${maxW}px` });
+    const w = Math.min(maxW, m.offsetWidth || maxW);
     let left = (a.left - rr.left) / scale;
     left = Math.max(8, Math.min(left, rr.width / scale - w - 8));
-    Object.assign(m.style, { top: `${(a.bottom - rr.top) / scale + 6}px`, left: `${left}px`, width: `${w}px` });
+    Object.assign(m.style, { top: `${(a.bottom - rr.top) / scale + 6}px`, left: `${left}px` });
     const vh = (typeof window !== 'undefined' && window.innerHeight) || 0;
     if (vh && a.bottom > vh * 0.6) m.style.top = `${Math.max(4, (a.top - rr.top) / scale - m.offsetHeight - 6)}px`;   // footer: open upward
     this._menuAnchor = anchor;
@@ -3001,12 +3007,13 @@ class PlexCenterCard extends HTMLElement {
     const dot = `<span class="plc-dot ${cls}" data-dot="${esc(tv.id)}"${tap ? '' : ` title="${esc(title)}"`}></span>`;
     return tap ? `<span class="plc-dothit"${act} title="${esc(title)}">${dot}</span>` : dot;
   }
-  /** Make this page that TV's, then open its Now playing (the TV icons, Watching now cards). */
-  _openNpFor(tv) {
+  /** Make this page that TV's, then open its Now playing (the TV icons, Watching now cards). Opened this way it stays up
+   *  with nothing playing (the TV off: Turn on, the remote), until closed. */
+  _openNpFor(tv, force = false) {
     if (!tv) return;
     this._closeMenu?.();
     if (tv.id !== this._tv()?.id) this._setTv(tv);
-    this._v.npHidden = null; this._v.npOpen = tv.id;
+    this._v.npHidden = null; this._v.npOpen = tv.id; this._v.npForce = force ? tv.id : null;   // from the TV icon: stays up even with nothing playing
     if (!this._panelVisible()) { this._v.npFull = true; this._npFullAt = Date.now(); }
     this._renderNP(true);
   }
@@ -3171,6 +3178,7 @@ class PlexCenterCard extends HTMLElement {
   }
 
   _panelVisible(np = nowPlaying(this._hass, this._tv())) {
+    if (this._npMode() === 'panel' && !this._phone && np && this._v.npForce === np.tv?.id) return true;   // opened from the TV's icon
     return this._npMode() === 'panel' && !this._phone && !!np && (np.live || !!this._resumeFor(np.tv)) && this._v.npHidden !== `${np.tv?.id}|${np.title}`
       && (!!cfg(this._c, 'np_auto_open') || this._v.npOpen === np.tv?.id);   // opened by hand (Watching now, Play) unless set to open by itself
   }
@@ -3762,7 +3770,7 @@ class PlexCenterCard extends HTMLElement {
       sec.addEventListener('pointerleave', () => { this._cwHold = false; });
     }
     nextFrame(() => this._fitBanners());
-    sec.innerHTML = `<div class="plc-hero${st.item_h !== undefined || st.fit?.lih ? ' fixh' : ''}${st.banner_img === 'top' ? ' top' : ''}"><div class="plc-hero-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
+    sec.innerHTML = `<div class="plc-hero${st.item_h !== undefined || st.fit?.lih ? ' fixh' : ''}${st.banner_img === 'top' ? ` top pos-${st.img_pos}` : ''}"><div class="plc-hero-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
       <div class="plc-hero-info"><div class="plc-eyebrow">${esc(eyebrow)}</div>
         <h2 class="plc-big">${bigHtml}</h2>${metaHtml.map((m) => `<div class="plc-meta">${m}</div>`).join('')}
         ${it.progress && id === 'continue' ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div><div class="plc-meta">${esc(left)}</div>` : ''}
@@ -4424,12 +4432,12 @@ Object.assign(PlexCenterCard.prototype, {
     // auto close: Now playing was showing this TV's playback, and now nothing plays or is paused (and no resume to offer)
     const idle = !!np && !np.live && !this._resumeFor(tv);
     if (!idle) { if (np?.live) this._npKept = null; this._npCloseStop(); }
-    else if (cfg(this._c, 'np_auto_close') && this._npShown === tv?.id && !this._npEnd && this._npKept !== tv?.id) this._npCloseStart(tv, np);
+    else if (cfg(this._c, 'np_auto_close') && this._npShown === tv?.id && !this._npEnd && this._npKept !== tv?.id && this._v.npForce !== tv?.id) this._npCloseStart(tv, np);
     const hold = idle && (this._npEnd?.tv === tv?.id || (this._npKept === tv?.id && this._npShown === tv?.id));   // keep it up while counting / kept
     const panel = mode === 'panel' && (this._panelVisible(np) || (hold && !!np && this._v.npHidden !== `${np.tv?.id}|${np.title}`));
     const dup = this._v.tab === 'home' && watchOn(this._c, 'home') && !!this._sessionFor(tv);
     if (np?.live) this._npLiveAt = Date.now();
-    else if (this._v.npFull && !this._resumeFor(tv) && Date.now() - (this._npFullAt || 0) > 90000) this._v.npFull = false;   // playback ended: don't pop up next time
+    else if (this._v.npFull && !this._resumeFor(tv) && this._v.npForce !== tv?.id && Date.now() - (this._npFullAt || 0) > 90000) this._v.npFull = false;   // playback ended: don't pop up next time
     const vst = tv?.pipup && this._hass.states[tv.pipup];
     const s = JSON.stringify([this._v.tab, dup, this._v.npFull, mode, panel, hold, !!this._npEnd, JSON.stringify(this._resumeFor(tv)), tv && this._resumeFor(tv) && this._resumeArt(tv, this._resumeFor(tv)), np && [np.live, np.title, np.sub, np.art, np.st.state], vst?.attributes?.volume_level, vst?.attributes?.is_volume_muted, this._phone,
       this._tvs().map((t) => [t.id, realOn(this._hass, t)]), tv?.route]);
@@ -4444,7 +4452,7 @@ Object.assign(PlexCenterCard.prototype, {
     this._root.dataset.panel = panel ? '1' : '0';
     if (panel || wasPanel) this._renderTop();
     const full = this._root.querySelector('.plc-npfull-slot');
-    const fullOn = this._v.npFull && (np?.live || this._resumeFor(tv) || hold);
+    const fullOn = this._v.npFull && (np?.live || this._resumeFor(tv) || hold || (!!np && this._v.npForce === tv?.id));
     if (full) full.innerHTML = fullOn ? `<div class="plc-npfull">${this._panelHtml(np)}</div>` : '';
     this._npShown = (panel || fullOn) && tv ? tv.id : null;
     if (this._npEnd) for (const art of this._root.querySelectorAll('.plc-side .plc-side-art, .plc-npfull .plc-side-art')) art.insertAdjacentHTML('beforeend', this._npRing());
@@ -4751,7 +4759,7 @@ Object.assign(PlexCenterCard.prototype, {
       if ((el = t('[data-rm]'))) { this._rmPress(el.dataset.rm); return; }
       return;
     }
-    if ((el = t('[data-npfor]'))) { e.stopPropagation(); this._openNpFor(this._tvs().find((x) => x.id === el.dataset.npfor)); return; }
+    if ((el = t('[data-npfor]'))) { e.stopPropagation(); this._openNpFor(this._tvs().find((x) => x.id === el.dataset.npfor), true); return; }
     if (t('[data-remoteopen]')) { this._openRemote(); return; }
     if (t('.plc-vasheet .plc-tile') && !t('[data-qplay]')) this._closeSheet(true);
     if ((el = t('[data-openshow]'))) { e.stopPropagation(); this._closeMenu?.(); this._openShow(el.dataset.openshow, el.dataset.showtitle); return; }
@@ -4929,9 +4937,10 @@ Object.assign(PlexCenterCard.prototype, {
       const pl = el.dataset.wtoggle, sec = el.closest('[data-sec="watching"]'), open = !sec.classList.contains('closed');
       this._v.wOpen = { ...(this._v.wOpen || {}), [pl]: !open }; this._paintWatching(); return;
     }
-    if (t('[data-npclose]')) { this._v.npFull = false; this._renderNP(true); return; }
+    if (t('[data-npclose]')) { this._v.npFull = false; this._v.npForce = null; this._v.npOpen = null; this._renderNP(true); return; }
     if (t('[data-npclosecancel]')) { const tv = this._npEnd?.tv; this._npCloseStop(); this._npKept = tv; this._npSig = null; return; }
     if (t('[data-npx]')) {
+      this._v.npForce = null;
       if (this._v.npFull) this._v.npFull = false;
       else { const np = nowPlaying(this._hass, this._tv()); this._v.npHidden = np ? `${np.tv?.id}|${np.title}` : null; this._v.npOpen = null; }
       this._renderNP(true); return;
@@ -5434,7 +5443,10 @@ class PlexCenterCardEditor extends HTMLElement {
     const visual = `<div class="plce-chiprow"><span class="plce-chiplbl">${canBan ? 'Item style' : 'Image style'}</span>${canBan ? `<button class="plce-pick${isBan ? ' on' : ''}" data-lookban="${esc(kind)}"><ha-icon icon="mdi:view-day-outline"></ha-icon>Banner</button>` : ''}${imgs.map(([v, n, ic]) => `<button class="plce-pick${!isBan && l.image === v ? ' on' : ''}" data-lookimg="${esc(K('image'))}|${v}"${canBan ? ` data-unban="${esc(kind)}"` : ''}><ha-icon icon="${ic}"></ha-icon>${n}</button>`).join('')}
         ${Object.keys(own).length ? `<button class="plce-chip reset" data-lookresetall="${esc(`${kind}:${screen}`)}" title="Reset this screen's look"><ha-icon icon="mdi:restore"></ha-icon>Reset all</button>` : ''}</div>
       ${isBan ? `<div class="plce-chiprow"><span class="plce-chiplbl">Banner picture</span>${[['left', 'Left', 'mdi:dock-left'], ['top', 'Top', 'mdi:dock-top']].map(([v, n, ic]) =>
-        `<button class="plce-pick${(ss.banner_img === 'top' ? 'top' : 'left') === v ? ' on' : ''}" data-sid="${esc(kind)}" data-spick="banner_img|${v === 'left' ? '' : v}"><ha-icon icon="${ic}"></ha-icon>${n}</button>`).join('')}</div>` : ''}
+        `<button class="plce-pick${(ss.banner_img === 'top' ? 'top' : 'left') === v ? ' on' : ''}" data-sid="${esc(kind)}" data-spick="banner_img|${v === 'left' ? '' : v}"><ha-icon icon="${ic}"></ha-icon>${n}</button>`).join('')}</div>
+      ${ss.banner_img === 'top' ? `<div class="plce-chiprow"><span class="plce-chiplbl">Picture position</span>${[['top', 'Top'], ['center', 'Center'], ['bottom', 'Bottom']].map(([v, n]) =>
+        `<button class="plce-pick${(['center', 'bottom'].includes(ss.img_pos) ? ss.img_pos : 'top') === v ? ' on' : ''}" data-sid="${esc(kind)}" data-spick="img_pos|${v === 'top' ? '' : v}">${n}</button>`).join('')}</div>
+        <p class="plce-hint">The part of the picture kept in view when it's cropped top and bottom.</p>` : ''}` : ''}
       ${chk('border', cal ? 'Coloured border on the left (the type colour)' : 'Accent border on the left')}${chk('status', cal ? 'Status marks: a green dot when available, a tick when this TV\'s Plex user has watched it' : 'Watched tick')}
       ${chk('type_icon', 'Movie / TV icon in the lower-right corner')}${cal ? chk('time_corner', 'Air time in the lower-right corner (instead of the date line)') : ''}
       ${l.image === 'fanart' ? `${sel('text_bg', 'Text backdrop', [['gradient', 'Gradient'], ['box', 'A box only behind the text'], ['none', 'None']])}
