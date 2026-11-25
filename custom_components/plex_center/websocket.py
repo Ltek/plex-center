@@ -380,6 +380,12 @@ async def ws_config(hass: HomeAssistant, connection, msg) -> None:
                       and str(s.attributes.get("data")).lstrip().startswith(("[", "[{")))
     card_version = ""
     try:
+        from . import async_refresh_card  # noqa: PLC0415
+
+        await async_refresh_card(hass)
+    except Exception as err:  # noqa: BLE001 - the version check below still works
+        _LOGGER.debug("Plex Center card refresh failed: %s", err)
+    try:
         from pathlib import Path  # noqa: PLC0415
 
         from .card_view import card_file  # noqa: PLC0415

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.135
+// Version: v2026.11.25.136
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.135';
+const BUILD_NUMBER = 'v2026.11.25.136';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -3069,6 +3069,14 @@ class PlexCenterCard extends HTMLElement {
       ? `<div class="plc-hrow plc-sbar">${pieces.search}</div>`
       : this._headerHtml('library', pieces, playerShown);
     const cv = this._conf?.card_version;
+    if (cv && cv !== BUILD_NUMBER) {
+      // Home Assistant has a newer card (an update without a restart): reload once to load it (asking for the config
+      // just now pointed the Dashboard resource at the new file); the note below stays if it is still old after that
+      try {
+        const k = `plc-reloaded:${cv}`;
+        if (!sessionStorage.getItem(k)) { sessionStorage.setItem(k, '1'); setTimeout(() => { try { location.reload(); } catch { /* */ } }, 300); }
+      } catch { /* no sessionStorage: the note's Reload button */ }
+    }
     const notes = [
       this._cfgErr ? `<div class="plc-note err"><ha-icon icon="mdi:alert-circle-outline"></ha-icon><span>Part of this card's settings couldn't be read: ${esc(this._cfgErr)}. Open the editor and save again.</span></div>` : '',
       cv && cv !== BUILD_NUMBER ? `<div class="plc-note"><ha-icon icon="mdi:update"></ha-icon><span>This device is running an older copy of the card (${esc(BUILD_NUMBER)}; Home Assistant has ${esc(cv)}).</span>

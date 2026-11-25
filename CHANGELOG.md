@@ -1,5 +1,10 @@
 # Changelog
 
+## v2026.11.25.136
+
+- **Fixed: after an update, refreshing the browser still loaded the old card** until Home Assistant restarted. The Dashboard loads the card from a copy in `www/plex_center/`, which was only refreshed at startup. Now, when the card file has changed, the integration refreshes that copy and the resource URL the next time a card asks for its settings, and the card reloads the page once by itself to pick up the new build. The "older copy" note stays only if that didn't work.
+- Restart Home Assistant once after installing this build (the fix is in the integration); after that, card updates need only a refresh.
+
 ## v2026.11.25.135
 
 - **Top banner: a bigger picture.** The picture now takes at least 55% of the banner; the text and buttons under it are packed tighter (less padding and line spacing).

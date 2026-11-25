@@ -67,6 +67,7 @@ async def _register_card(hass: HomeAssistant) -> None:
         local = False
     url = f"{LOCAL_CARD_URL if local else CARD_URL}?v={VERSION}&m={bust}"
     data = hass.data.setdefault(f"{DOMAIN}_card", {})
+    data["bust"] = bust
     try:
         from homeassistant.components import frontend  # noqa: PLC0415
 
@@ -96,6 +97,28 @@ async def _register_card(hass: HomeAssistant) -> None:
             data["url"] = url
     except Exception as err:  # noqa: BLE001 - no frontend (tests, safe mode): the integration still works
         _LOGGER.warning("Plex Center card not registered: %s", err)
+
+
+async def async_refresh_card(hass: HomeAssistant) -> None:
+    """After an update without a restart (HACS writes the new card in place): refresh the www copy and the resource
+    URL, so the next page load gets the new card instead of the old copy."""
+    import asyncio  # noqa: PLC0415
+
+    data = hass.data.get(f"{DOMAIN}_card")
+    if data is None or "bust" not in data:
+        return
+    js = Path(__file__).parent / "frontend" / "plex-center-card.js"
+    try:
+        mtime = int((await hass.async_add_executor_job(js.stat)).st_mtime)
+    except OSError:
+        return
+    if mtime == data["bust"]:
+        return
+    lock = data.setdefault("lock", asyncio.Lock())
+    async with lock:
+        if mtime != data.get("bust"):
+            _LOGGER.info("Plex Center card file changed; updating its copy and resource")
+            await _register_card(hass)
 
 
 def copy_to_www(www: str, js: Path) -> bool:

@@ -67,3 +67,24 @@ def test_copy_to_www(tmp_path) -> None:
     js.write_text("// Version: v2\n")
     assert copy_to_www(str(www), js) is True
     assert (www / "plex_center" / "plex-center-card.js").read_text() == "// Version: v2\n"
+
+
+async def test_refresh_after_an_update_without_a_restart(hass: Any) -> None:
+    """HACS writes the new card in place: the next config request copies it to www and points the resource at it."""
+    from custom_components.plex_center import DOMAIN, async_refresh_card
+
+    assert await async_setup_component(hass, "http", {})
+    assert await async_setup_component(hass, "lovelace", {})
+    with patch("custom_components.plex_center.copy_to_www", return_value=True):
+        await _register_card(hass)
+    data = hass.data[f"{DOMAIN}_card"]
+    real = data["bust"]
+    res = hass.data[LOVELACE_DATA].resources
+    await res.async_update_item(res.async_items()[0]["id"], {"res_type": "module", "url": f"{LOCAL_CARD_URL}?v=old&m=1"})
+    data["bust"] = 1   # the card on disk is newer than the one registered at start
+    with patch("custom_components.plex_center.copy_to_www", return_value=True) as cp:
+        await async_refresh_card(hass)
+        assert cp.call_count == 1, "copied again"
+        assert [i["url"] for i in res.async_items()] == [f"{LOCAL_CARD_URL}?v={VERSION}&m={real}"]
+        await async_refresh_card(hass)
+        assert cp.call_count == 1, "nothing to do when it is current"
