@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.132
+// Version: v2026.11.25.133
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.132';
+const BUILD_NUMBER = 'v2026.11.25.133';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1825,13 +1825,19 @@ const CARD_CSS = `
 .plc-hero.top.fixh .plc-hero-img { aspect-ratio: auto; max-height: calc(100cqw * 9 / 16); min-height: 0; }
 .plc-hero.top.fixh .plc-hero-info { overflow: visible; }
 /* wide enough: the buttons sit beside the text (top right), the pager along the bottom, so the text gets the height */
+.plc-hero.wide .plc-hero-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; column-gap: 1.2em; }
+.plc-hero.wide .plc-hero-info > * { grid-column: 1; }
+.plc-hero.wide .plc-hero-info > .plc-btns { grid-column: 2; grid-row: 1 / span 4; align-self: start; justify-content: flex-end; margin-top: 0; }
+.plc-hero.wide .plc-hero-info > .plc-pager { grid-column: 1 / -1; margin-top: auto; align-self: end; }
+.plc-hero.wide .plc-hero-info { grid-template-rows: auto auto repeat(3, auto) 1fr; }
+.plc-hero-info .plc-pager { white-space: nowrap; }
 @container (min-width: 420px) {
   .plc-hero.top .plc-hero-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; column-gap: 1.2em; }
   .plc-hero.top .plc-hero-info > * { grid-column: 1; }
   .plc-hero.top .plc-hero-info > .plc-btns { grid-column: 2; grid-row: 1 / span 4; align-self: start; justify-content: flex-end; margin-top: 0; }
   .plc-hero.top .plc-hero-info > .plc-pager { grid-column: 1 / -1; margin-top: .4em; }
 }
-@container (max-width: 30em) { .plc-hero-info .plc-btn:not(.main) { font-size: 0; gap: 0; padding-left: .7em; padding-right: .7em; } }
+@container (max-width: 20em) { .plc-hero-info .plc-btn:not(.main) { font-size: 0; gap: 0; padding-left: .7em; padding-right: .7em; } }
 @container (max-width: 24em) { .plc-hero-info .plc-meta + .plc-bar-track + .plc-meta { display: none; } .plc-hero-info .plc-viewall, .plc-hero-info .plc-cycle { display: none; } }
 @container (max-width: 18.5em) { .plc-hero-info .plc-pager { display: none; } }
 /* Content Layout: sections sharing a row take their Width of it (between them they fill it); posters / fanart are sized
@@ -2672,8 +2678,9 @@ class PlexCenterCard extends HTMLElement {
     const w = this.offsetWidth || this._root?.offsetWidth || 1000;
     const phone = want === 'phone' || (want === 'auto' && w > 0 && w < PHONE_MAX_W);
     if (!this._root) return;
-    const sig = screenOf(phone, isPortrait());
+    const sig = screenOf(phone, isPortrait()), fit = this._c?._fit;
     this._c = effectiveConfig(raw, phone); this._c._cycle = this._v?.cycle;
+    if (fit && this._lsig === sig) this._c._fit = fit;   // same screen: keep the row sizes (a banner repaint would otherwise drop its Width and height)
     this._root.setAttribute('style', cardVars(this._c));
     if (this._phone === phone && this._lsig === sig) return;
     const first = this._lsig === undefined, changed = this._lsig !== sig;
@@ -3193,8 +3200,6 @@ class PlexCenterCard extends HTMLElement {
       const info = hero.querySelector('.plc-hero-info'), sec = hero.closest('.plc-sec');
       if (!info || !sec) continue;
       const f = this._c._fit?.[sec.dataset.sec];
-      let k = Number(getComputedStyle(sec).getPropertyValue('--plc-size')) || 1;
-      const kw = r4(Math.max(0.45, info.clientWidth / 300));   // text no bigger than its side of the banner has room for
       if (hero.classList.contains('top')) {
         // picture on top: the text goes under it at the size that leaves the picture at least 42% of the banner
         const H = hero.clientHeight, img = hero.querySelector('.plc-hero-img');
@@ -3207,11 +3212,25 @@ class PlexCenterCard extends HTMLElement {
         set(r4(lo));
         continue;
       }
-      if (info.clientWidth && k > kw) { k = kw; sec.style.setProperty('--plc-size', String(k)); if (f) f.fs = k; }
-      for (let i = 0; i < 12 && info.clientHeight && info.scrollHeight > info.clientHeight + 1 && k > 0.45; i++) {
-        k = r4(k * 0.93); sec.style.setProperty('--plc-size', String(k));
-        if (f) f.fs = k;
+      // picture on the left: the text as big as its side has room for (height and width), up to 1.8x
+      const set = (v) => { sec.style.setProperty('--plc-size', String(v)); if (f) f.fs = v; };
+      const fits = (v) => { set(v); return info.scrollHeight <= info.clientHeight + 1 && info.scrollWidth <= info.clientWidth + 1; };
+      const best = () => {
+        let lo = 0.45, hi = Math.min(1.8, Math.max(0.45, info.clientWidth / 190));
+        if (fits(hi)) return hi;
+        for (let i = 0; i < 9; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; }
+        return lo;
+      };
+      if (!info.clientHeight) continue;
+      hero.classList.remove('wide');
+      let k = best();
+      // short but wide text side: the buttons beside the title free a row or two for bigger text
+      if (k < 1.3 && info.clientWidth >= 340) {
+        hero.classList.add('wide');
+        const k2 = best();
+        if (k2 > k + 0.05) k = k2; else hero.classList.remove('wide');
       }
+      set(r4(k));
     }
   }
   _matchRows() {
@@ -5245,6 +5264,8 @@ class PlexCenterCardEditor extends HTMLElement {
     const isBan = canBan && (ss.layout || (kind === 'continue' && !screen.startsWith('phone') ? 'banner' : 'row')) === 'banner';
     const visual = `<div class="plce-chiprow"><span class="plce-chiplbl">${canBan ? 'Item style' : 'Image style'}</span>${canBan ? `<button class="plce-pick${isBan ? ' on' : ''}" data-lookban="${esc(kind)}"><ha-icon icon="mdi:view-day-outline"></ha-icon>Banner</button>` : ''}${imgs.map(([v, n, ic]) => `<button class="plce-pick${!isBan && l.image === v ? ' on' : ''}" data-lookimg="${esc(K('image'))}|${v}"${canBan ? ` data-unban="${esc(kind)}"` : ''}><ha-icon icon="${ic}"></ha-icon>${n}</button>`).join('')}
         ${Object.keys(own).length ? `<button class="plce-chip reset" data-lookresetall="${esc(`${kind}:${screen}`)}" title="Reset this screen's look"><ha-icon icon="mdi:restore"></ha-icon>Reset all</button>` : ''}</div>
+      ${isBan ? `<div class="plce-chiprow"><span class="plce-chiplbl">Banner picture</span>${[['left', 'Left', 'mdi:dock-left'], ['top', 'Top', 'mdi:dock-top']].map(([v, n, ic]) =>
+        `<button class="plce-pick${(ss.banner_img === 'top' ? 'top' : 'left') === v ? ' on' : ''}" data-sid="${esc(kind)}" data-spick="banner_img|${v === 'left' ? '' : v}"><ha-icon icon="${ic}"></ha-icon>${n}</button>`).join('')}</div>` : ''}
       ${chk('border', cal ? 'Coloured border on the left (the type colour)' : 'Accent border on the left')}${chk('status', cal ? 'Status marks: a green dot when available, a tick when this TV\'s Plex user has watched it' : 'Watched tick')}
       ${chk('type_icon', 'Movie / TV icon in the lower-right corner')}${cal ? chk('time_corner', 'Air time in the lower-right corner (instead of the date line)') : ''}
       ${l.image === 'fanart' ? `${sel('text_bg', 'Text backdrop', [['gradient', 'Gradient'], ['box', 'A box only behind the text'], ['none', 'None']])}

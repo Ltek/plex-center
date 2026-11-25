@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.25.133
+
+- **Fixed: a banner went to half its row on the live Dashboard.** When the card was resized it forgot the row sizes, so the next banner repaint dropped its Width and height. They are now kept.
+- **Banner picture (Left / Top) is now in Content Visuals**, under Item style, when Banner is picked (it is still in the Layout panel too).
+- **Bigger text and buttons on Left banners**: the text grows to fill its side of the banner (up to 1.8x), instead of being held to a size set by its width. On a short, wide banner the buttons sit beside the title to make room.
+- Banner buttons keep their labels down to a narrower width.
+
 ## v2026.11.25.132
 
 - **Banner picture: Left or Top** (Layout panel of a banner section). Left is the default again, as before .131.
