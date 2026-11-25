@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.133
+// Version: v2026.11.25.134
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.133';
+const BUILD_NUMBER = 'v2026.11.25.134';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1822,21 +1822,14 @@ const CARD_CSS = `
 .plc-hero.top { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
 .plc-hero.top .plc-hero-img { height: min(calc(100cqw * 9 / 16), 340px); min-height: 0; }   /* the whole picture, up to 340 px tall */
 .plc-hero.top.fixh { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-.plc-hero.top.fixh .plc-hero-img { aspect-ratio: auto; max-height: calc(100cqw * 9 / 16); min-height: 0; }
+.plc-hero.top.fixh .plc-hero-img { height: auto; min-height: 0; }   /* fixed height: the picture fills what the text leaves */
 .plc-hero.top.fixh .plc-hero-info { overflow: visible; }
-/* wide enough: the buttons sit beside the text (top right), the pager along the bottom, so the text gets the height */
-.plc-hero.wide .plc-hero-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; column-gap: 1.2em; }
+/* wide (set by the fit when it lets the text be bigger): the buttons beside the title, the pager along the bottom */
+.plc-hero.wide .plc-hero-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto repeat(3, auto) 1fr; align-content: start; column-gap: 1.2em; }
 .plc-hero.wide .plc-hero-info > * { grid-column: 1; }
 .plc-hero.wide .plc-hero-info > .plc-btns { grid-column: 2; grid-row: 1 / span 4; align-self: start; justify-content: flex-end; margin-top: 0; }
 .plc-hero.wide .plc-hero-info > .plc-pager { grid-column: 1 / -1; margin-top: auto; align-self: end; }
-.plc-hero.wide .plc-hero-info { grid-template-rows: auto auto repeat(3, auto) 1fr; }
 .plc-hero-info .plc-pager { white-space: nowrap; }
-@container (min-width: 420px) {
-  .plc-hero.top .plc-hero-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; column-gap: 1.2em; }
-  .plc-hero.top .plc-hero-info > * { grid-column: 1; }
-  .plc-hero.top .plc-hero-info > .plc-btns { grid-column: 2; grid-row: 1 / span 4; align-self: start; justify-content: flex-end; margin-top: 0; }
-  .plc-hero.top .plc-hero-info > .plc-pager { grid-column: 1 / -1; margin-top: .4em; }
-}
 @container (max-width: 20em) { .plc-hero-info .plc-btn:not(.main) { font-size: 0; gap: 0; padding-left: .7em; padding-right: .7em; } }
 @container (max-width: 24em) { .plc-hero-info .plc-meta + .plc-bar-track + .plc-meta { display: none; } .plc-hero-info .plc-viewall, .plc-hero-info .plc-cycle { display: none; } }
 @container (max-width: 18.5em) { .plc-hero-info .plc-pager { display: none; } }
@@ -3206,10 +3199,20 @@ class PlexCenterCard extends HTMLElement {
         if (!H || !img) continue;
         const set = (v) => { sec.style.setProperty('--plc-size', String(v)); if (f) f.fs = v; };
         const fits = (v) => { set(v); return info.offsetHeight <= H * 0.58 && info.scrollWidth <= info.clientWidth + 1; };
-        let lo = 0.45, hi = Math.min(1.8, Math.max(0.45, info.clientWidth / 260));
-        if (fits(hi)) continue;
-        for (let i = 0; i < 9; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; }
-        set(r4(lo));
+        const bestT = () => {
+          let lo = 0.45, hi = Math.min(1.8, Math.max(0.45, info.clientWidth / 260));
+          if (fits(hi)) return hi;
+          for (let i = 0; i < 9; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; }
+          return lo;
+        };
+        hero.classList.remove('wide');
+        let kt = bestT();
+        if (kt < 1.3 && info.clientWidth >= 340) {   // wide: the buttons beside the title free a row for bigger text
+          hero.classList.add('wide');
+          const k2 = bestT();
+          if (k2 > kt + 0.05) kt = k2; else hero.classList.remove('wide');
+        }
+        set(r4(kt));
         continue;
       }
       // picture on the left: the text as big as its side has room for (height and width), up to 1.8x

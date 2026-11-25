@@ -1,5 +1,10 @@
 # Changelog
 
+## v2026.11.25.134
+
+- **Fixed: a Banner with the picture on Top could lay its text out over the picture**, in two jumbled columns, so it looked like a Fanart tile. The text now always sits under the picture, and the picture fills only the space the text leaves.
+- The two-column text (buttons beside the title) is now picked by the fit when it lets the text be bigger, the same way for Left and Top banners.
+
 ## v2026.11.25.133
 
 - **Fixed: a banner went to half its row on the live Dashboard.** When the card was resized it forgot the row sizes, so the next banner repaint dropped its Width and height. They are now kept.
