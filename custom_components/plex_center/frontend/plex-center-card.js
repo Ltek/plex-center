@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.144
+// Version: v2026.11.25.145
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.144';
+const BUILD_NUMBER = 'v2026.11.25.145';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -604,7 +604,6 @@ const DEFAULTS = {
   remote_blackout_style: 'black',   // black | clock (a dim clock that drifts)
   remote_keep_awake: true,  // the browser's Wake Lock while it's open (HTTPS only)
   remote_font: 'card',      // card | condensed (the big text)
-  remote_tv: '',            // the TV it controls ('' = the card's)
   remote_idle_title: '',
   remote_lights_popup: false,   // false: the lighting buttons on the remote itself; true: a Lighting button opens them
   remote_label_px: 30,      // remote button text
@@ -914,6 +913,22 @@ function normalizeConfig(raw) {
     const o = Object.fromEntries(Object.entries(c.tv_icons).filter(([k, v]) => k && typeof v === 'string' && v.trim()).map(([k, v]) => [k, v.trim()]));
     if (Object.keys(o).length) c.tv_icons = o; else delete c.tv_icons;
   } else delete c.tv_icons;
+  // Showtime Remote: it controls the page's TV. The buttons that differ per TV (lighting, Intermission, End show, more
+  // buttons) are kept per TV in remote_tvs; the old single setup becomes the TV the remote used to control (remote_tv).
+  if (typeof c.remote_tv === 'string' && c.remote_tv && !c.remote_tvs && RM_PER_TV.some((k) => c[k] !== undefined)) {
+    c.remote_tvs = { [c.remote_tv]: Object.fromEntries(RM_PER_TV.filter((k) => c[k] !== undefined).map((k) => [k, c[k]])) };
+    for (const k of RM_PER_TV) delete c[k];
+  }
+  delete c.remote_tv;
+  if (c.remote_tvs && typeof c.remote_tvs === 'object' && !Array.isArray(c.remote_tvs)) {
+    const o = {};
+    for (const [id, b] of Object.entries(c.remote_tvs)) {
+      if (!id || !b || typeof b !== 'object') continue;
+      const bb = Object.fromEntries(RM_PER_TV.filter((k) => b[k] !== undefined && b[k] !== null).map((k) => [k, b[k]]));
+      o[id] = bb;   // an empty block is kept: that TV has its own (empty) setup, not the shared one
+    }
+    if (Object.keys(o).length) c.remote_tvs = o; else delete c.remote_tvs;
+  } else delete c.remote_tvs;
   if (Array.isArray(c.home_order) || Array.isArray(c.home_hidden)) {   // 2026.11.16.50: Home order / visibility are per screen type
     for (const [sc] of SCREENS) {
       if (Array.isArray(c.home_order) && c.home_order.length && !Array.isArray(c[`home_order_${sc}`])) c[`home_order_${sc}`] = [...c.home_order];
@@ -5909,9 +5924,35 @@ class PlexCenterCardEditor extends HTMLElement {
       <span class="plce-val" data-val="${k}">${v ? `${v} %` : 'automatic'}</span>${v !== undefined ? `<button class="plce-reset" data-reset="${k}" title="Automatic"><ha-icon icon="mdi:restore"></ha-icon></button>` : ''}</div>
       <p class="plce-hint">The Height of every Home section on this screen type at once. A section's own Height wins.</p>`;
   }
+  /** The Remote setup being edited: a TV's own (remote_tvs[tv]) or the shared one (TVs without their own). */
+  _rmEdId() {
+    const tvs = this._conf?.tvs || [], own = this._config.remote_tvs || {};
+    if (this._rmEdTv !== undefined && (this._rmEdTv === '' || tvs.some((t) => t.id === this._rmEdTv))) return this._rmEdTv;
+    return tvs.find((t) => own[t.id])?.id ?? tvs[0]?.id ?? '';
+  }
+  _rmEd() { const id = this._rmEdId(), own = this._config.remote_tvs || {}; return (id && own[id]) || this._config; }   // no own setup yet: what it shows now
+  /** Write one per-TV Remote setting into the setup being edited (a TV without its own gets one first, from the shared). */
+  _rmEdSet(k, v) {
+    const id = this._rmEdId();
+    if (!id) { if (v === undefined) delete this._config[k]; else this._config[k] = v; return; }   // no TVs yet
+    const all = { ...(this._config.remote_tvs || {}) };
+    const b = { ...(all[id] || Object.fromEntries(RM_PER_TV.filter((x) => this._config[x] !== undefined).map((x) => [x, this._config[x]]))) };
+    if (v === undefined) delete b[k]; else b[k] = v;
+    all[id] = b; this._config.remote_tvs = all;
+  }
+  _rmTvPicker(tvs) {
+    if (!tvs.length) return '';
+    const id = this._rmEdId(), own = this._config.remote_tvs || {}, t = tvs.find((x) => x.id === id);
+    const others = tvs.filter((x) => x.id !== id && own[x.id]);
+    return `<div class="plce-group">Buttons for each TV</div>
+      <p class="plce-hint">The Remote controls the page's TV. Its lighting, Intermission, End show and More buttons are set for each TV (each room runs its own scripts). Everything else is the same on every TV.</p>
+      <div class="plce-chiprow"><span class="plce-chiplbl">Setting up</span>${tvs.map((x) => `<button class="plce-pick${x.id === id ? ' on' : ''}" data-rmed="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>
+      ${t && !own[t.id] ? `<p class="plce-hint">${esc(t.name)} has no buttons of its own yet: it shows ${RM_PER_TV.some((k) => this._config[k] !== undefined) ? 'the shared ones below' : 'the standard ones (Intermission pauses, End show stops, no lighting)'}. A change below gives it its own.</p>` : ''}
+      ${t && others.length ? `<div class="plce-chiprow"><span class="plce-chiplbl">Copy from</span>${others.map((x) => `<button class="plce-pick" data-rmcopy="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>` : ''}`;
+  }
   /** Showtime Remote: a full-screen remote for a dark room (opening, buttons, lighting, screen, look, sleep timer). */
   _remoteBody() {
-    const tvs = this._conf?.tvs || [], btns = this._config.remote_buttons || {}, defHold = Number(this._c('remote_hold_ms'));
+    const tvs = this._conf?.tvs || [], ed = this._rmEd(), btns = ed.remote_buttons || {}, defHold = Number(this._c('remote_hold_ms'));
     const NAMES = { vol_up: 'Volume up', mute: 'Mute', vol_down: 'Volume down', back: 'Skip back', play: 'Play / Pause', fwd: 'Skip forward', lighting: 'Lighting',
       intermission: 'Intermission', endshow: 'End show', sleep: 'Sleep' };
     const ALSO = { mute: 1, back: 1, play: 1, fwd: 1, intermission: 1, endshow: 1 };
@@ -5928,7 +5969,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${RM_OPTIONAL.includes(id) ? `<label class="plce-check"><input type="checkbox" data-rmb="${id}|hidden"${o.hidden ? ' checked' : ''}>Hide this button</label>` : ''}`);
     };
     const list = (kind, title, hint) => {
-      const key = kind === 'lights' ? 'remote_lights' : 'remote_extra', arr = Array.isArray(this._config[key]) ? this._config[key] : [];
+      const key = kind === 'lights' ? 'remote_lights' : 'remote_extra', arr = Array.isArray(ed[key]) ? ed[key] : [];
       const rows = arr.map((x, i) => this._sub(`rml:${kind}:${i}`, `${esc(x.name || `Button ${i + 1}`)}${x.entity || x.action ? '' : ' <span class="plce-badge bad">nothing to run</span>'}`, `
         <div class="plce-row"><label class="lbl">Name</label><input type="text" data-rml="${kind}|${i}|name" value="${esc(x.name || '')}"></div>
         <div class="plce-row"><label class="lbl">Runs</label><input type="text" list="plce-dl-run" data-rml="${kind}|${i}|entity" value="${esc(x.entity || '')}" placeholder="script.…, scene.…, light.… (toggled)"></div>
@@ -5950,17 +5991,17 @@ class PlexCenterCardEditor extends HTMLElement {
     const runIds = Object.keys(states).filter((e) => /^(script|scene|automation|light|switch|input_boolean|button|input_button|fan|cover)\./.test(e)).sort();
     const secure = typeof window !== 'undefined' && window.isSecureContext && !!navigator.wakeLock;
     return `<p class="plce-hint">A full-screen remote for a dark room. Open it with the remote icon (turn on <b>Showtime Remote</b> in Controls layout), the remote button on Now playing, or by itself when a show starts.</p>
-      ${this._select('remote_tv', 'Controls', [['', "The card's TV"], ...tvs.map((t) => [t.id, t.name])])}
       ${this._sub('rm-open', 'Opening', `${this._check('remote_auto_open', 'Open by itself when a show starts')}
         ${this._c('remote_auto_open') ? `${this._slider('remote_auto_s', 'After', 0, 120, ' s')}
           <div class="plce-chiprow"><span class="plce-chiplbl">On</span>${SCREENS.map(([sc, n]) => `<button class="plce-pick${!scr.length || scr.includes(sc) ? ' on' : ''}" data-rmscr="${sc}">${esc(n.replace('Tablet / computer', 'Tablet'))}</button>`).join('')}</div>
           <div class="plce-tvlist">${tvs.map((t) => `<label class="plce-check"><input type="checkbox" data-rmatv="${esc(t.id)}"${!atvs.length || atvs.includes(t.id) ? ' checked' : ''}>${esc(t.name)}</label>`).join('')}</div>` : ''}
         ${this._text('remote_idle_title', 'Title when nothing plays', 'Now showing')}`)}
+      ${this._rmTvPicker(tvs)}
       ${this._sub('rm-btns', 'Buttons', `${this._slider('remote_hold_ms', 'Hold every button for', 0, 5000, ' ms')}
         <p class="plce-hint">Guards against a touch in the dark: a button acts only after this long (a ring fills while you hold). Volume up / down are a tap. Each button can have its own time.</p>
         ${this._chips('remote_skip', 'Skip buttons', [[10, '10 s'], [30, '30 s']])}
         ${RM_SLOTS.map(slot).join('')}`)}
-      ${this._sub('rm-lights', 'Lighting', `${this._chips('remote_lights_popup', 'Show them', [[false, 'On the remote (right column)'], [true, 'In a popup (a Lighting button)']])}
+      ${this._sub('rm-lights', 'Lighting', `<div class="plce-chiprow"><span class="plce-chiplbl">Show them</span>${[[false, 'On the remote (right column)'], [true, 'In a popup (a Lighting button)']].map(([v, n]) => `<button class="plce-pick${!!(ed.remote_lights_popup ?? DEFAULTS.remote_lights_popup) === v ? ' on' : ''}" data-rmpop="${v}">${n}</button>`).join('')}</div>
         ${list('lights', 'Lighting buttons', 'Each runs a script, scene or automation, or toggles a light, and lights up while its entity is on.')}`)}
       ${this._sub('rm-extra', 'More buttons (right column)', list('extra', 'More buttons', 'Up to two more buttons in the right column, after the lighting.'))}
       ${this._sub('rm-screen', 'Screen', `${this._check('remote_blackout', 'Go black when not used (the first tap only wakes it)')}
@@ -6566,31 +6607,38 @@ class PlexCenterCardEditor extends HTMLElement {
     }));
     all('[data-logload]', (b) => b.addEventListener('click', () => this._loadLog()));
     const setRmb = (id, f, v) => {
-      const all2 = { ...(this._config.remote_buttons || {}) }, o = { ...(all2[id] || {}) };
+      const all2 = { ...(this._rmEd().remote_buttons || {}) }, o = { ...(all2[id] || {}) };
       if (v === '' || v === false || v == null) delete o[f]; else o[f] = f === 'hold_ms' ? Math.max(0, Number(v)) : v;
       if (Object.keys(o).length) all2[id] = o; else delete all2[id];
-      if (Object.keys(all2).length) this._config.remote_buttons = all2; else delete this._config.remote_buttons;
+      this._rmEdSet('remote_buttons', Object.keys(all2).length ? all2 : undefined);
       this._emit(); this._render();
     };
+    all('[data-rmed]', (b) => b.addEventListener('click', () => { this._rmEdTv = b.dataset.rmed; this._render(); }));
+    all('[data-rmcopy]', (b) => b.addEventListener('click', () => {
+      const id = this._rmEdId(), src = (this._config.remote_tvs || {})[b.dataset.rmcopy];
+      if (!id || !src) return;
+      this._config.remote_tvs = { ...(this._config.remote_tvs || {}), [id]: JSON.parse(JSON.stringify(src)) }; this._emit(); this._render();
+    }));
+    all('[data-rmpop]', (b) => b.addEventListener('click', () => { const v = b.dataset.rmpop === 'true'; this._rmEdSet('remote_lights_popup', v === DEFAULTS.remote_lights_popup ? undefined : v); this._emit(); this._render(); }));
     all('[data-rmb]', (el) => el.addEventListener('change', () => { const [id, f] = el.dataset.rmb.split('|'); setRmb(id, f, el.type === 'checkbox' ? el.checked : el.value.trim()); }));
     all('plce-icon-pick[data-rmbicon]', (el) => el.addEventListener('value-changed', (e) => setRmb(el.dataset.rmbicon, 'icon', (e.detail?.value || '').trim())));
     const listKey = (k) => (k === 'lights' ? 'remote_lights' : 'remote_extra');
     const setRml = (kind, i, f, v) => {
-      const arr = [...(this._config[listKey(kind)] || [])], o = { ...(arr[i] || {}) };
+      const arr = [...(this._rmEd()[listKey(kind)] || [])], o = { ...(arr[i] || {}) };
       if (v === '' || v == null) delete o[f]; else o[f] = f === 'hold_ms' ? Math.max(0, Number(v)) : v;
-      arr[i] = o; this._config[listKey(kind)] = arr; this._emit(); this._render();
+      arr[i] = o; this._rmEdSet(listKey(kind), arr); this._emit(); this._render();
     };
     all('[data-rml]', (el) => el.addEventListener('change', () => { const [k, i, f] = el.dataset.rml.split('|'); setRml(k, Number(i), f, el.value.trim()); }));
     all('plce-icon-pick[data-rmlicon]', (el) => el.addEventListener('value-changed', (e) => { const [k, i] = el.dataset.rmlicon.split('|'); setRml(k, Number(i), 'icon', (e.detail?.value || '').trim()); }));
     all('[data-rmladd]', (b) => b.addEventListener('click', () => {
-      const [k, name] = b.dataset.rmladd.split('|'), arr = [...(this._config[listKey(k)] || [])];
-      arr.push(name ? { name } : { name: `Button ${arr.length + 1}` }); this._config[listKey(k)] = arr;
+      const [k, name] = b.dataset.rmladd.split('|'), arr = [...(this._rmEd()[listKey(k)] || [])];
+      arr.push(name ? { name } : { name: `Button ${arr.length + 1}` }); this._rmEdSet(listKey(k), arr);
       this._open.add(`rml:${k}:${arr.length - 1}`); this._emit(); this._render();
     }));
     all('[data-rmldel]', (b) => b.addEventListener('click', () => {
-      const [k, i] = b.dataset.rmldel.split('|'), arr = [...(this._config[listKey(k)] || [])];
+      const [k, i] = b.dataset.rmldel.split('|'), arr = [...(this._rmEd()[listKey(k)] || [])];
       arr.splice(Number(i), 1);
-      if (arr.length) this._config[listKey(k)] = arr; else delete this._config[listKey(k)];
+      this._rmEdSet(listKey(k), arr.length ? arr : undefined);
       this._emit(); this._render();
     }));
     all('[data-rmscr]', (b) => b.addEventListener('click', () => {
@@ -6719,6 +6767,8 @@ const RM_SLOTS = [
 const RM_SLOT = Object.fromEntries(RM_SLOTS.map((x) => [x[0], x]));
 /** Buttons that can be hidden (the rest are the remote itself). */
 const RM_OPTIONAL = ['lighting', 'intermission', 'endshow', 'sleep'];
+/** The Remote's settings each TV can have its own of (remote_tvs[tv]); the rest are the same on every TV. */
+const RM_PER_TV = ['remote_buttons', 'remote_lights', 'remote_extra', 'remote_lights_popup'];
 const RM_LIGHT_EXAMPLES = ['Aisle', 'Steps', 'Entry', 'Bar', 'Ceiling', 'Walkway'];
 /** Run an entity the way its kind runs: a script / scene / automation, a light or switch (toggled), a button. */
 function rmEntityCall(entity) {
@@ -6730,15 +6780,21 @@ function rmEntityCall(entity) {
 }
 
 Object.assign(PlexCenterCard.prototype, {
-  /** The TV the remote controls: its own (remote_tv), else the card's. */
-  _rmTv() { return this._tvs().find((t) => t.id === cfg(this._c, 'remote_tv')) || this._tv(); },
+  /** The TV the remote controls: the page's (pick another TV and the remote follows). */
+  _rmTv() { return this._tv(); },
+  /** A per-TV Remote setting (RM_PER_TV): the TV's own when it has its own setup, else the shared one. */
+  _rmCfg(k) {
+    const b = this._c.remote_tvs?.[this._rmTv()?.id];
+    return b ? (b[k] !== undefined ? b[k] : DEFAULTS[k]) : cfg(this._c, k);
+  },
   _rmBtn(id) {
-    const own = (this._c.remote_buttons || {})[id] || {}, [, label, sub, icon, hold] = RM_SLOT[id];
+    const own = (this._rmCfg('remote_buttons') || {})[id] || {}, [, label, sub, icon, hold] = RM_SLOT[id];
     const holdMs = own.hold_ms !== undefined && own.hold_ms !== '' ? Number(own.hold_ms) : hold ? Number(cfg(this._c, 'remote_hold_ms')) : 0;
     return { id, label: own.label ?? label, sub: own.sub ?? sub, icon: own.icon || icon, also: own.also || '', hold: Math.max(0, holdMs || 0), hidden: !!own.hidden };
   },
   _rmItems(kind) {
-    return (Array.isArray(this._c[kind === 'lights' ? 'remote_lights' : 'remote_extra']) ? this._c[kind === 'lights' ? 'remote_lights' : 'remote_extra'] : [])
+    const arr = this._rmCfg(kind === 'lights' ? 'remote_lights' : 'remote_extra');
+    return (Array.isArray(arr) ? arr : [])
       .filter((x) => x && typeof x === 'object').map((x, i) => ({ ...x, i, hold: x.hold_ms !== undefined && x.hold_ms !== '' ? Number(x.hold_ms) : Number(cfg(this._c, 'remote_hold_ms')) }));
   },
   _openRemote() {
@@ -6789,7 +6845,7 @@ Object.assign(PlexCenterCard.prototype, {
     const tv = this._rmTv(), np = tv ? nowPlaying(this._hass, tv, this._c) : null, live = !!np?.live, playing = live && np.st.state === 'playing';
     const lights = this._rmItems('lights'), extra = this._rmItems('extra');
     const litSig = [...lights, ...extra].map((x) => this._hass.states[x.lit || x.entity]?.state);
-    const sig = JSON.stringify([live, playing, np?.title, np?.sub, litSig, this._rmPop, this._sleep?.[tv?.id], cfg(this._c, 'remote_font'), cfg(this._c, 'remote_lights_popup'), JSON.stringify(this._c.remote_buttons || {}), lights.length, extra.length, tv?.id]);
+    const sig = JSON.stringify([live, playing, np?.title, np?.sub, litSig, this._rmPop, this._sleep?.[tv?.id], cfg(this._c, 'remote_font'), this._rmCfg('remote_lights_popup'), JSON.stringify(this._c.remote_buttons || {}), lights.length, extra.length, tv?.id]);
     if (!force && sig === this._rmSig) return;
     this._rmSig = sig;
     const b = (id) => this._rmBtn(id), step = Number(cfg(this._c, 'remote_skip')) || 10;
@@ -6799,7 +6855,7 @@ Object.assign(PlexCenterCard.prototype, {
     const sleepSub = !sl ? 'Off' : sl.mode === 'after' ? 'After this' : `${Math.max(1, Math.round((sl.at * 1000 - Date.now()) / 60000))} min`;
     const play = b('play'), playBtn = `<button class="plc-rm-play" data-rm="play" data-rmhold="${play.hold}" data-rmlabel="${playing ? 'Pause' : 'Play'}"><ha-icon icon="mdi:${playing ? 'pause' : 'play'}"></ha-icon></button>`;
     const skip = (id, dir) => { const s = b(id); return `<button class="plc-rm-skip" data-rm="${id}" data-rmhold="${s.hold}" data-rmlabel="${dir}${step} s"><ha-icon icon="${esc(s.icon)}"></ha-icon><span>${step}s</span></button>`; };
-    const popup = !!cfg(this._c, 'remote_lights_popup'), lightOn = !b('lighting').hidden;
+    const popup = !!this._rmCfg('remote_lights_popup'), lightOn = !b('lighting').hidden;
     const right = popup ? [b('lighting'), ...extra].filter((x) => !x.hidden).slice(0, 3) : [...(lightOn ? lights : []), ...extra];
     const rightHtml = right.map((x) => (x.id === 'lighting' ? this._rmBtnHtml(x) : this._rmItemHtml(x, lights.includes(x) ? 'lights' : 'extra'))).join('');
     const px = (k) => Math.max(6, Number(cfg(this._c, k)) || DEFAULTS[k]);

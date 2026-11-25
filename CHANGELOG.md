@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.25.145
+
+- **Showtime Remote buttons per TV**: the lighting buttons, Intermission, End show (their "also run" scripts, labels, icons, hold times, hidden or not), the More buttons and "Show the lighting in a popup" are set for each TV (Card editor → Showtime Remote → Buttons for each TV, with Copy from another TV). The main controls and the Remote's look stay the same on every TV.
+- **The Remote follows the page's TV**, like Now playing: pick another TV (or tap its Cast icon) and the Remote controls it with that TV's buttons. The "Controls" setting is gone.
+- **Your existing setup moves to the TV the Remote controlled** (for example the Theater). Other TVs show the standard buttons (Intermission pauses, End show stops, no lighting) until you give them their own.
+
 ## v2026.11.25.144
 
 - **TV picker**: the TV icon is gone from the dropdown button and the TV menu (it did nothing); the menu shows each TV's status in its place.
