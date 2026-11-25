@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.134
+// Version: v2026.11.25.135
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.134';
+const BUILD_NUMBER = 'v2026.11.25.135';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1823,7 +1823,10 @@ const CARD_CSS = `
 .plc-hero.top .plc-hero-img { height: min(calc(100cqw * 9 / 16), 340px); min-height: 0; }   /* the whole picture, up to 340 px tall */
 .plc-hero.top.fixh { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
 .plc-hero.top.fixh .plc-hero-img { height: auto; min-height: 0; }   /* fixed height: the picture fills what the text leaves */
-.plc-hero.top.fixh .plc-hero-info { overflow: visible; }
+.plc-hero.top.fixh .plc-hero-info { overflow: visible; padding: calc(10px * var(--plc-size, 1)) calc(16px * var(--plc-size, 1)) calc(12px * var(--plc-size, 1)); gap: calc(2px * var(--plc-size, 1)); }
+.plc-hero.top.fixh .plc-meta { line-height: 1.3; }
+.plc-hero.top.fixh .plc-big { line-height: 1.1; }
+.plc-hero.top.fixh .plc-hero-info > .plc-pager { margin-top: calc(6px * var(--plc-size, 1)); }
 /* wide (set by the fit when it lets the text be bigger): the buttons beside the title, the pager along the bottom */
 .plc-hero.wide .plc-hero-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto repeat(3, auto) 1fr; align-content: start; column-gap: 1.2em; }
 .plc-hero.wide .plc-hero-info > * { grid-column: 1; }
@@ -3194,11 +3197,11 @@ class PlexCenterCard extends HTMLElement {
       if (!info || !sec) continue;
       const f = this._c._fit?.[sec.dataset.sec];
       if (hero.classList.contains('top')) {
-        // picture on top: the text goes under it at the size that leaves the picture at least 42% of the banner
+        // picture on top: the text goes under it at the size that leaves the picture at least 55% of the banner
         const H = hero.clientHeight, img = hero.querySelector('.plc-hero-img');
         if (!H || !img) continue;
         const set = (v) => { sec.style.setProperty('--plc-size', String(v)); if (f) f.fs = v; };
-        const fits = (v) => { set(v); return info.offsetHeight <= H * 0.58 && info.scrollWidth <= info.clientWidth + 1; };
+        const fits = (v) => { set(v); return info.offsetHeight <= H * 0.45 && info.scrollWidth <= info.clientWidth + 1; };
         const bestT = () => {
           let lo = 0.45, hi = Math.min(1.8, Math.max(0.45, info.clientWidth / 260));
           if (fits(hi)) return hi;
@@ -3602,8 +3605,7 @@ class PlexCenterCard extends HTMLElement {
     if (st.fit) sec.style.setProperty('--plc-secw', `${st.fit.secw}%`); else sec.style.removeProperty('--plc-secw');
     // one timer for the banner, kept across repaints (a repaint must not restart it); it reads the current list each time
     const tsig = JSON.stringify([st.auto, st.scroll_dir, st.speed, st.fade_ms, cfg(this._c, 'stagger_rotate'), cfg(this._c, 'stagger_gap'), this._stepSections()]);
-    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (st.auto !== 'off' && items.length > 1 && !reduce) {
+    if (st.auto !== 'off' && items.length > 1) {   // reduced motion: it still steps, without the slide / fade (see the CSS)
       this._bnTimer ||= {};
       if (!this._anim[AK] || this._bnTimer[id] !== tsig) {
         clearInterval(this._anim[AK]); clearTimeout(this._anim[AK]);
@@ -3743,7 +3745,7 @@ class PlexCenterCard extends HTMLElement {
     clearInterval(this._anim[id]); clearTimeout(this._anim[id]); delete this._anim[id];
     const st = secStyle(this._c, id);
     const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (st.auto === 'off' || reduce || items.length <= st.show) return;
+    if (st.auto === 'off' || items.length <= st.show) return;   // reduced motion: rows step an item at a time instead of gliding
     const body = sec.querySelector('[data-secbody]');
     let paused = false;
     body.addEventListener('pointerenter', () => { paused = true; });
@@ -3752,7 +3754,7 @@ class PlexCenterCard extends HTMLElement {
       const stg = this._stagger(id), step = 50, px = Math.max(1, st.speed) * (1 + (stg ? (stg - 0.5) * 0.3 : 0)) * step / 1000;
       // Left / Up: the items move left / up (forward); Right / Down: they move right / down (from the end back)
       const back = st.scroll_dir === 'right' || st.scroll_dir === 'down';
-      let acc = 0, started = false, waitUntil = Date.now() + stg * 4000;
+      let posf = null, started = false, lastJump = 0, waitUntil = Date.now() + stg * 4000;
       this._anim[id] = setInterval(() => {
         if (Date.now() < waitUntil) return;
         const box = body.querySelector('.plc-row, .plc-list');
@@ -3760,12 +3762,18 @@ class PlexCenterCard extends HTMLElement {
         const horiz = box.classList.contains('plc-row');
         const end = horiz ? box.scrollWidth - box.clientWidth : box.scrollHeight - box.clientHeight;
         const set = (v) => { if (horiz) box.scrollLeft = v; else box.scrollTop = v; };
-        if (!started) { started = true; if (back) { set(end); return; } }
-        acc += px;
-        const move = Math.floor(acc); acc -= move;
-        if (!move) return;
-        const pos = horiz ? box.scrollLeft : box.scrollTop;
-        set(back ? (pos <= 1 ? end : pos - move) : (pos >= end - 1 ? 0 : pos + move));
+        if (!started) { started = true; if (back) { posf = end; set(end); return; } }
+        // its own position (a fraction of a pixel a tick): some screens round small scroll steps away, which would stall it
+        const pos0 = horiz ? box.scrollLeft : box.scrollTop;
+        if (posf === null || Math.abs(posf - pos0) > 3) posf = pos0;   // someone scrolled it: carry on from there
+        let move = px;
+        if (reduce) {
+          const t = box.firstElementChild?.getBoundingClientRect(), sz = t ? (horiz ? t.width : t.height) + 12 : 200;
+          if (Date.now() - lastJump < Math.min(6000, Math.max(2500, (sz / Math.max(1, st.speed)) * 1000))) return;
+          lastJump = Date.now(); move = sz;
+        }
+        posf = back ? (posf <= 1 ? end : Math.max(0, posf - move)) : (posf >= end - 1 ? 0 : Math.min(end, posf + move));
+        set(posf);
       }, step);
     } else {
       const pages = Math.ceil(items.length / st.show), [off, period] = this._stepTiming(id, Math.max(2, st.speed) * 1000 + 2 * st.fade_ms);

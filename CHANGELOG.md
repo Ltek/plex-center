@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.25.135
+
+- **Top banner: a bigger picture.** The picture now takes at least 55% of the banner; the text and buttons under it are packed tighter (less padding and line spacing).
+- **Fixed: Cycle did nothing on devices set to reduce motion** (Android's "Remove animations", some battery savers). Banners now step without the slide or fade, and rows move one item every few seconds instead of gliding.
+- Row auto scroll keeps its own position, so screens that round small scroll steps no longer stall it.
+
 ## v2026.11.25.134
 
 - **Fixed: a Banner with the picture on Top could lay its text out over the picture**, in two jumbled columns, so it looked like a Fanart tile. The text now always sits under the picture, and the picture fills only the space the text leaves.
