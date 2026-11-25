@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.141
+// Version: v2026.11.25.142
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.141';
+const BUILD_NUMBER = 'v2026.11.25.142';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -992,7 +992,7 @@ const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phon
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
   border_color: 'str', flag: 'bool', flag_style: ['corner', 'info', 'icons', 'labels', 'both'], flag_items: 'words', flag_bottom: 'words', flag_pos: ['top', 'bottom'], flag_px: 'num', releases: 'words',
-  count_pos: ['title', 'right'] };
+  count_pos: ['title', 'viewall', 'right'] };
 /** A Home row's settings shared by every screen type: what the row is (its source). Everything else is per screen. */
 const SEC_SHARED = new Set(['source', 'sensors', 'library', 'hub', 'releases']);
 /** 2026.11.16.53: rows' settings become screen profiles (sec_styles['<id>:<screen>']); only the source stays in home_style. */
@@ -3735,15 +3735,16 @@ class PlexCenterCard extends HTMLElement {
     const chips = st.chips ? `<span class="plc-kchips">${[['movie', 'Movies'], ['show', 'TV']].map(([v, n]) => this._kindChip(id, v, n, kinds[v])).join('')}</span>` : '';
     const hcls = `${st.head_style}-h${st.divider ? ' div' : ''}`;
     const slot = { l: [], c: [], r: [] }, at = (p) => (p === 'center' ? 'c' : p === 'right' ? 'r' : 'l');
-    const ttl = st.collapsible ? `${icon}${name}` : `${icon}${name}${st.show_count && st.count_pos !== 'right' ? ` <span class="n">${total}</span>` : ''}`;
+    const ttl = st.collapsible ? `${icon}${name}` : `${icon}${name}${st.show_count && st.count_pos === 'title' ? ` <span class="n">${total}</span>` : ''}`;
     slot[at(st.title_pos)].push(`<span class="plc-sec-tt">${ttl}</span>`);
     if (chips) slot[at(st.chips_pos)].push(chips);
     const more = Math.max(total, items.length) > st.show;   // more than fits at once
     if (more && st.cycle_chip) slot[at(st.cycle_pos)].push(this._cycleChip(id, st));
-    if (more && st.view_all && !extraHead) slot[at(st.viewall_pos)].push(`<span class="plc-viewall" role="button" tabindex="0" data-viewsec="${esc(id)}">View all →</span>`);
+    const va = more && st.view_all && !extraHead, cnt = !st.collapsible && st.show_count ? `<span class="n">${total}</span>` : '';
+    if (va) slot[at(st.viewall_pos)].push(`<span class="plc-viewall" role="button" tabindex="0" data-viewsec="${esc(id)}">View all →</span>${st.count_pos === 'viewall' ? cnt : ''}`);
     if (st.collapsible) slot.r.push(`${st.show_count ? `<span class="n">${esc(total ? count : 'None')}</span>` : ''}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon>`);
     else if (extraHead) slot.r.push(extraHead);
-    if (!st.collapsible && st.show_count && st.count_pos === 'right') slot.r.push(`<span class="n">${total}</span>`);
+    if (cnt && (st.count_pos === 'right' || (st.count_pos === 'viewall' && !va))) slot.r.push(cnt);   // no View all: far right
     const noc = slot.c.length ? '' : ' noc';
     const slots = `<span class="sl l">${slot.l.join('')}</span><span class="sl c">${slot.c.join('')}</span><span class="sl r">${slot.r.join('')}</span>`;
     const head = st.collapsible
@@ -5707,7 +5708,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${chk('view_all', 'Show “View all” when there are more than fit (opens them all in a popup)', true)}
         ${st.view_all ? pick('viewall_pos', 'View all', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'right') : ''}
         ${chk('show_count', 'Show the number of items', true)}
-        ${s.show_count === false || st.collapsible ? '' : pick('count_pos', 'Number of items', [['title', 'Next to the title'], ['right', 'Far right']], 'title')}
+        ${s.show_count === false || st.collapsible ? '' : pick('count_pos', 'Number of items', [['title', 'Next to the title'], ['viewall', 'Right of View all'], ['right', 'Far right']], 'title')}
         ${chk('show_icon', 'Show the icon', st.collapsible || !!s.icon)}
         <div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-sid="${esc(id)}" data-sicon="icon" value="${esc(s.icon || '')}"></plce-icon-pick></div>
         ${sel('head_style', 'Title style', [['', st.collapsible ? 'Theme (bar default)' : 'Plex (caps, accent)'], ['caps', 'Plex (caps, accent)'], ['plain', 'Theme']])}

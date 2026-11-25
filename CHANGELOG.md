@@ -1,5 +1,9 @@
 # Changelog
 
+## v2026.11.25.142
+
+- **Number of items** (section Header settings) has a new choice, **Right of View all**: the count sits just after View all, wherever View all is placed. When View all isn't shown, the count goes far right.
+
 ## v2026.11.25.141
 
 - **Section header positions**: the Movies / TV chips, the Cycle chip and View all can each go Left, Center or Right (Header settings of every Home section).
