@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.145
+// Version: v2026.11.25.146
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.145';
+const BUILD_NUMBER = 'v2026.11.25.146';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -6998,18 +6998,25 @@ Object.assign(PlexCenterCard.prototype, {
   },
   /** Auto open: the remote comes up remote_auto_s after a title starts on its TV (on the screens / TVs chosen). */
   _rmAuto() {
-    const tv = this._rmTv(), np = tv && nowPlaying(this._hass, tv, this._c), key = np?.live ? `${tv.id}|${np.title}` : null;
-    if (this._rmSeen === undefined) { this._rmSeen = key; return; }   // already playing when the card loaded: not a start
-    if (key === this._rmSeen) return;
-    this._rmSeen = key;
+    // a show STARTS on a TV: what each TV plays is tracked, so switching the page to a TV that's already playing isn't
+    // a start; only a start on the page's TV opens it (a show starting on another TV doesn't)
+    const first = this._rmSeen === undefined, seen = (this._rmSeen ||= {});
+    let key = null;
+    for (const t of this._tvs()) {
+      const n = nowPlaying(this._hass, t, this._c), k = n?.live ? n.title : null;
+      if (k !== seen[t.id] && !first && k && t.id === this._rmTv()?.id) key = `${t.id}|${k}`;
+      seen[t.id] = k;
+    }
+    if (!key) return;   // first look (already playing when the card loaded), nothing new, or another TV
+    const tv = this._rmTv();
     clearTimeout(this._rmAutoT);
-    if (!key || this._v.remote || !cfg(this._c, 'remote_auto_open')) return;
+    if (this._v.remote || !cfg(this._c, 'remote_auto_open')) return;
     const scr = this._c.remote_auto_screens, tvs = this._c.remote_auto_tvs;
     if (Array.isArray(scr) && scr.length && !scr.includes(this._c._screen)) return;
     if (Array.isArray(tvs) && tvs.length && !tvs.includes(tv.id)) return;
     this._rmAutoT = setTimeout(() => {
       const n2 = nowPlaying(this._hass, tv, this._c);
-      if (n2?.live && `${tv.id}|${n2.title}` === key && !this._v.remote) this._openRemote();
+      if (n2?.live && `${tv.id}|${n2.title}` === key && this._rmTv()?.id === tv.id && !this._v.remote) this._openRemote();   // still that TV's page
     }, Math.max(0, Number(cfg(this._c, 'remote_auto_s')) || 0) * 1000);
   },
 });

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2026.11.25.146
+
+- **Showtime Remote "Open by itself when a show starts"** opens only when the show starts on the TV the page is on. A show starting on another TV doesn't open it, and switching the page to a TV that's already playing doesn't count as a start.
+
 ## v2026.11.25.145
 
 - **Showtime Remote buttons per TV**: the lighting buttons, Intermission, End show (their "also run" scripts, labels, icons, hold times, hidden or not), the More buttons and "Show the lighting in a popup" are set for each TV (Card editor → Showtime Remote → Buttons for each TV, with Copy from another TV). The main controls and the Remote's look stay the same on every TV.
