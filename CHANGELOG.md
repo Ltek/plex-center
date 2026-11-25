@@ -1,5 +1,9 @@
 # Changelog
 
+## v2026.11.25.143
+
+- **Banner with the picture on the left shows the same things as the Top banner**: buttons with their labels, the pager, the Cycle chip, the Movies / TV chips and View all. A narrow text side used to hide them and show icon-only buttons; now they wrap, and the text is sized to fit with them (it was also capped too small on a narrow side).
+
 ## v2026.11.25.142
 
 - **Number of items** (section Header settings) has a new choice, **Right of View all**: the count sits just after View all, wherever View all is placed. When View all isn't shown, the count goes far right.

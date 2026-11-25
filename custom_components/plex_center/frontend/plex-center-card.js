@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.142
+// Version: v2026.11.25.143
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.142';
+const BUILD_NUMBER = 'v2026.11.25.143';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1869,9 +1869,11 @@ const CARD_CSS = `
 .plc-hero.wide .plc-hero-info > .plc-btns { grid-column: 2; grid-row: 1 / span 4; align-self: start; justify-content: flex-end; margin-top: 0; }
 .plc-hero.wide .plc-hero-info > .plc-pager { grid-column: 1 / -1; margin-top: auto; align-self: end; }
 .plc-hero-info .plc-pager { white-space: nowrap; }
-@container (max-width: 20em) { .plc-hero-info .plc-btn:not(.main) { font-size: 0; gap: 0; padding-left: .7em; padding-right: .7em; } }
-@container (max-width: 24em) { .plc-hero-info .plc-meta + .plc-bar-track + .plc-meta { display: none; } .plc-hero-info .plc-viewall, .plc-hero-info .plc-cycle { display: none; } }
-@container (max-width: 18.5em) { .plc-hero-info .plc-pager { display: none; } }
+/* Left and Top banners show the same things (buttons with their labels, pager, chips, View all): a narrow side wraps
+   them and the fit (_fitBanners) sizes the text so it all fits, rather than hiding any */
+.plc-hero-info .plc-pager { flex-wrap: wrap; row-gap: 6px; }
+.plc-pg { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.plc-hero-info .plc-pager > .plc-viewall { margin-left: auto; }
 /* Content Layout: sections sharing a row take their Width of it (between them they fill it); posters / fanart are sized
    from the whole row's width (cqw), so a narrower section shows fewer of them, the same size */
 .plc-crow { display: flex; gap: 16px; align-items: flex-start; container-type: inline-size; }
@@ -3266,9 +3268,14 @@ class PlexCenterCard extends HTMLElement {
       }
       // picture on the left: the text as big as its side has room for (height and width), up to 1.8x
       const set = (v) => { sec.style.setProperty('--plc-size', String(v)); if (f) f.fs = v; };
-      const fits = (v) => { set(v); return info.scrollHeight <= info.clientHeight + 1 && info.scrollWidth <= info.clientWidth + 1; };
+      const fits = (v) => {   // nothing past the bottom, nor into the right-hand padding
+        set(v);
+        if (info.scrollHeight > info.clientHeight + 1 || info.scrollWidth > info.clientWidth + 1) return false;
+        const edge = info.getBoundingClientRect().right - (parseFloat(getComputedStyle(info).paddingRight) || 0) + 1;
+        return ![...info.querySelectorAll('.plc-btn, .plc-pager > *, .plc-big')].some((e) => e.getBoundingClientRect().right > edge);
+      };
       const best = () => {
-        let lo = 0.45, hi = Math.min(1.8, Math.max(0.45, info.clientWidth / 190));
+        let lo = 0.45, hi = 1.8;   // the fit checks the width too (labels, pager and chips wrap)
         if (fits(hi)) return hi;
         for (let i = 0; i < 9; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; }
         return lo;
@@ -3715,8 +3722,8 @@ class PlexCenterCard extends HTMLElement {
         <h2 class="plc-big">${esc(big)}</h2>${metas.map((m) => `<div class="plc-meta">${esc(m)}</div>`).join('')}
         ${it.progress && id === 'continue' ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div><div class="plc-meta">${esc(left)}</div>` : ''}
         <div class="plc-btns">${btns}</div>
-        <div class="plc-pager"><button class="plc-icon-btn" data-hero="${esc(id)}|-1" title="Previous"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
-          ${i + 1} / ${items.length}<button class="plc-icon-btn" data-hero="${esc(id)}|1" title="Next"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
+        <div class="plc-pager"><span class="plc-pg"><button class="plc-icon-btn" data-hero="${esc(id)}|-1" title="Previous"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
+          ${i + 1} / ${items.length}<button class="plc-icon-btn" data-hero="${esc(id)}|1" title="Next"><ha-icon icon="mdi:chevron-right"></ha-icon></button></span>
           ${items.length > 1 && st.cycle_chip ? this._cycleChip(id, st) : ''}${chips}${items.length > 1 && st.view_all ? `<span class="plc-viewall" role="button" tabindex="0" data-viewsec="${esc(id)}">View all →</span>` : ''}</div></div></div>`;
   }
 
