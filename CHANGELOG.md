@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.25.132
+
+- **Banner picture: Left or Top** (Layout panel of a banner section). Left is the default again, as before .131.
+- **Top** shows the picture across the banner (up to 340 px tall, never more than 16:9) with the text under it. The text and buttons grow to use the space under the picture, and on a wide banner the buttons sit to the right of the title with the pager along the bottom.
+- **Poster rows in a shared row**: the text under the posters takes at most about 30% of the row height (smaller text first, then fewer lines), so the posters get the rest.
+
 ## v2026.11.25.131
 
 - **Section widths are respected.** A section with its own Width keeps it; a section without one takes the rest of its row.

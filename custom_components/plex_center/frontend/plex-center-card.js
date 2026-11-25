@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.131
+// Version: v2026.11.25.132
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.131';
+const BUILD_NUMBER = 'v2026.11.25.132';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -982,7 +982,7 @@ function layoutItems(c, key = 'main') {
 }
 
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
-const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', cycle_mode: ['scroll', 'fade'], cycle_chip: 'bool', chips_pos: ['center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
+const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', cycle_mode: ['scroll', 'fade'], cycle_chip: 'bool', banner_img: ['left', 'top'], chips_pos: ['center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', size: 'num', width: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
@@ -1055,7 +1055,7 @@ function secStyle(c, id) {
   // Cycle: the header chip turns the section's auto-rotate on / off; Cycle content says how (scroll or fade)
   const cycleMode = s.cycle_mode || (s.auto && s.auto !== 'off' ? s.auto : id === 'continue' ? 'fade' : 'scroll');
   const want = c._cycle?.[id], auto = want === undefined ? (s.auto || 'off') : want ? cycleMode : 'off';
-  return { layout: s.layout || 'row', cycle_mode: cycleMode, cycle_chip: s.cycle_chip ?? true, image, fade: lkImg === 'fade', wide, lkind: SEC_KIND[type] || type, look: own, collapsible, collapsed: !!s.collapsed,
+  return { layout: s.layout || 'row', banner_img: s.banner_img === 'top' ? 'top' : 'left', cycle_mode: cycleMode, cycle_chip: s.cycle_chip ?? true, image, fade: lkImg === 'fade', wide, lkind: SEC_KIND[type] || type, look: own, collapsible, collapsed: !!s.collapsed,
     icon: s.icon || SEC_TYPE_ICON[type] || '', show_icon: s.show_icon ?? (collapsible || !!s.icon), show_title: s.show_title ?? true,
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
     chips_pos: s.chips_pos || 'right', title_pos: s.title_pos || 'left', view_all: s.view_all ?? true,
@@ -1081,7 +1081,7 @@ function secVars(st) {
   const s = st.s, clean = (v) => String(v).replace(/[;{}<>]/g, ''), v = [`--plc-li-w:${st.list_w}px`, `--plc-show:${st.show}`, `--plc-fade-ms:${st.fade_ms}ms`];
   if (st.item_h !== undefined) v.push(`--plc-li-h:${Number(st.item_h)}px`);
   if (st.size !== undefined) v.push(`--plc-size:${st.size / 100}`);
-  if (st.fit) { v.push(`--plc-secw:${st.fit.secw}%`); if (st.fit.tw) v.push(`--plc-tw:${st.fit.twm || st.fit.tw}`); if (st.fit.th) v.push(`--plc-th:${st.fit.thm || st.fit.th}`); }
+  if (st.fit) { v.push(`--plc-secw:${st.fit.secw}%`); if (st.fit.tw) v.push(`--plc-tw:${st.fit.twm || st.fit.tw}`); if (st.fit.th) v.push(`--plc-th:${st.fit.thm || st.fit.th}`); if (st.fit.tz) v.push(`--plc-tz:${st.fit.tz}`); }
   if (s.border_color) v.push('--plc-li-bdw:2px');
   for (const n of [1, 2, 3, 4]) {
     if (s[`l${n}_px`] !== undefined) v.push(`--plc-l${n}-px:${Number(s[`l${n}_px`])}px`);
@@ -1817,12 +1817,19 @@ const CARD_CSS = `
 .plc-hero.fixh ha-icon { --mdc-icon-size: calc(20px * var(--plc-size, 1)); }
 .plc-hero.fixh .plc-icon-btn { width: calc(40px * var(--plc-size, 1)); height: calc(40px * var(--plc-size, 1)); }
 .plc-hero-info { container-type: inline-size; }
-/* a narrow banner (a small share of its row): the picture above the text instead of beside it */
+/* Banner picture on top: the whole picture (16:9) above the text; with a fixed height the picture takes what's left above the text */
 .plc-sec.banner { container-type: inline-size; }
-@container (max-width: 560px) {
-  .plc-sec.banner .plc-hero, .plc-sec.banner .plc-hero.fixh { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 42%) minmax(0, 1fr); }
-  .plc-sec.banner .plc-hero:not(.fixh) { grid-template-rows: auto auto; }
-  .plc-sec.banner .plc-hero:not(.fixh) .plc-hero-img { aspect-ratio: 16 / 9; min-height: 0; }
+.plc-hero.top { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
+.plc-hero.top .plc-hero-img { height: min(calc(100cqw * 9 / 16), 340px); min-height: 0; }   /* the whole picture, up to 340 px tall */
+.plc-hero.top.fixh { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+.plc-hero.top.fixh .plc-hero-img { aspect-ratio: auto; max-height: calc(100cqw * 9 / 16); min-height: 0; }
+.plc-hero.top.fixh .plc-hero-info { overflow: visible; }
+/* wide enough: the buttons sit beside the text (top right), the pager along the bottom, so the text gets the height */
+@container (min-width: 420px) {
+  .plc-hero.top .plc-hero-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; column-gap: 1.2em; }
+  .plc-hero.top .plc-hero-info > * { grid-column: 1; }
+  .plc-hero.top .plc-hero-info > .plc-btns { grid-column: 2; grid-row: 1 / span 4; align-self: start; justify-content: flex-end; margin-top: 0; }
+  .plc-hero.top .plc-hero-info > .plc-pager { grid-column: 1 / -1; margin-top: .4em; }
 }
 @container (max-width: 30em) { .plc-hero-info .plc-btn:not(.main) { font-size: 0; gap: 0; padding-left: .7em; padding-right: .7em; } }
 @container (max-width: 24em) { .plc-hero-info .plc-meta + .plc-bar-track + .plc-meta { display: none; } .plc-hero-info .plc-viewall, .plc-hero-info .plc-cycle { display: none; } }
@@ -1836,6 +1843,8 @@ const CARD_CSS = `
 .plc-sec-body.fit .plc-row { overflow-x: auto; }
 .plc-sec-body.fith .plc-row > .plc-tile .plc-poster { aspect-ratio: auto; height: var(--plc-th); }   /* matched: the picture fills the row's height, cropped */
 .plc-sec-body.fit.limit .plc-row { overflow-x: hidden; }
+.plc-sec-body.fit .plc-row > .plc-tile > :is(.plc-t, .plc-s) { zoom: var(--plc-tz, 1); }   /* matched poster rows: text sized to leave the poster most of the row */
+.plc-sec.tight .plc-sec-body.fit .plc-row > .plc-tile > .plc-s:is(.l3, .l4, .l5) { display: none; }
 .plc-main.searching > .plc-crow { display: none; }
 /* Content Layout spacing: top, between rows, bottom (no gap under the last row beyond it) */
 .plc-main.lay { display: flow-root; padding-top: var(--plc-mt, 0px); }
@@ -3186,6 +3195,18 @@ class PlexCenterCard extends HTMLElement {
       const f = this._c._fit?.[sec.dataset.sec];
       let k = Number(getComputedStyle(sec).getPropertyValue('--plc-size')) || 1;
       const kw = r4(Math.max(0.45, info.clientWidth / 300));   // text no bigger than its side of the banner has room for
+      if (hero.classList.contains('top')) {
+        // picture on top: the text goes under it at the size that leaves the picture at least 42% of the banner
+        const H = hero.clientHeight, img = hero.querySelector('.plc-hero-img');
+        if (!H || !img) continue;
+        const set = (v) => { sec.style.setProperty('--plc-size', String(v)); if (f) f.fs = v; };
+        const fits = (v) => { set(v); return info.offsetHeight <= H * 0.58 && info.scrollWidth <= info.clientWidth + 1; };
+        let lo = 0.45, hi = Math.min(1.8, Math.max(0.45, info.clientWidth / 260));
+        if (fits(hi)) continue;
+        for (let i = 0; i < 9; i++) { const m = (lo + hi) / 2; if (fits(m)) lo = m; else hi = m; }
+        set(r4(lo));
+        continue;
+      }
       if (info.clientWidth && k > kw) { k = kw; sec.style.setProperty('--plc-size', String(k)); if (f) f.fs = k; }
       for (let i = 0; i < 12 && info.clientHeight && info.scrollHeight > info.clientHeight + 1 && k > 0.45; i++) {
         k = r4(k * 0.93); sec.style.setProperty('--plc-size', String(k));
@@ -3206,9 +3227,18 @@ class PlexCenterCard extends HTMLElement {
         if (f.kind === 'banner') {
           f.fs = undefined; f.lihm = `${Math.round(H)}px`; sec.style.setProperty('--plc-li-h', f.lihm); sec.style.setProperty('--plc-size', String(r4(Math.max(0.5, Math.min(1.5, H / 260)))));
         } else if (f.kind === 'tile') {
+          const tiles = [...sec.querySelectorAll('.plc-row > .plc-tile')];
+          if (!tiles.length) continue;
+          if (f.tz === undefined && !sec.querySelector('.plc-row .plc-poster .plc-fan-text')) {
+            // posters: the text under them takes at most 30% of the row (smaller text, then fewer lines), the picture the rest
+            const below = Math.max(...tiles.map((t) => t.getBoundingClientRect().height - (t.querySelector('.plc-poster')?.getBoundingClientRect().height || 0)));
+            const z = below > 0.3 * H ? Math.max(0.62, (0.3 * H) / below) : 1;
+            f.tz = r4(z); f.tight = below * z > 0.36 * H;
+            sec.style.setProperty('--plc-tz', String(f.tz)); sec.classList.toggle('tight', f.tight);
+          }
           const ih = sec.querySelector('.plc-row .plc-poster')?.getBoundingClientRect().height;
           if (!ih) continue;
-          const nh = Math.max(40, ih + H - sh);
+          const nh = Math.max(40, ih + H - sec.getBoundingClientRect().height);
           f.thm = `${Math.round(nh)}px`; sec.style.setProperty('--plc-th', f.thm);
           f.twm = `${Math.round(Math.min(nh * f.a, f.maxw || 1e9) * 10) / 10}px`; sec.style.setProperty('--plc-tw', f.twm);
         }
@@ -3577,7 +3607,7 @@ class PlexCenterCard extends HTMLElement {
         else this._anim[AK] = setInterval(step2, period);
       }
     } else this._stopBanner(id);
-    if (!items.length) { sec.innerHTML = `<div class="plc-hero${st.item_h !== undefined || st.fit?.lih ? ' fixh' : ''}"><div class="plc-hero-img"></div><div class="plc-hero-info"><div class="plc-eyebrow">${esc(st.s.title || title)}</div><div class="plc-meta">Nothing here.</div></div></div>`; return; }
+    if (!items.length) { sec.innerHTML = `<div class="plc-hero${st.item_h !== undefined || st.fit?.lih ? ' fixh' : ''}${st.banner_img === 'top' ? ' top' : ''}"><div class="plc-hero-img"></div><div class="plc-hero-info"><div class="plc-eyebrow">${esc(st.s.title || title)}</div><div class="plc-meta">Nothing here.</div></div></div>`; return; }
     const i = Math.min(this._heroAt(id), items.length - 1), it = items[i];
     const ep = it.type === 'episode' && it.season != null;
     let eyebrow, big, metas = [], left = '', btns;
@@ -3608,7 +3638,7 @@ class PlexCenterCard extends HTMLElement {
       sec.addEventListener('pointerleave', () => { this._cwHold = false; });
     }
     nextFrame(() => this._fitBanners());
-    sec.innerHTML = `<div class="plc-hero${st.item_h !== undefined || st.fit?.lih ? ' fixh' : ''}"><div class="plc-hero-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
+    sec.innerHTML = `<div class="plc-hero${st.item_h !== undefined || st.fit?.lih ? ' fixh' : ''}${st.banner_img === 'top' ? ' top' : ''}"><div class="plc-hero-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
       <div class="plc-hero-info"><div class="plc-eyebrow">${esc(eyebrow)}</div>
         <h2 class="plc-big">${esc(big)}</h2>${metas.map((m) => `<div class="plc-meta">${esc(m)}</div>`).join('')}
         ${it.progress && id === 'continue' ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div><div class="plc-meta">${esc(left)}</div>` : ''}
@@ -5540,6 +5570,7 @@ class PlexCenterCardEditor extends HTMLElement {
         <p class="plce-hint">Cycle content is what the chip (and Auto rotate below) does when it's on.</p>
         ${id === 'continue' ? sel('layout', 'Layout', [['', this._eds().startsWith('phone') ? 'Row (phones\' default)' : 'Banner, one at a time (tablets\' default)'], ['banner', 'Banner, one at a time'], ['row', 'Row'], ['list', 'Column']])
           : bannerOk(this._config, id) ? sel('layout', 'Layout', [['', 'Row'], ['banner', 'Banner, one at a time'], ['list', 'Column']]) : sel('layout', 'Layout', [['', 'Row'], ['list', 'Column']])}
+        ${banner ? pick('banner_img', 'Banner picture', [['left', 'Left'], ['top', 'Top']], 'left') : ''}
         ${banner ? '' : `${sl('show', 'Items to show', 0, 20, 0, '')}
         <p class="plce-hint">0 = the screen's Posters across (half for Fanart rows).</p>`}
         ${banner ? '' : chk('scroll', 'Scroll to see more items', false)}
