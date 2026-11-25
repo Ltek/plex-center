@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.139
+// Version: v2026.11.25.140
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.139';
+const BUILD_NUMBER = 'v2026.11.25.140';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -3393,10 +3393,9 @@ class PlexCenterCard extends HTMLElement {
     const mine = this._byKind(id, all);
     if (!this._recent.length) { r.remove(); return; }
     const items = mine.slice(0, st.max);
-    this._lists.set(id, items);
+    this._lists.set(id, items); (this._full ||= {})[id] = mine;   // View all: a popup of all of them, like the other sections
     sig(r, JSON.stringify([JSON.stringify(st.s), cfg(this._c, 'image_style'), this._v.secOpen?.[id], JSON.stringify(this._kinds(id)), items.map((x) => [x.key, x.title, x.watched])]),
-      () => this._fill(id, r, SEC_TYPE_TITLE.recent, mine.length, items, id,
-        this._libraries()[0] && st.view_all ? '<button class="plc-viewall" data-viewall="added">View all →</button>' : ''));
+      () => this._fill(id, r, SEC_TYPE_TITLE.recent, mine.length, items, id));
   }
 
   /** Plex rows: Plex's own hubs ("Because you watched…", "Top rated", …) for the TV's user. */
@@ -5677,7 +5676,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${s.show_title === false ? '' : pick('title_pos', 'Section Title', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'left')}
         ${st.type === 'plexhub' ? '' : `${chk('chips', 'Movies and TV chips in the header (turn each on or off)', false)}
         ${st.chips ? pick('chips_pos', 'Chips', [['center', 'Center'], ['right', 'Right']], 'right') : ''}`}
-        ${chk('view_all', st.type === 'recent' ? 'Show “View all” (opens the library, newest first)' : 'Show “View all” when there are more than fit (opens them all in a popup)', true)}
+        ${chk('view_all', 'Show “View all” when there are more than fit (opens them all in a popup)', true)}
         ${chk('show_count', 'Show the number of items', true)}
         ${s.show_count === false || st.collapsible ? '' : pick('count_pos', 'Number of items', [['title', 'Next to the title'], ['right', 'Far right']], 'title')}
         ${chk('show_icon', 'Show the icon', st.collapsible || !!s.icon)}

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2026.11.25.140
+
+- **Recently Added's View all opens a popup of everything in Recently Added**, like the other sections, instead of switching to the first library tab sorted by newest. It shows when there are more than fit, and follows the Movies / TV chips.
+
 ## v2026.11.25.139
 
 - **Intros and credits** (Plex's markers, read once per title and cached): Now playing shows **Skip intro** during an intro and **Skip credits** during credits that come before the end; Up next shows from the start of the final credits.
