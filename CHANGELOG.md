@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.25.138
+
+- **Now playing, laid out like your mockup**: the ratings sit in the top-left corner (above the title on phones); the running time is between the position and the end time under the bar; the app (Plex) is in the bottom-right corner; more space between the rows of buttons; all text about 3 px bigger.
+- **Cycle chip**: shows its icon only by default (Home settings: Icon / Label / Both). Off it is grey; on, its icon, label and outline take the theme's icon colour (`--state-icon-color`), with no fill.
+- **Movies / TV chips**: the label only by default (Icon / Label / Both); when on, the label and outline are the accent colour, with no fill; grey when off.
+
 ## v2026.11.25.137
 
 - **Full motion (new, on by default)**: Cycle slides and glides at full speed even when the device asks for reduced motion (Android "Remove animations", battery saver). Turn it off in Home settings to get the gentler steps from v2026.11.25.135.

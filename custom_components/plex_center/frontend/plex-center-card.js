@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.137
+// Version: v2026.11.25.138
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.137';
+const BUILD_NUMBER = 'v2026.11.25.138';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -628,6 +628,10 @@ const DEFAULTS = {
   watching_collapsed_cal: false,
   watching_collapsed_lib: false,
   stagger_gap: 3,
+  cycle_chip_icon: true,      // the Cycle chip: its icon / its label (at least one shows)
+  cycle_chip_label: false,
+  kind_chip_icon: false,      // the Movies / TV chips: icon / label (at least one shows)
+  kind_chip_label: true,
   calendar: true,
   calendar_view: 'month',
   week_start: 'mon',
@@ -1554,6 +1558,15 @@ const CARD_CSS = `
 .plc-np-facts { justify-content: center; align-items: center; gap: 8px; margin: 6px 0 2px; display: flex; flex-wrap: wrap; }
 .plc-np-facts > .plc-info-sub { margin: 0; }
 .plc-side-info .plc-np-ctl { padding-bottom: 18px; }   /* room under the bottom row of buttons */
+.plc-side-info { position: relative; font-size: calc(100% + 3px); }
+.plc-np-rates { position: absolute; top: 10px; left: 12px; display: flex; gap: 6px; flex-wrap: wrap; max-width: 30%; }
+.plc-np-rates .plc-rate.big { background: var(--plc-bg2); color: var(--primary-text-color); }
+.plc.phone .plc-np-rates { position: static; justify-content: center; max-width: none; order: -1; }
+.plc-np-app { position: absolute; right: 14px; bottom: 14px; color: var(--secondary-text-color); font-size: .95em; }
+.plc-times.mid { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; font-size: .85em; }
+.plc-times.mid > :first-child { text-align: left; } .plc-times.mid > :last-child { text-align: right; }
+.plc-times.mid .plc-np-run { font-size: 1.15em; background: var(--plc-bg2); color: var(--primary-text-color); }
+.plc-side-info .plc-np-ctl.center { gap: 16px; margin-top: 14px; }
 .plc-np-facts .plc-rate.big, .plc-np-facts .plc-fact { background: var(--plc-bg2); color: var(--primary-text-color); }
 .plc-cal-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .plc-cal-chip { padding: 2px 8px; border-radius: 999px; font-size: .75em; font-weight: 600; color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
@@ -1808,6 +1821,11 @@ const CARD_CSS = `
 .plc-sec-h .plc-kchips { margin-left: auto; display: flex; gap: 4px; }
 .plc-sec-bar .plc-kchips { display: flex; gap: 4px; }
 .plc-kchips .plc-chip { padding: 3px 10px; font-size: .78em; }
+/* header chips: an outline only (no fill); grey when off. Cycle on: the theme's icon colour; Movies / TV on: the accent */
+.plc-chip.plc-cycle, .plc-chip.plc-kchip { background: transparent; color: var(--disabled-text-color, #888); border-color: var(--disabled-text-color, #666); }
+.plc-chip.plc-cycle.on { background: transparent; color: var(--state-icon-color, var(--plc-a)); border-color: var(--state-icon-color, var(--plc-a)); }
+.plc-chip.plc-kchip.on { background: transparent; color: var(--plc-a); border-color: var(--plc-a); }
+.plc-chip.plc-cycle.icononly, .plc-chip.plc-kchip.icononly { padding: 3px 7px; }
 .plc-li.poster .plc-li-img { position: static; width: auto; aspect-ratio: 2 / 3; -webkit-mask-image: none; mask-image: none; }
 .plc-li.poster .plc-li-text { max-width: none; }
 /* rows with an Item height: each poster / fanart that tall, its width from the shape (Items to show then don't size them) */
@@ -3670,8 +3688,7 @@ class PlexCenterCard extends HTMLElement {
       btns = `${play('Play')}${details}${this._openShowHtml(it)}`;
     }
     const img = it.art || it.still || it.poster;
-    const kinds = this._kinds(id), chips = id !== 'continue' && st.chips ? `<span class="plc-kchips">${[['movie', 'Movies'], ['show', 'TV']].map(([v, n]) =>
-      `<span class="plc-chip${kinds[v] ? ' on' : ''}" role="button" data-seckind="${esc(id)}|${v}">${n}</span>`).join('')}</span>` : '';
+    const kinds = this._kinds(id), chips = id !== 'continue' && st.chips ? `<span class="plc-kchips">${[['movie', 'Movies'], ['show', 'TV']].map(([v, n]) => this._kindChip(id, v, n, kinds[v])).join('')}</span>` : '';
     if (!sec.dataset.cwhold) {
       sec.dataset.cwhold = '1';
       sec.addEventListener('pointerover', (e) => { this._cwHold = e.pointerType === 'mouse' && !!e.target.closest?.('.plc-btns, .plc-pager'); });
@@ -3700,8 +3717,7 @@ class PlexCenterCard extends HTMLElement {
     const icon = st.show_icon && st.icon ? `<ha-icon icon="${esc(st.icon)}"></ha-icon>` : '';
     const name = st.show_title ? `<span class="name ${st.head_style}">${esc(title)}</span>` : '<span class="name"></span>';
     const kinds = this._kinds(id);
-    const chips = st.chips ? `<span class="plc-kchips">${[['movie', 'Movies'], ['show', 'TV']].map(([v, n]) =>
-      `<span class="plc-chip${kinds[v] ? ' on' : ''}" role="button" data-seckind="${esc(id)}|${v}">${n}</span>`).join('')}</span>` : '';
+    const chips = st.chips ? `<span class="plc-kchips">${[['movie', 'Movies'], ['show', 'TV']].map(([v, n]) => this._kindChip(id, v, n, kinds[v])).join('')}</span>` : '';
     const hcls = `${st.head_style}-h${st.divider ? ' div' : ''}`;
     const slot = { l: [], c: [], r: [] }, at = (p) => (p === 'center' ? 'c' : p === 'right' ? 'r' : 'l');
     const ttl = st.collapsible ? `${icon}${name}` : `${icon}${name}${st.show_count && st.count_pos !== 'right' ? ` <span class="n">${total}</span>` : ''}`;
@@ -4125,9 +4141,15 @@ Object.assign(PlexCenterCard.prototype, {
   },
 
   /** The Cycle chip: turns the section's scrolling / fading on and off. */
+  /** A Movies / TV chip in a section's header: its icon and / or label (Home settings). */
+  _kindChip(id, v, n, on) {
+    const lbl = !!cfg(this._c, 'kind_chip_label'), ic = !!cfg(this._c, 'kind_chip_icon') || !lbl;
+    return `<span class="plc-chip plc-kchip${on ? ' on' : ''}${lbl ? '' : ' icononly'}" role="button" aria-pressed="${!!on}" title="${n}" data-seckind="${esc(id)}|${v}">${ic ? `<ha-icon icon="mdi:${v === 'movie' ? 'movie-open-outline' : 'television-classic'}"></ha-icon>` : ''}${lbl ? n : ''}</span>`;
+  },
   _cycleChip(id, st) {
     const on = st.auto !== 'off';
-    return `<span class="plc-chip plc-cycle${on ? ' on' : ''}" role="button" tabindex="0" data-cycle="${esc(id)}" title="${on ? 'Stop cycling' : `Cycle (${st.cycle_mode === 'fade' ? 'fade' : 'scroll'})`}"><ha-icon icon="mdi:${on ? 'pause' : st.cycle_mode === 'fade' ? 'animation-play-outline' : 'arrow-left-right'}"></ha-icon>Cycle</span>`;
+    const lbl = !!cfg(this._c, 'cycle_chip_label'), ic = !!cfg(this._c, 'cycle_chip_icon') || !lbl;
+    return `<span class="plc-chip plc-cycle${on ? ' on' : ''}${lbl ? '' : ' icononly'}" role="button" tabindex="0" data-cycle="${esc(id)}" aria-pressed="${on}" title="${on ? 'Cycling: tap to stop' : `Cycle (${st.cycle_mode === 'fade' ? 'fade' : 'scroll'}): tap to start`}">${ic ? `<ha-icon icon="mdi:${st.cycle_mode === 'fade' ? 'animation-play-outline' : 'arrow-left-right'}"></ha-icon>` : ''}${lbl ? 'Cycle' : ''}</span>`;
   },
   /** View all: every item of a section in a popup grid. */
   _viewAll(id) {
@@ -4469,10 +4491,11 @@ Object.assign(PlexCenterCard.prototype, {
     }
   },
 
-  _bar(np) {
+  _bar(np, mid = '') {
     if (!np?.live) return '';
+    // with a middle (Now playing's running time): position | running time | ends at; else position | ends at | length
     return `<div class="plc-bar${seekable(np.tv) ? ' seek' : ''}" data-bar><div class="plc-bar-track"><div class="plc-bar-fill"></div></div></div>
-      <div class="plc-times"><span data-pos></span><span data-ends></span><span data-dur></span></div>`;
+      ${mid ? `<div class="plc-times mid"><span data-pos></span>${mid}<span data-ends></span></div>` : '<div class="plc-times"><span data-pos></span><span data-ends></span><span data-dur></span></div>'}`;
   },
 
   _panelHtml(np) {
@@ -4499,11 +4522,13 @@ Object.assign(PlexCenterCard.prototype, {
         <button class="plc-icon-btn plc-np-remote" data-remoteopen title="Showtime Remote"><ha-icon icon="mdi:remote-tv"></ha-icon></button></div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
         <h2 class="plc-big">${esc(np.title)}</h2>${(() => {
-          // one row: the episode line, then the facts (ratings, running time) and Open show beside it (wraps when narrow)
+          // ratings in the top-left corner; the episode line and Open show on one row; the running time between the
+          // position and the end time; the app in the bottom-right corner
           const sx = np.live && this._sessionFor(np.tv), dur = Number(np.st?.attributes?.media_duration) || sx?.duration || 0;
-          const pills = [...(sx ? this._ratingPills(sx) : []), dur ? `<span class="plc-fact"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(fmtRun(dur))}</span>` : ''].filter(Boolean).join('');
-          const row = `${np.sub ? `<span class="plc-info-sub">${esc(np.sub)}</span>` : ''}${pills}${sx ? this._openShowHtml(sx, 'plc-chip') : ''}`;
-          return row ? `<div class="plc-rates plc-np-facts">${row}</div>` : ''; })()}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>`;
+          const pills = (sx ? this._ratingPills(sx) : []).join('');
+          const row = `${np.sub ? `<span class="plc-info-sub">${esc(np.sub)}</span>` : ''}${sx ? this._openShowHtml(sx, 'plc-chip') : ''}`;
+          const run = dur ? `<span class="plc-fact plc-np-run"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(fmtRun(dur))}</span>` : '<span></span>';
+          return `${pills ? `<div class="plc-np-rates">${pills}</div>` : ''}${row ? `<div class="plc-rates plc-np-facts">${row}</div>` : ''}${this._bar(np, run)}`; })()}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${app && np.live ? `<span class="plc-np-app">${esc(app)}</span>` : ''}${this._upNextHtml(np)}</div></div>`;
   },
 
   /** Now playing for a TV that's off (or just woken) with something to resume. */
@@ -5133,6 +5158,12 @@ class PlexCenterCardEditor extends HTMLElement {
     return `<div class="plce-row"><label class="lbl">${label}</label><input type="text" data-key="${key}" value="${esc(v)}" placeholder="${esc(ph)}"></div>`;
   }
   /** A one-of choice as chips (the design system prefers chips to dropdowns). */
+  /** Icon / Label / Both for a header chip (cycle_chip_* or kind_chip_*). */
+  _chipShowRow(kind, label) {
+    const ic = !!this._c(`${kind}_chip_icon`), lb = !!this._c(`${kind}_chip_label`), cur = ic && lb ? 'both' : lb ? 'label' : 'icon';
+    return `<div class="plce-chiprow"><span class="plce-chiplbl">${esc(label)}</span>${[['icon', 'Icon'], ['label', 'Label'], ['both', 'Both']].map(([v, n]) =>
+      `<button class="plce-pick${v === cur ? ' on' : ''}" data-chipshow="${kind}|${v}">${n}</button>`).join('')}</div>`;
+  }
   _chips(key, label, options) {
     const cur = String(this._c(key) ?? '');
     return `<div class="plce-chiprow"><span class="plce-chiplbl">${esc(label)}</span>${options.map(([v, n]) => `<button class="plce-pick${String(v) === cur ? ' on' : ''}" data-chipk="${esc(key)}|${esc(v)}">${esc(n)}</button>`).join('')}</div>`;
@@ -5509,6 +5540,8 @@ class PlexCenterCardEditor extends HTMLElement {
         <button class="plce-pick" data-goto="content"><ha-icon icon="mdi:view-dashboard-edit-outline"></ha-icon>Content Layout</button></p>
       ${this._everyScreen(`<div class="plce-group">Auto Rotate</div>
         ${this._check('stagger_rotate', 'Stagger: sections that fade or slide change one at a time')}
+        ${this._chipShowRow('cycle', 'Cycle chip shows')}
+        ${this._chipShowRow('kind', 'Movies / TV chips show')}
         ${this._check('full_motion', 'Full motion even when this device asks for less (Android “Remove animations”, battery saver)')}
         <p class="plce-hint">On by default. Off: on such a device, banners change without sliding and rows move an item at a time.</p>
         ${this._c('stagger_rotate') ? `${this._slider('stagger_gap', 'Time between sections', 1, 15, ' s')}<p class="plce-hint">${esc(this._staggerNote())}</p>` : ''}
@@ -6344,6 +6377,10 @@ class PlexCenterCardEditor extends HTMLElement {
       const lk = b.dataset.fldreset, looks = { ...(this._config.looks || {}) }, o = { ...(looks[lk] || {}) };
       delete o.fields; for (const x of LINE_IDS) for (const p2 of ['show', 'px', 'weight', 'color']) delete o[`${x}_${p2}`];
       looks[lk] = o; this._config.looks = looks; this._emit(); this._render();
+    }));
+    all('[data-chipshow]', (b) => b.addEventListener('click', () => {
+      const [kind, v] = b.dataset.chipshow.split('|');
+      this._setK(`${kind}_chip_icon`, v !== 'label'); this._setK(`${kind}_chip_label`, v !== 'icon'); this._render();
     }));
     all('[data-chipk]', (b) => b.addEventListener('click', () => {
       const i = b.dataset.chipk.indexOf('|'), raw = b.dataset.chipk.slice(i + 1);
