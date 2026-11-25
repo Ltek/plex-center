@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.25.147
+
+- **TV picker settings in one place** (Card editor → Screens → TV picker): the picker's form per screen (a button per TV, Dropdown, Icon button, Hidden), and for every screen: **Shows** Icon only / Icon & label / Label only, **Icon** Cast icon (default) or Status dot, **Tap the icon** to switch the page to that TV and open its Now playing (on by default), Default TV, When playing and Lock. They're no longer in the TVs panel.
+- The TV picker's icon is the TV's status (cast / cast-off or the dot, in the status colours) everywhere: TV buttons, the dropdown, the icon button and the TV menus (Play on, Move to). The per-TV icons are gone.
+- **Home panel renamed Global defaults**: it now also holds the card title, Show the title, Date format and Clock (they apply to every page).
+- **Banners follow their section's Text Lines**, like its rows.
+- **Row text (Appearance) retired**: each section's Text Lines does this. Old templates keep working where a section has no Text Lines; the panel only shows while they're set, with a button to clear them.
+
 ## v2026.11.25.146
 
 - **Showtime Remote "Open by itself when a show starts"** opens only when the show starts on the TV the page is on. A show starting on another TV doesn't open it, and switching the page to a TV that's already playing doesn't count as a start.

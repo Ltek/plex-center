@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.146
+// Version: v2026.11.25.147
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.146';
+const BUILD_NUMBER = 'v2026.11.25.147';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -543,8 +543,9 @@ const DEFAULTS = {
   title: 'Plex',
   layout: 'auto',
   tv_picker: 'chips',
-  tv_label: 'name',
-  tv_indicator: 'dot',       // dot | cast: a cast / cast-off icon (same colours) that opens Now playing for that TV
+  tv_label: 'both',          // the TV picker shows: icon | both (icon and name) | name
+  tv_indicator: 'cast',      // the icon: cast (cast / cast-off, coloured by the TV's state) | dot (the status dot)
+  tv_np_tap: true,           // tapping the icon makes the page that TV's and opens its Now playing
   filters_mode: 'auto',
   phone_header: false,
   phone_compact: true,
@@ -1422,9 +1423,12 @@ const CARD_CSS = `
 .plc-chip.on { border-color: var(--plc-a); background: color-mix(in srgb, var(--plc-a) 18%, transparent); }
 .plc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--disabled-text-color, #777); }
 .plc-dot.on { background: var(--success-color, #4caf50); } .plc-dot.play { background: var(--plc-a); }
-.plc-cast { --mdc-icon-size: 18px; flex: none; color: var(--disabled-text-color, #777); cursor: pointer; padding: 4px; margin: -4px; border-radius: 50%; }
+.plc-cast { --mdc-icon-size: 18px; flex: none; color: var(--disabled-text-color, #777); padding: 4px; margin: -4px; border-radius: 50%; }
+.plc-cast.tap, .plc-dothit { cursor: pointer; }
+.plc-dothit { display: inline-flex; align-items: center; justify-content: center; padding: 8px; margin: -8px; border-radius: 50%; flex: none; }
+.plc-dothit:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .plc-cast.on { color: var(--success-color, #4caf50); } .plc-cast.play { color: var(--plc-a); } .plc-cast.resume { color: var(--warning-color, #ff9800); }
-.plc-cast:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.plc-cast.tap:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
 .plc-menu-ind { width: 24px; flex: none; display: flex; align-items: center; justify-content: center; }
 .plc-menu-ind .plc-cast { --mdc-icon-size: 22px; }
 .plc-dot.resume { background: var(--warning-color, #ff9800); box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning-color, #ff9800) 35%, transparent); }
@@ -2759,18 +2763,15 @@ class PlexCenterCard extends HTMLElement {
     const tvs = this._tvs(), cur = this._tv();
     const mode = cfg(this._c, 'lock') ? 'hidden' : cfg(this._c, 'tv_picker');
     const how = cfg(this._c, 'tv_label');
-    const icons = this._c.tv_icons || {};
     const dot = (tv) => this._indicator(tv);
     const rmark = (t) => (this._resumeFor(t) && (!realOn(this._hass, t) || this._stuck(t)) ? '<ha-icon class="plc-tv-resume" icon="mdi:play-pause" title="Off · ready to resume"></ha-icon>' : '');
-    const face = (t) => {
-      const ic = `<ha-icon icon="${esc(icons[t.id] || 'mdi:television')}"></ha-icon>`;
-      return how === 'icon' ? `${dot(t)}${ic}${rmark(t)}` : how === 'both' ? `${dot(t)}${ic}${esc(tvLabel(t))}${rmark(t)}` : `${dot(t)}${esc(tvLabel(t))}${rmark(t)}`;
-    };
+    // the icon is the TV's status (cast icon or dot): Icon only, Icon and name, or Name only
+    const face = (t) => (how === 'icon' ? `${dot(t)}${rmark(t)}` : how === 'name' ? `${esc(tvLabel(t))}${rmark(t)}` : `${dot(t)}${esc(tvLabel(t))}${rmark(t)}`);
     const cls = how === 'icon' ? ' icononly' : '';
     let picker = '';
     if (tvs.length > 1 && mode !== 'hidden') {
       picker = mode === 'chip' || mode === 'dropdown'
-        ? `<button class="plc-chip plc-menuchip" data-tvsheet>${dot(cur)}<span class="plc-menuchip-n">${esc(tvLabel(cur))}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
+        ? `<button class="plc-chip plc-menuchip${cls}" data-tvsheet title="${esc(tvLabel(cur))}">${how === 'name' ? '' : dot(cur)}${how === 'icon' ? '' : `<span class="plc-menuchip-n">${esc(tvLabel(cur))}</span>`}${rmark(cur)}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`
         : `<div class="plc-tvs">${tvs.map((t) => `<button class="plc-chip${cls}${t === cur ? ' on' : ''}" data-tv="${esc(t.id)}" title="${esc(tvLabel(t))}">${face(t)}</button>`).join('')}</div>`;
     } else if (cur && mode !== 'hidden') picker = `<span class="plc-chip${cls} on" title="${esc(tvLabel(cur))}">${face(cur)}</span>`;
     const title = this._c.title === undefined ? DEFAULTS.title : this._c.title;
@@ -2794,8 +2795,7 @@ class PlexCenterCard extends HTMLElement {
       : `<input class="plc-search" type="search" placeholder="${inLib ? 'Search' : 'Search all libraries'}" value="${esc(v.query)}" data-search>${
         searchIcon ? '<button class="plc-icon-btn" data-searchclose title="Close search"><ha-icon icon="mdi:close"></ha-icon></button>' : ''}`;
     if (mode === 'button' && picker && tvs.length > 1) {
-      const ic = (this._c.tv_icons || {})[cur?.id] || 'mdi:television';
-      picker = `<button class="plc-icon-btn plc-menubtn plc-tvbtn" data-tvsheet title="${esc(tvLabel(cur))}">${dot(cur)}<ha-icon icon="${esc(ic)}"></ha-icon></button>`;
+      picker = `<button class="plc-icon-btn plc-menubtn plc-tvbtn" data-tvsheet title="${esc(tvLabel(cur))}">${cfg(this._c, 'tv_indicator') === 'dot' ? `${dot(cur)}<ha-icon icon="mdi:television"></ha-icon>` : dot(cur)}</button>`;
     }
     const activeOf = { watched: v.unwatched, genre: v.genre, decade: v.decade, rating: v.rating, length: v.short, sort: v.sort && v.sort !== 'title' };
     const active = popItems.filter((h) => activeOf[h.id]).length;
@@ -2879,11 +2879,11 @@ class PlexCenterCard extends HTMLElement {
 
   /** Move menu: the other TVs; picking one moves what's playing there. */
   _moveMenu(anchor) {
-    const cur = this._tv(), icons = this._c.tv_icons || {};
+    const cur = this._tv();
     this._menu(anchor, 'Move to', this._tvs().filter((t) => t.id !== cur?.id).map((t) => {
       const busy = realOn(this._hass, t);
-      return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub: busy ? 'Playing something else: it will stop' : this._tvSub(t),
-        attr: `data-moveto="${esc(t.id)}"`, dot: `<span class="plc-dot ${this._dotCls(t)}"></span>` };
+      return { lead: `<span class="plc-menu-ind">${this._indicator(t, false)}</span>`, label: tvLabel(t), sub: busy ? 'Playing something else: it will stop' : this._tvSub(t),
+        attr: `data-moveto="${esc(t.id)}"` };
     }));
   }
 
@@ -2990,13 +2990,16 @@ class PlexCenterCard extends HTMLElement {
 
   /** A TV's status: the dot, or (TV indicator: Cast) a cast / cast-off icon in the same colours that opens Now playing
    *  for that TV. data-dot: kept up to date by _updateStates. */
-  _indicator(tv) {
+  _indicator(tv, canTap = true) {
     if (!tv) return '';
     const cls = this._dotCls(tv), ready = this._resumeFor(tv) && (!realOn(this._hass, tv) || this._stuck(tv));
-    if (cfg(this._c, 'tv_indicator') === 'cast') {
-      return `<ha-icon class="plc-cast ${cls}" icon="${cls ? 'mdi:cast' : 'mdi:cast-off'}" data-dot="${esc(tv.id)}" data-npfor="${esc(tv.id)}" role="button" tabindex="0" title="Now playing on ${esc(tvLabel(tv))}${ready ? ' · ready to resume' : ''}"></ha-icon>`;
+    const tap = canTap && cfg(this._c, 'tv_np_tap'), title = `${tap ? `Now playing on ${tvLabel(tv)}` : tvLabel(tv)}${ready ? ' · ready to resume' : ''}`;
+    const act = tap ? ` data-npfor="${esc(tv.id)}" role="button" tabindex="0"` : '';
+    if (cfg(this._c, 'tv_indicator') !== 'dot') {
+      return `<ha-icon class="plc-cast ${cls}${tap ? ' tap' : ''}" icon="${cls ? 'mdi:cast' : 'mdi:cast-off'}" data-dot="${esc(tv.id)}"${act} title="${esc(title)}"></ha-icon>`;
     }
-    return `<span class="plc-dot ${cls}" data-dot="${esc(tv.id)}"${ready ? ' title="Ready to resume"' : ''}></span>`;
+    const dot = `<span class="plc-dot ${cls}" data-dot="${esc(tv.id)}"${tap ? '' : ` title="${esc(title)}"`}></span>`;
+    return tap ? `<span class="plc-dothit"${act} title="${esc(title)}">${dot}</span>` : dot;
   }
   /** Make this page that TV's, then open its Now playing (the TV icons, Watching now cards). */
   _openNpFor(tv) {
@@ -3749,6 +3752,9 @@ class PlexCenterCard extends HTMLElement {
       btns = `${play('Play')}${details}${this._openShowHtml(it)}`;
     }
     const img = it.art || it.still || it.poster;
+    // the section's own Text Lines (as on its rows): line 1 is the title, the rest the info lines
+    const fl = id !== 'continue' && st.look?.fields ? fieldLines('row', st.look, rowVals(it, this._c)) : null;
+    const bigHtml = fl ? (fl[0]?.[1] || esc(it.title)) : esc(big), metaHtml = fl ? fl.slice(1).map(([, h]) => h) : metas.map((m) => esc(m));
     const kinds = this._kinds(id), chips = id !== 'continue' && st.chips ? `<span class="plc-kchips">${[['movie', 'Movies'], ['show', 'TV']].map(([v, n]) => this._kindChip(id, v, n, kinds[v])).join('')}</span>` : '';
     if (!sec.dataset.cwhold) {
       sec.dataset.cwhold = '1';
@@ -3758,7 +3764,7 @@ class PlexCenterCard extends HTMLElement {
     nextFrame(() => this._fitBanners());
     sec.innerHTML = `<div class="plc-hero${st.item_h !== undefined || st.fit?.lih ? ' fixh' : ''}${st.banner_img === 'top' ? ' top' : ''}"><div class="plc-hero-img"${img ? ` style="background-image:url('${cssUrl(img)}')"` : ''}></div>
       <div class="plc-hero-info"><div class="plc-eyebrow">${esc(eyebrow)}</div>
-        <h2 class="plc-big">${esc(big)}</h2>${metas.map((m) => `<div class="plc-meta">${esc(m)}</div>`).join('')}
+        <h2 class="plc-big">${bigHtml}</h2>${metaHtml.map((m) => `<div class="plc-meta">${m}</div>`).join('')}
         ${it.progress && id === 'continue' ? `<div class="plc-bar-track"><div class="plc-bar-fill" style="width:${it.progress}%"></div></div><div class="plc-meta">${esc(left)}</div>` : ''}
         <div class="plc-btns">${btns}</div>
         <div class="plc-pager"><span class="plc-pg"><button class="plc-icon-btn" data-hero="${esc(id)}|-1" title="Previous"><ha-icon icon="mdi:chevron-left"></ha-icon></button>
@@ -4125,17 +4131,16 @@ Object.assign(PlexCenterCard.prototype, {
     return this._canPick(it) ? `<div class="plc-meta plc-target">Play on ${this._pickChip()}</div>` : '';
   },
   _pickChip() {
-    const cur = this._target(), icons = this._c.tv_icons || {};
-    const icon = cur === 'local' ? 'mdi:cellphone-play' : (icons[cur?.id] || 'mdi:television');
+    const cur = this._target();
     const name = cur === 'local' ? 'This device' : tvLabel(cur);
-    return `<button class="plc-chip plc-menuchip" data-pickmenu><ha-icon icon="${esc(icon)}"></ha-icon><span class="plc-menuchip-n">${esc(name)}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`;
+    return `<button class="plc-chip plc-menuchip" data-pickmenu>${cur === 'local' ? '<ha-icon icon="mdi:cellphone-play"></ha-icon>' : this._indicator(cur, false)}<span class="plc-menuchip-n">${esc(name)}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>`;
   },
   _pickMenu(anchor) {
-    const cur = this._target(), icons = this._c.tv_icons || {};
+    const cur = this._target();
     this._menu(anchor, 'Play on', [...this._tvs().map((t) => {
       const busy = realOn(this._hass, t);
-      return { icon: icons[t.id] || 'mdi:television', label: tvLabel(t), sub: busy ? 'Playing' : this._tvSub(t), on: t === cur,
-        attr: `data-pickto="${esc(t.id)}"`, dot: `<span class="plc-dot ${this._dotCls(t)}"></span>` };
+      return { lead: `<span class="plc-menu-ind">${this._indicator(t, false)}</span>`, label: tvLabel(t), sub: busy ? 'Playing' : this._tvSub(t), on: t === cur,
+        attr: `data-pickto="${esc(t.id)}"` };
     }), { icon: 'mdi:cellphone-play', label: 'This device', sub: 'Opens the Plex app or Plex Web', on: cur === 'local', attr: 'data-pickto="local"' }]);
   },
 
@@ -5331,14 +5336,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._tvErr ? `<p class="plce-hint" style="color:var(--ltek-c-error)">${esc(this._tvErr)}</p>` : ''}
       ${tvs.map((t) => this._sub(`tvset:${t.id}`, `${esc(t.name)}${this._tvWarn(t) ? ' <span class="plce-badge bad">check</span>' : ''}`, this._tvSettings(t))).join('')}
       ${this._tvLists()}
-      <div class="plce-group">TV picker</div>
-      <p class="plce-hint">How the TV picker looks (a button for each TV, a chip or icon that opens a menu, or hidden) is set per screen in Layout.</p>
-      ${this._select('tv_label', 'TV buttons show', [['name', 'Name'], ['icon', 'Icon only'], ['both', 'Icon and name']])}
-      ${this._select('tv_indicator', 'TV status', [['dot', 'Dot'], ['cast', 'Cast icon (tap: that TV’s Now playing)']])}
-      ${this._c('tv_label') !== 'name' ? tvs.map((t) => `<div class="plce-row"><label class="lbl">${esc(t.name)} icon</label><plce-icon-pick data-tvicon="${esc(t.id)}" value="${esc((this._config.tv_icons || {})[t.id] || '')}" placeholder="mdi:television"></plce-icon-pick></div>`).join('') : ''}
-      ${this._select('default_tv', 'Default TV', [['', 'First in the list'], ...tvs.map((t) => [t.id, t.name])])}
-      ${this._c('lock') ? '' : this._select('client_choice', 'When playing', [['card', "Use the card's TV"], ['ask', 'Ask which TV each time']])}
-      ${this._check('lock', 'Lock to the default TV (wall tablet: no picker, no TV choice)')}`;
+      <p class="plce-hint">The TV picker (its form, what it shows, the default TV) is in <b>Screens</b>. <button class="plce-pick" data-goto="layout"><ha-icon icon="mdi:responsive"></ha-icon>Screens</button></p>`;
   }
 
   /** A TV's settings (the integration's): its players and their state, volume, room, skip sizes. Admins edit them. */
@@ -5490,7 +5488,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${h.hidden ? '' : `<div class="plce-row">${sel(i, 'section', [['library', 'Header'], ['player', 'Player header'], ['footer', 'Footer'], ...(FILTER_IDS.has(h.id) ? [['popover', 'Filters popup']] : [])], h.section)}
         ${h.section === 'popover' ? '' : `${sel(i, 'row', [[1, 'Row 1'], [2, 'Row 2'], [3, 'Row 3']], h.row)}${sel(i, 'align', [['left', 'Left'], ['center', 'Middle'], ['right', 'Right']], h.align)}`}
         ${ITEM_STYLES[h.id] ? sel(i, 'style', ITEM_STYLES[h.id], h.style || ITEM_STYLES[h.id][0][0]) : ''}</div>`}</div>`).join('');
-    return `${this._text('title', 'Title', 'Plex')}${this._check('show_title', 'Show the title (in every layout)')}
+    return `<p class="plce-hint">The card's title is in <b>Global defaults</b>.</p>
       <p class="plce-hint">Each item goes in the <b>Header</b> (above Home and the libraries), the <b>Player header</b> (above the side panel on
         tablets; in the Header when there's no side panel), the <b>Footer</b> (below the card; it can stick to the bottom of the screen, set per screen
         in Screens) or, for filters, the <b>Filters popup</b>. Each place has up to three rows with left / middle / right; items in the same spot follow
@@ -5645,9 +5643,14 @@ class PlexCenterCardEditor extends HTMLElement {
 </div>`).join('');
     const soon = upcomingSensors(this._hass, this._conf);
     void list;
-    return `<p class="plce-hint">The order of the Home sections, which rows they share and their Width and Height are in <b>Content Layout</b>.
-        <button class="plce-pick" data-goto="content"><ha-icon icon="mdi:view-dashboard-edit-outline"></ha-icon>Content Layout</button></p>
-      ${this._everyScreen(`<div class="plce-group">Auto Rotate</div>
+    return `<p class="plce-hint">Settings for the whole card, on every page and screen. The order of the Home sections, which rows they share and their
+        Width and Height are in <b>Content Layout</b>. <button class="plce-pick" data-goto="content"><ha-icon icon="mdi:view-dashboard-edit-outline"></ha-icon>Content Layout</button></p>
+      ${this._everyScreen(`<div class="plce-group">Card title</div>
+        ${this._text('title', 'Title', 'Plex')}${this._check('show_title', 'Show the title (in every layout)')}
+        <div class="plce-group">Dates and times</div>
+        ${this._text('date', 'Date format', 'mm/dd')}${this._select('clock', 'Clock', [['12', '12-hour'], ['24', '24-hour']])}
+        <p class="plce-hint">Everywhere the card shows a date or time: rows, banners, Calendar, Now playing (Ends at).</p>
+        <div class="plce-group">Auto Rotate</div>
         ${this._check('stagger_rotate', 'Stagger: sections that fade or slide change one at a time')}
         ${this._chipShowRow('cycle', 'Cycle chip shows')}
         ${this._chipShowRow('kind', 'Movies / TV chips show')}
@@ -5813,11 +5816,13 @@ class PlexCenterCardEditor extends HTMLElement {
           ...Object.entries(this._config.layouts || {}).map(([id, l]) => [`lay:${id}`, `★ ${l.name}`])])}
         ${this._select(k('tabs'), 'Page menu', [['tabs', 'Buttons'], ['chip', 'A chip with the page name that opens a menu'], ['button', 'An icon button that opens a menu']])}
         ${this._select(k('search'), 'Search', [['field', 'A search box'], ['icon', 'An icon that opens a search bar']])}
-        ${this._select(k('tvs'), 'TV picker', [['chips', 'A button for each TV'], ['chip', 'A chip with the TV name that opens a menu'], ['button', 'An icon button that opens a menu'], ['hidden', 'Hidden (always the default TV)']])}
         ${this._select(k('filters'), 'Library filters', [['layout', 'As placed in the controls layout'], ['popover', 'All in the Filters popup (with a Filters button)']])}
         ${this._check(k('hide'), 'Hide the header while scrolling down (comes back when scrolling up)')}
         ${this._check(k('footer_sticky'), 'The footer sticks to the bottom of the screen')}
         ${this._check(k('swipe'), 'Swipe left / right on the content to change tab')}
+        <div class="plce-group">TV picker</div>
+        ${this._chips(k('tvs'), 'Picker', [['chips', 'A button per TV'], ['chip', 'Dropdown'], ['button', 'Icon button'], ['hidden', 'Hidden']])}
+        <p class="plce-hint">Dropdown and Icon button open a menu of the TVs. Hidden: always the default TV.</p>
         <p class="plce-hint">Now playing (the side panel) has its own panel.</p></div>`;
     };
     return `${this._select('layout', 'Device type', [['auto', `Automatic (phone when the card is narrower than ${PHONE_MAX_W}px)`], ['tablet', 'Always tablet / computer'], ['phone', 'Always phone']])}
@@ -5826,9 +5831,22 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._scrChips('Editing')}
       <div class="plce-row"><button class="plce-chip reset" data-scrreset title="Reset everything for this screen type"><ha-icon icon="mdi:restore"></ha-icon>Reset this screen type</button></div>
       ${screen(this._eds(), '')}
-      <p class="plce-hint">Phones always get 44 px touch targets.</p>`;
+      <p class="plce-hint">Phones always get 44 px touch targets.</p>
+      ${this._everyScreen(this._tvPickerBody())}`;
   }
 
+  /** The TV picker settings that are the same on every screen (the picker's form is per screen, above). */
+  _tvPickerBody() {
+    const tvs = this._conf?.tvs || [];
+    return `<div class="plce-group">TV picker</div>
+      ${this._chips('tv_label', 'Shows', [['icon', 'Icon only'], ['both', 'Icon & label'], ['name', 'Label only']])}
+      ${this._chips('tv_indicator', 'Icon', [['cast', 'Cast icon'], ['dot', 'Status dot']])}
+      <p class="plce-hint">The icon is the TV's status: grey when off, green when on, the accent colour while playing, orange when it's ready to resume.</p>
+      ${this._check('tv_np_tap', 'Tap the icon: switch the page to that TV and open its Now playing')}
+      ${tvs.length > 1 ? this._chips('default_tv', 'Default TV', [['', 'First in the list'], ...tvs.map((t) => [t.id, t.name])]) : ''}
+      ${this._c('lock') ? '' : this._chips('client_choice', 'When playing', [['card', "The page's TV"], ['ask', 'Ask each time']])}
+      ${this._check('lock', 'Lock to the default TV (wall tablet: no picker, no TV choice)')}`;
+  }
   /** The screen chips and the settings that belong to the lit screen. reset: what "Reset this section" clears. */
   _profile(inner, reset = '') {
     const name = (SCREENS.find(([sc]) => sc === this._eds()) || [, ''])[1];
@@ -6255,10 +6273,10 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._sub('ap-colors', 'Colors', Object.keys(COLOR_DEFS).filter((k) => !k.startsWith('card_') && !k.startsWith('page_')).map((k) => this._colorControl(k)).join(''))}
       ${this._sub('ap-page', 'Page menu', this._pageBody())}
 
-      ${this._sub('ap-rowtext', 'Row text (upcoming-media rows)', `<p class="plce-hint">Keywords: <code>$title $episode $number $se $type $release $date $day $time $aired $runtime $rating $genres $studio $empty</code>.
-        A part between <code>-</code> whose keyword is empty is left out. Blank = the sensor's default.</p>
-        ${['title_text', 'line1_text', 'line2_text', 'line3_text', 'line4_text', 'line5_text'].map((k, i) => this._text(k, i ? `Line ${i}` : 'Title')).join('')}
-        ${this._text('date', 'Date format', 'mm/dd')}${this._select('clock', 'Clock', [['12', '12-hour'], ['24', '24-hour']])}`)}`;
+      ${ROW_TEXT_KEYS.some((k) => this._config[k]) ? this._sub('ap-rowtext', 'Old row text <span class="plce-badge">set</span>', `<p class="plce-hint">Line templates from an older version, still used by sections without Text Lines of their
+        own. Each section's <b>Text Lines</b> does this now (per section and screen): clear these to use it everywhere.</p>
+        ${ROW_TEXT_KEYS.map((k, i) => this._text(k, i ? `Line ${i}` : 'Title')).join('')}
+        <button class="plce-chip reset" data-rowtextclear><ha-icon icon="mdi:delete-outline"></ha-icon>Clear the old row text</button>`) : ''}`;
   }
 
   /** Plex Center's log: commands a TV didn't take, why, and what to do (newest first). */
@@ -6303,7 +6321,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._panel('layout', 'mdi:responsive', 'Screens', this._layoutBody())}
       ${this._panel('header', 'mdi:page-layout-header-footer', 'Controls layout', this._headerBody())}
       ${this._panel('content', 'mdi:view-dashboard-edit-outline', 'Content Layout', this._contentBody())}
-      ${this._panel('home', 'mdi:home-variant', 'Home', this._homeBody())}
+      ${this._panel('home', 'mdi:tune-variant', 'Global defaults', this._homeBody())}
       <div class="plce-gh">Sections</div>
       <div class="plce-row plce-wrap plce-addrow"><button class="plce-add" data-xadd="recent">+ Recently Added</button><button class="plce-add" data-xadd="upcoming">+ Coming Soon</button><button class="plce-add" data-xadd="plexhub">+ Plex row</button></div>
       ${this._panel('sec-watching', 'mdi:account-eye', 'Watching now', this._watchBody())}
@@ -6606,6 +6624,7 @@ class PlexCenterCardEditor extends HTMLElement {
       setSec(id, 'flag_items', on.length === FACTS.length ? '' : on);
     }));
     all('[data-logload]', (b) => b.addEventListener('click', () => this._loadLog()));
+    all('[data-rowtextclear]', (b) => b.addEventListener('click', () => { for (const k of ROW_TEXT_KEYS) delete this._config[k]; this._emit(); this._render(); }));
     const setRmb = (id, f, v) => {
       const all2 = { ...(this._rmEd().remote_buttons || {}) }, o = { ...(all2[id] || {}) };
       if (v === '' || v === false || v == null) delete o[f]; else o[f] = f === 'hold_ms' ? Math.max(0, Number(v)) : v;
@@ -6767,6 +6786,7 @@ const RM_SLOTS = [
 const RM_SLOT = Object.fromEntries(RM_SLOTS.map((x) => [x[0], x]));
 /** Buttons that can be hidden (the rest are the remote itself). */
 const RM_OPTIONAL = ['lighting', 'intermission', 'endshow', 'sleep'];
+const ROW_TEXT_KEYS = ['title_text', 'line1_text', 'line2_text', 'line3_text', 'line4_text', 'line5_text'];
 /** The Remote's settings each TV can have its own of (remote_tvs[tv]); the rest are the same on every TV. */
 const RM_PER_TV = ['remote_buttons', 'remote_lights', 'remote_extra', 'remote_lights_popup'];
 const RM_LIGHT_EXAMPLES = ['Aisle', 'Steps', 'Entry', 'Bar', 'Ceiling', 'Walkway'];
