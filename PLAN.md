@@ -95,6 +95,20 @@ Not planned: management of the library, Plex sign-in, notifications (automations
 - [ ] Plex rows (hubs) list and items for managed users.
 - [ ] SHIELD (media room): PiPup + `method: ok` (only TCLs tested).
 
+### Next (card editor)
+- [ ] **Global defaults: gather every card-wide setting** (user's request, 2026-11-25). Move into Global defaults:
+  - *Counts as watched at* (`watched_pct`), now in Continue watching: it also decides Next Episode and the watched ticks.
+  - From the Library panel's *Every screen* part, the settings that apply on every page: *Start on* (`start_tab`),
+    *Hold to play* and its hold times (`hold_play`, `hold_ms`, `hold_mark_ms`, `hold_markall_ms`), *Tapping a poster*
+    (`tap_action`), *Remember the tab, filters, sort and view* (`remember_view`), *Recent searches*
+    (`recent_searches`), and the details popup's *Target dropdown*, *"This device" opens* and *Auto-close time*
+    (`popup_target`, `local_app`, `popup_timeout`). The A–Z jump bar stays in Library.
+  - *Weeks start on* (`week_start`) next to Date format and Clock (Calendar keeps a link).
+  - Check: the *"New" flag on unwatched items* (Appearance → Posters) applies to every row; leave it in Appearance
+    unless it reads better with the watched settings.
+  - Keep a short "set in Global defaults" link where each setting used to be, so nobody hunts for it. Config keys
+    don't change (editor only), so nothing in anyone's YAML moves.
+
 ### Next (recommended, in order)
 1. [ ] **Entity per TV** `media_player.<tv>_plex_center` (now playing with poster / show / episode; controls routed) and
    **`sensor.plex_center_watching`**. Lets the Theater Movie Lighting automation use one entity per room.
