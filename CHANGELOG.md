@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.25.137
+
+- **Full motion (new, on by default)**: Cycle slides and glides at full speed even when the device asks for reduced motion (Android "Remove animations", battery saver). Turn it off in Home settings to get the gentler steps from v2026.11.25.135.
+- **Now playing**: the two rows of buttons are symmetrical. Play / Pause sits in the middle of the top row and the volume in the middle of the bottom row, with Stop on its left and Home on its right.
+- **Now playing**: Play / Pause is 120% by default (phones too, where it was held to the other buttons' size).
+- **Now playing**: the episode line, running time and Open show share one row; more space under the bottom row of buttons.
+
 ## v2026.11.25.136
 
 - **Fixed: after an update, refreshing the browser still loaded the old card** until Home Assistant restarted. The Dashboard loads the card from a copy in `www/plex_center/`, which was only refreshed at startup. Now, when the card file has changed, the integration refreshes that copy and the resource URL the next time a card asks for its settings, and the card reloads the page once by itself to pick up the new build. The "older copy" note stays only if that didn't work.

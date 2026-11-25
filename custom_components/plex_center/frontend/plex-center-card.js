@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.136
+// Version: v2026.11.25.137
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.136';
+const BUILD_NUMBER = 'v2026.11.25.137';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -577,6 +577,7 @@ const DEFAULTS = {
   now_playing: 'auto',
   watching_tvs: 'all',
   stagger_rotate: false,
+  full_motion: true,
   hold_play: true,
   hold_ms: 2000,
   hold_mark_ms: 2000,       // Mark watched / unwatched (0: a tap, then confirm)
@@ -614,7 +615,7 @@ const DEFAULTS = {
   np_volume_drag: false,    // fill: drag across it to set the volume
   np_play_center: true,     // Play / Pause in the middle of the skip buttons (Stop, Home and volume on their own row)
   np_scale: 100,            // Now playing control buttons, %
-  np_play_scale: 100,       // the Play / Pause button on top of that, %
+  np_play_scale: 120,       // the Play / Pause button on top of that, %
   np_auto_close: true,      // Now playing closes when nothing plays or is paused, after a countdown you can cancel
   np_close_s: 5,
   watching_home: true,
@@ -1550,7 +1551,9 @@ const CARD_CSS = `
 .plc-info-se { color: #fff; font-size: .98em; text-shadow: 0 1px 6px rgba(0,0,0,.9); margin-right: 4px; }
 .plc-info-status { flex: none; align-self: flex-end; justify-content: flex-end; margin: 0; }
 .plc-side-info .plc-info-sub { color: var(--secondary-text-color); text-shadow: none; }
-.plc-np-facts { justify-content: center; gap: 8px; margin: 6px 0 2px; display: flex; flex-wrap: wrap; }
+.plc-np-facts { justify-content: center; align-items: center; gap: 8px; margin: 6px 0 2px; display: flex; flex-wrap: wrap; }
+.plc-np-facts > .plc-info-sub { margin: 0; }
+.plc-side-info .plc-np-ctl { padding-bottom: 18px; }   /* room under the bottom row of buttons */
 .plc-np-facts .plc-rate.big, .plc-np-facts .plc-fact { background: var(--plc-bg2); color: var(--primary-text-color); }
 .plc-cal-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .plc-cal-chip { padding: 2px 8px; border-radius: 999px; font-size: .75em; font-weight: 600; color: var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
@@ -1696,6 +1699,9 @@ const CARD_CSS = `
 .plc-np-ctl .big ha-icon { --mdc-icon-size: calc(28px * var(--np-s, 1) * var(--np-ps, 1)); }
 .plc-np-ctl.center { flex-direction: column; align-items: stretch; }
 .plc-np-row { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.plc-np-row.sym { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); flex-wrap: nowrap; }
+.plc-np-row.sym > .l, .plc-np-row.sym > .r { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.plc-np-row.sym > .l { justify-content: flex-end; } .plc-np-row.sym > .r { justify-content: flex-start; }
 .plc-bar { position: relative; height: 22px; display: flex; align-items: center; touch-action: none; }
 .plc-bar.seek { cursor: pointer; }
 .plc-bar-track { width: 100%; height: 5px; border-radius: 3px; background: rgba(255,255,255,.25); overflow: hidden; }
@@ -1910,9 +1916,9 @@ const CARD_CSS = `
 .plc-slide.to-right { transform: translateX(100%); opacity: 0; } .plc-slide.from-right { transform: translateX(-100%); opacity: 0; transition: none; }
 .plc-slide.to-up { transform: translateY(-100%); opacity: 0; } .plc-slide.from-up { transform: translateY(100%); opacity: 0; transition: none; }
 .plc-slide.to-down { transform: translateY(100%); opacity: 0; } .plc-slide.from-down { transform: translateY(-100%); opacity: 0; transition: none; }
-@media (prefers-reduced-motion: reduce) { .plc-slide { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .plc:not(.fullmotion) .plc-slide { transition: none; } }
 .plc-fade.out { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { .plc-fade { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .plc:not(.fullmotion) .plc-fade { transition: none; } }
 .plc-main.searching > .plc-sec:not([data-sec="search"]), .plc-main.searching > .plc-cards { display: none; }
 .plc-sec-h.slots, .plc-sec-bar.slots { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
 .slots > .sl { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -2036,6 +2042,7 @@ const CARD_CSS = `
 .plc.phone .plc-icon-btn { width: max(34px, calc(44px / var(--plc-scale, 1))); height: max(34px, calc(44px / var(--plc-scale, 1))); }
 .plc.phone .plc-np-ctl .plc-icon-btn:not(.big) { width: calc(max(34px, calc(44px / var(--plc-scale, 1))) * var(--np-s, 1));
   height: calc(max(34px, calc(44px / var(--plc-scale, 1))) * var(--np-s, 1)); }
+.plc.phone .plc-np-ctl .plc-icon-btn.big { width: calc(max(52px, calc(56px / var(--plc-scale, 1))) * var(--np-s, 1) * var(--np-ps, 1)); height: calc(max(52px, calc(56px / var(--plc-scale, 1))) * var(--np-s, 1) * var(--np-ps, 1)); }
 .plc.phone .plc-top .plc-chip, .plc.phone .plc-top .plc-select { padding-top: 0; padding-bottom: 0; }
 /* active-filter chips */
 .plc-achips { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -3064,6 +3071,7 @@ class PlexCenterCard extends HTMLElement {
     this._root.classList.toggle('onerow', lk === 'one_row' || (this._phone && !!lay));
     this._root.classList.toggle('bnav', !!foot && !!cfg(this._c, 'footer_sticky'));
     this._root.classList.toggle('stickyhdr', !!cfg(this._c, 'hide_on_scroll'));
+    this._root.classList.toggle('fullmotion', !!cfg(this._c, 'full_motion'));
     const top = this._root.querySelector('.plc-top');
     top.innerHTML = searchIcon && (this._v.searchOpen || this._v.query)
       ? `<div class="plc-hrow plc-sbar">${pieces.search}</div>`
@@ -3752,7 +3760,7 @@ class PlexCenterCard extends HTMLElement {
     this._anim = this._anim || {};
     clearInterval(this._anim[id]); clearTimeout(this._anim[id]); delete this._anim[id];
     const st = secStyle(this._c, id);
-    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduce = !cfg(this._c, 'full_motion') && typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (st.auto === 'off' || items.length <= st.show) return;   // reduced motion: rows step an item at a time instead of gliding
     const body = sec.querySelector('[data-secbody]');
     let paused = false;
@@ -4371,7 +4379,9 @@ Object.assign(PlexCenterCard.prototype, {
     const rest = `${b('stop', 'stop', 'Stop')}${b('home', 'home', 'Home')}${cfg(this._c, 'np_volume') !== false ? this._volumeHtml(np) : ''}`;
     const sz = `--np-s:${Math.max(0.5, Math.min(2, Number(cfg(this._c, 'np_scale')) / 100 || 1))};--np-ps:${Math.max(0.5, Math.min(2, Number(cfg(this._c, 'np_play_scale')) / 100 || 1))}`;
     if (big && cfg(this._c, 'np_play_center') !== false)
-      return `<div class="plc-np-ctl center" style="${sz}"><div class="plc-np-row">${back}${play}${fwd}</div><div class="plc-np-row">${rest}</div></div>`;
+      // two rows, each centred on its middle: Play / Pause above, the volume under it (Stop on its left, Home on its right)
+      return `<div class="plc-np-ctl center" style="${sz}"><div class="plc-np-row sym"><span class="l">${back}</span>${play}<span class="r">${fwd}</span></div>
+        <div class="plc-np-row sym"><span class="l">${b('stop', 'stop', 'Stop')}</span>${cfg(this._c, 'np_volume') !== false ? this._volumeHtml(np) : '<span></span>'}<span class="r">${b('home', 'home', 'Home')}</span></div></div>`;
     return `<div class="plc-np-ctl" style="${sz}">${back}${play}${fwd}${rest}</div>`;
   },
 
@@ -4488,10 +4498,12 @@ Object.assign(PlexCenterCard.prototype, {
         ${cfg(this._c, 'np_power') ? `<span class="plc-np-power">${this._powerHtml(np)}</span>` : ''}
         <button class="plc-icon-btn plc-np-remote" data-remoteopen title="Showtime Remote"><ha-icon icon="mdi:remote-tv"></ha-icon></button></div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
-        <h2 class="plc-big">${esc(np.title)}</h2>${np.sub ? `<div class="plc-info-sub">${esc(np.sub)}</div>` : ''}${(() => {
+        <h2 class="plc-big">${esc(np.title)}</h2>${(() => {
+          // one row: the episode line, then the facts (ratings, running time) and Open show beside it (wraps when narrow)
           const sx = np.live && this._sessionFor(np.tv), dur = Number(np.st?.attributes?.media_duration) || sx?.duration || 0;
           const pills = [...(sx ? this._ratingPills(sx) : []), dur ? `<span class="plc-fact"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(fmtRun(dur))}</span>` : ''].filter(Boolean).join('');
-          return `${pills ? `<div class="plc-rates plc-np-facts">${pills}</div>` : ''}${sx ? this._openShowHtml(sx, 'plc-chip') : ''}`; })()}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>`;
+          const row = `${np.sub ? `<span class="plc-info-sub">${esc(np.sub)}</span>` : ''}${pills}${sx ? this._openShowHtml(sx, 'plc-chip') : ''}`;
+          return row ? `<div class="plc-rates plc-np-facts">${row}</div>` : ''; })()}${this._bar(np)}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${this._upNextHtml(np)}</div></div>`;
   },
 
   /** Now playing for a TV that's off (or just woken) with something to resume. */
@@ -5497,6 +5509,8 @@ class PlexCenterCardEditor extends HTMLElement {
         <button class="plce-pick" data-goto="content"><ha-icon icon="mdi:view-dashboard-edit-outline"></ha-icon>Content Layout</button></p>
       ${this._everyScreen(`<div class="plce-group">Auto Rotate</div>
         ${this._check('stagger_rotate', 'Stagger: sections that fade or slide change one at a time')}
+        ${this._check('full_motion', 'Full motion even when this device asks for less (Android “Remove animations”, battery saver)')}
+        <p class="plce-hint">On by default. Off: on such a device, banners change without sliding and rows move an item at a time.</p>
         ${this._c('stagger_rotate') ? `${this._slider('stagger_gap', 'Time between sections', 1, 15, ' s')}<p class="plce-hint">${esc(this._staggerNote())}</p>` : ''}
         <div class="plce-group">Surprise me</div>
         ${this._check('surprise', 'Surprise me button')}
