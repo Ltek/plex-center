@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.25.141
+
+- **Section header positions**: the Movies / TV chips, the Cycle chip and View all can each go Left, Center or Right (Header settings of every Home section).
+- **Editor**: option chips sit on the same row as their label, to save space.
+- **Title style** choices renamed: "Plex (caps, accent)" and "Theme" (the theme's text colour, normal case).
+- **Fix**: a poster row in a matched row (for example Continue watching with Cycle = Fade) showed too few posters and left empty space, because the posters got narrower when the row height was matched but the count wasn't updated. It now shows as many as fit.
+
 ## v2026.11.25.140
 
 - **Recently Added's View all opens a popup of everything in Recently Added**, like the other sections, instead of switching to the first library tab sorted by newest. It shows when there are more than fit, and follows the Movies / TV chips.

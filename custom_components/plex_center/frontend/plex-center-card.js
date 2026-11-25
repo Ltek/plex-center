@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.140
+// Version: v2026.11.25.141
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.140';
+const BUILD_NUMBER = 'v2026.11.25.141';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -987,7 +987,7 @@ function layoutItems(c, key = 'main') {
 }
 
 // Per-section look (Recently added and each sensor row): stored sparse in home_style[<section id>].
-const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', cycle_mode: ['scroll', 'fade'], cycle_chip: 'bool', banner_img: ['left', 'top'], chips_pos: ['center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
+const SEC_KEYS = { library: 'str', hub: 'str', fade_ms: 'num', show: 'num', phone_show: 'num', scroll: 'bool', total: 'num', auto: ['off', 'scroll', 'fade'], speed: 'num', sensors: 'list', source: 'str', kind: ['movie', 'show', 'both'], chips: 'bool', cycle_mode: ['scroll', 'fade'], cycle_chip: 'bool', banner_img: ['left', 'top'], chips_pos: ['left', 'center', 'right'], cycle_pos: ['left', 'center', 'right'], viewall_pos: ['left', 'center', 'right'], title_pos: ['left', 'center', 'right'], view_all: 'bool', title: 'str', show_title: 'bool', head_style: ['caps', 'plain'],
   show_count: 'bool', show_icon: 'bool', divider: 'bool', divider_color: 'str', size: 'num', width: 'num', l1_px: 'num', l2_px: 'num', l3_px: 'num', l4_px: 'num',
   l1_color: 'str', l2_color: 'str', l3_color: 'str', l4_color: 'str', layout: ['row', 'list', 'banner'], scroll_dir: ['left', 'right', 'up', 'down'], image: ['poster', 'fanart'], collapsible: 'bool', collapsed: 'bool', icon: 'str', max: 'num',
   radius: 'num', title_px: 'num', line_px: 'num', list_w: 'num', title_color: 'str', line_color: 'str', flag_color: 'str', item_bg: 'str',
@@ -1063,7 +1063,7 @@ function secStyle(c, id) {
   return { layout: s.layout || 'row', banner_img: s.banner_img === 'top' ? 'top' : 'left', cycle_mode: cycleMode, cycle_chip: s.cycle_chip ?? true, image, fade: lkImg === 'fade', wide, lkind: SEC_KIND[type] || type, look: own, collapsible, collapsed: !!s.collapsed,
     icon: s.icon || SEC_TYPE_ICON[type] || '', show_icon: s.show_icon ?? (collapsible || !!s.icon), show_title: s.show_title ?? true,
     show_count: s.show_count ?? true, divider: s.divider ?? collapsible, head_style: s.head_style || (collapsible ? 'plain' : 'caps'), kind: s.kind || 'both', chips: !!s.chips,
-    chips_pos: s.chips_pos || 'right', title_pos: s.title_pos || 'left', view_all: s.view_all ?? true,
+    chips_pos: s.chips_pos || 'right', cycle_pos: s.cycle_pos || 'right', viewall_pos: s.viewall_pos || 'right', title_pos: s.title_pos || 'left', view_all: s.view_all ?? true,
     // in a shared row the layout says how many fit (c._fit, from rowFit); else the screen's Posters across (half for fanart)
     show: c._fit?.[id]?.show ?? (() => { const n = Math.max(1, Number((s.show ?? s.max) || c.across || cfg(c, 'across')) || 6);
       return Math.max(1, Math.round(wide && !(s.show ?? s.max) ? n / 2 : n)); })(),
@@ -3312,6 +3312,10 @@ class PlexCenterCard extends HTMLElement {
           const nh = Math.max(40, ih + H - sec.getBoundingClientRect().height);
           f.thm = `${Math.round(nh)}px`; sec.style.setProperty('--plc-th', f.thm);
           f.twm = `${Math.round(Math.min(nh * f.a, f.maxw || 1e9) * 10) / 10}px`; sec.style.setProperty('--plc-tw', f.twm);
+          // the posters got narrower (or wider): a page (Cycle Fade or off) shows as many as now fit across
+          const body = sec.querySelector('.plc-sec-body.limit'), rw = body?.querySelector('.plc-row')?.clientWidth, args = this._fillArgs?.[sec.dataset.sec];
+          const n = rw ? Math.max(1, Math.floor((rw + 12) / (parseFloat(f.twm) + 12) + 0.02)) : 0;
+          if (n && args && n !== f.show) { f.show = n; this._fill(sec.dataset.sec, sec, ...args); }
         }
       }
     }
@@ -3718,7 +3722,7 @@ class PlexCenterCard extends HTMLElement {
 
   /** A Home section in its style: plain heading or collapsible bar; poster/fanart row or upcoming-media list. */
   _sectionHtml(id, sec, title, total, items, listId, extraHead = '') {
-    const st = secStyle(this._c, id);
+    const st = this._pageFit(id, secStyle(this._c, id));
     sec.setAttribute('style', secVars(st));
     applyLook(sec, st.look, st.s);
     const open = this._v.secOpen?.[id] ?? !st.collapsed;
@@ -3735,8 +3739,8 @@ class PlexCenterCard extends HTMLElement {
     slot[at(st.title_pos)].push(`<span class="plc-sec-tt">${ttl}</span>`);
     if (chips) slot[at(st.chips_pos)].push(chips);
     const more = Math.max(total, items.length) > st.show;   // more than fits at once
-    if (more && st.cycle_chip) slot.r.push(this._cycleChip(id, st));
-    if (more && st.view_all && !extraHead) slot.r.push(`<span class="plc-viewall" role="button" tabindex="0" data-viewsec="${esc(id)}">View all →</span>`);
+    if (more && st.cycle_chip) slot[at(st.cycle_pos)].push(this._cycleChip(id, st));
+    if (more && st.view_all && !extraHead) slot[at(st.viewall_pos)].push(`<span class="plc-viewall" role="button" tabindex="0" data-viewsec="${esc(id)}">View all →</span>`);
     if (st.collapsible) slot.r.push(`${st.show_count ? `<span class="n">${esc(total ? count : 'None')}</span>` : ''}<ha-icon class="chev" icon="mdi:chevron-down"></ha-icon>`);
     else if (extraHead) slot.r.push(extraHead);
     if (!st.collapsible && st.show_count && st.count_pos === 'right') slot.r.push(`<span class="n">${total}</span>`);
@@ -3781,12 +3785,14 @@ class PlexCenterCard extends HTMLElement {
 
   /** Fill a section and start its auto scroll / fade (stopped on the next fill or when the card leaves). */
   _fill(id, sec, title, total, items, listId, extraHead = '') {
+    (this._fillArgs ||= {})[id] = [title, total, items, listId, extraHead];
     if (id !== 'continue' && secStyle(this._c, id).banner) { this._paintBanner(id, sec, items, title, listId); return; }
     if (sec.classList.contains('banner')) { this._stopBanner(id); sec.classList.remove('banner'); delete sec.dataset.cwsig; }
     sec.innerHTML = this._sectionHtml(id, sec, title, total, items, listId, extraHead);
     this._anim = this._anim || {};
     clearInterval(this._anim[id]); clearTimeout(this._anim[id]); delete this._anim[id];
-    const st = secStyle(this._c, id);
+    if (this._measurePage(id, sec, items)) { this._fill(id, sec, title, total, items, listId, extraHead); return; }
+    const st = this._pageFit(id, secStyle(this._c, id));
     const reduce = !cfg(this._c, 'full_motion') && typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (st.auto === 'off' || items.length <= st.show) return;   // reduced motion: rows step an item at a time instead of gliding
     const body = sec.querySelector('[data-secbody]');
@@ -3837,6 +3843,27 @@ class PlexCenterCard extends HTMLElement {
       if (off) this._anim[id] = setTimeout(() => { if (body.isConnected) this._anim[id] = setInterval(tick, period); }, off);
       else this._anim[id] = setInterval(tick, period);
     }
+  }
+
+  /** A poster row that shows a page at a time (Cycle Fade or off): as many as fit across when its posters have a set
+   *  size (matched row height, Item height / Size), not only Items to show, so no empty space is left at the end. */
+  _pageFit(id, st) {
+    const n = this._pageN?.[id];
+    return n && n.sig === this._pageSig(st) && n.n > st.show ? { ...st, show: n.n } : st;
+  }
+  _pageSig(st) { return `${this._c._screen}|${st.show}|${st.size}|${st.item_h}|${st.fit?.tw}|${st.fit?.th}`; }
+  /** Measure how many posters fit in the row; true when that changed (paint again). */
+  _measurePage(id, sec, items) {
+    const st = secStyle(this._c, id);
+    if (st.layout !== 'row' || st.banner || st.scroll || st.auto === 'scroll') return false;
+    const row = sec.querySelector('.plc-sec-body .plc-row'), tile = row?.querySelector(':scope > .plc-tile');
+    const rw = row?.clientWidth || 0, tw = tile?.getBoundingClientRect?.().width || 0;
+    if (!rw || !tw) return false;
+    const fits = Math.max(1, Math.floor((rw + 12) / (tw + 12) + 0.02)), sig = this._pageSig(st), old = this._pageN?.[id];
+    const n = Math.min(fits, items.length);
+    if (old?.sig === sig && Math.abs(old.rw - rw) < 2) return false;   // measured once per size: painting again can't loop
+    this._pageN = { ...(this._pageN || {}), [id]: { sig, n, rw } };
+    return n > st.show && !(old?.sig === sig && old.n === n);
   }
 
   /** Stagger (card-wide option): 0…1, this section's place among the auto-rotating ones on Home. */
@@ -5019,7 +5046,7 @@ const EDITOR_CSS = `
         .plce-dlg-name { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--divider-color, #444); background: var(--secondary-background-color, #111); color: var(--primary-text-color); font: inherit; }
         .plce-wrap { flex-wrap: wrap; gap: 6px; }
         .plce-chiprow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
-        .plce-chiplbl { flex: 0 0 100%; font-size: 12px; color: var(--secondary-text-color); }
+        .plce-chiplbl { flex: 0 0 auto; min-width: 8.5em; margin-right: 4px; font-size: 12px; color: var(--secondary-text-color); }
         .plce-pick { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 13px;
           border: 1px solid var(--divider-color, #555); background: transparent; color: var(--primary-text-color); }
         .plce-pick ha-icon { --mdc-icon-size: 16px; }
@@ -5675,13 +5702,15 @@ class PlexCenterCardEditor extends HTMLElement {
       ${sub('head', 'Header', `<label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="hide_title"${s.show_title === false ? ' checked' : ''}>Hide Section Title</label>
         ${s.show_title === false ? '' : pick('title_pos', 'Section Title', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'left')}
         ${st.type === 'plexhub' ? '' : `${chk('chips', 'Movies and TV chips in the header (turn each on or off)', false)}
-        ${st.chips ? pick('chips_pos', 'Chips', [['center', 'Center'], ['right', 'Right']], 'right') : ''}`}
+        ${st.chips ? pick('chips_pos', 'Movies / TV chips', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'right') : ''}`}
+        ${st.cycle_chip ? pick('cycle_pos', 'Cycle chip', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'right') : ''}
         ${chk('view_all', 'Show “View all” when there are more than fit (opens them all in a popup)', true)}
+        ${st.view_all ? pick('viewall_pos', 'View all', [['left', 'Left'], ['center', 'Center'], ['right', 'Right']], 'right') : ''}
         ${chk('show_count', 'Show the number of items', true)}
         ${s.show_count === false || st.collapsible ? '' : pick('count_pos', 'Number of items', [['title', 'Next to the title'], ['right', 'Far right']], 'title')}
         ${chk('show_icon', 'Show the icon', st.collapsible || !!s.icon)}
         <div class="plce-row"><label class="lbl">Icon</label><plce-icon-pick data-sid="${esc(id)}" data-sicon="icon" value="${esc(s.icon || '')}"></plce-icon-pick></div>
-        ${sel('head_style', 'Title style', [['', st.collapsible ? 'Plain (bar default)' : 'Section style (caps, accent)'], ['caps', 'Section style (caps, accent)'], ['plain', 'Plain']])}
+        ${sel('head_style', 'Title style', [['', st.collapsible ? 'Theme (bar default)' : 'Plex (caps, accent)'], ['caps', 'Plex (caps, accent)'], ['plain', 'Theme']])}
         ${chk('divider', 'Divider line under the header', st.collapsible)}
         ${st.divider ? col('divider_color', 'Divider color', '#2196f3', false, 'Section text color') : ''}
         <label class="plce-check"><input type="checkbox" data-sid="${esc(id)}" data-sbool="collapsible"${s.collapsible ? ' checked' : ''}>Collapsible, with a header bar</label>
