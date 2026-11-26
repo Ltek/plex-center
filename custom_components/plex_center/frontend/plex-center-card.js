@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.25.148
+// Version: v2026.11.26.149
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.25.148';
+const BUILD_NUMBER = 'v2026.11.26.149';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1589,6 +1589,11 @@ const CARD_CSS = `
 .plc-info-se { color: #fff; font-size: .98em; text-shadow: 0 1px 6px rgba(0,0,0,.9); margin-right: 4px; }
 .plc-info-status { flex: none; align-self: flex-end; justify-content: flex-end; margin: 0; }
 .plc-side-info .plc-info-sub { color: var(--secondary-text-color); text-shadow: none; }
+.plc-np-facts.withshow { display: flex; flex-wrap: nowrap; align-items: center; width: 100%; gap: 8px; }
+.plc-np-facts.withshow .plc-info-sub { flex: 1 1 auto; min-width: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plc-chip.plc-np-showchip { flex: none; margin-left: auto; font-size: .72em; padding: 3px 9px; gap: 4px; min-height: 0; }
+.plc-chip.plc-np-showchip ha-icon { --mdc-icon-size: 14px; }
+.plc-np-showchip[data-movemenu] ha-icon { margin-left: 2px; }
 .plc-np-facts { justify-content: center; align-items: center; gap: 8px; margin: 6px 0 2px; display: flex; flex-wrap: wrap; }
 .plc-np-facts > .plc-info-sub { margin: 0; }
 .plc-side-info .plc-np-ctl { padding-bottom: 18px; }   /* room under the bottom row of buttons */
@@ -4622,7 +4627,7 @@ Object.assign(PlexCenterCard.prototype, {
     return `<div class="plc-side-card"><div class="plc-side-art"><div class="plc-side-ph">${appPh(np.live ? np.logo : null, app, `mdi:${np.live ? 'television-play' : 'television'}`)}${status}</div>
         ${np.art ? `<div class="plc-side-img" style="background-image:url('${cssUrl(np.art)}')"></div>` : ''}
         <button class="plc-icon-btn plc-np-x" data-npx title="Close"><ha-icon icon="mdi:close"></ha-icon></button>
-        ${move ? '<button class="plc-chip plc-np-move" data-movemenu title="Move to a different TV"><ha-icon icon="mdi:television-shimmer"></ha-icon>Move to a different TV</button>' : ''}
+        ${(() => { const sx0 = np.live && this._sessionFor(np.tv); return sx0 ? this._openShowHtml(sx0, 'plc-chip plc-np-move') : ''; })()}
         ${cfg(this._c, 'np_power') ? `<span class="plc-np-power">${this._powerHtml(np)}</span>` : ''}
         <button class="plc-icon-btn plc-np-remote" data-remoteopen title="Showtime Remote"><ha-icon icon="mdi:remote-tv"></ha-icon></button></div>
       <div class="plc-side-info"><div class="plc-eyebrow">${np.live ? (np.st.state === 'playing' ? 'Now playing' : 'Paused') : 'Standing by'} · ${esc(tvLabel(np.tv))}</div>
@@ -4631,9 +4636,11 @@ Object.assign(PlexCenterCard.prototype, {
           // position and the end time; the app in the bottom-right corner
           const sx = np.live && this._sessionFor(np.tv), dur = Number(np.st?.attributes?.media_duration) || sx?.duration || 0;
           const pills = (sx ? this._ratingPills(sx) : []).join('');
-          const row = `${np.sub ? `<span class="plc-info-sub">${esc(np.sub)}</span>` : ''}${sx ? this._openShowHtml(sx, 'plc-chip') : ''}`;
+          // Move to [cast] at the row's right end (Open show sits over the picture, top left)
+          const show = move ? '<button class="plc-chip plc-np-showchip" data-movemenu title="Move to a different TV">Move to<ha-icon icon="mdi:cast"></ha-icon></button>' : '';
+          const row = `${np.sub ? `<span class="plc-info-sub">${esc(np.sub)}</span>` : ''}${show}`;
           const run = dur ? `<span class="plc-fact plc-np-run"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(fmtRun(dur))}</span>` : '<span></span>';
-          return `${pills ? `<div class="plc-np-rates">${pills}</div>` : ''}${row ? `<div class="plc-rates plc-np-facts">${row}</div>` : ''}${this._bar(np, run)}${np.live ? '<div class="plc-skipslot" data-skipmk></div>' : ''}`; })()}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${app && np.live ? `<span class="plc-np-app">${esc(app)}</span>` : ''}${this._upNextHtml(np)}</div></div>`;
+          return `${pills ? `<div class="plc-np-rates">${pills}</div>` : ''}${row ? `<div class="plc-rates plc-np-facts${show ? ' withshow' : ''}">${row}</div>` : ''}${this._bar(np, run)}${np.live ? '<div class="plc-skipslot" data-skipmk></div>' : ''}`; })()}${np.live ? this._controls(np) : `<div class="plc-np-ctl">${this._volumeHtml(np)}</div>`}${app && np.live ? `<span class="plc-np-app">${esc(app)}</span>` : ''}${this._upNextHtml(np)}</div></div>`;
   },
 
   /** Now playing for a TV that's off (or just woken) with something to resume. */

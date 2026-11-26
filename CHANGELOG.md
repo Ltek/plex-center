@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.26.149
+
+- **Play / Pause, skip and seek check that the TV responded.** If nothing changes on the TV's players within 2 seconds (Plex on the SHIELD can ignore PiPup's media commands), Plex Center sends it again over ADB: the play / pause media key, or Fast forward / Rewind presses for the 10 s and 30 s skips and the seek bar, as Stop already did. Each retry is noted in the Log panel. TVs without ADB, or with nothing playing, are unchanged.
+- **Now playing**: **Open show** is a chip over the picture, top left; **Move to** (cast icon) is a small chip at the right end of the episode row.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.25.148
 
 - **Top banner picture kept near the top**: when the picture is cropped top and bottom, the crop now comes off the bottom, so heads and title logos stay in view. New **Picture position** (Top / Center / Bottom) in a section's Content Visuals, under Banner picture.

@@ -346,3 +346,58 @@ async def test_volume_set(hass, calls):
     hass.states.async_set("media_player.storm", "on")
     await play.control(hass, {"name": "Theater", "pipup": "media_player.pip", "volume_entity": "media_player.storm"}, "volume_set", 0.42)
     assert got == [{"volume_level": 0.42, "entity_id": "media_player.storm"}]
+
+
+async def test_no_response_retries_over_adb(hass):
+    """Play / pause, skips (10 s and 30 s alike) and seek: nothing changed on the TV within 2 s → sent again over ADB."""
+    from datetime import datetime, timezone
+    adb, sent, respond = [], [], {"on": False}
+    plex = "media_player.plex"
+
+    def set_plex(state, pos):
+        hass.states.async_set(plex, state, {"media_position": pos, "media_duration": 3600,
+                                             "media_position_updated_at": datetime.now(timezone.utc).isoformat()})
+
+    async def svc(call):
+        sent.append(call.service)
+        if not respond["on"]:
+            return
+        st = hass.states.get(plex)
+        if call.service == "media_play_pause":
+            set_plex("playing" if st.state == "paused" else "paused", st.attributes["media_position"])
+        elif call.service == "seek":
+            set_plex(st.state, st.attributes["media_position"] + call.data["offset"])
+        elif call.service == "media_seek":
+            set_plex(st.state, call.data["seek_position"])
+
+    async def adb_cmd(call):
+        adb.append(call.data["command"])
+    hass.services.async_register("media_player", "media_play_pause", svc)
+    hass.services.async_register("media_player", "media_seek", svc)
+    hass.services.async_register("pipup", "seek", svc)
+    hass.services.async_register("androidtv", "adb_command", adb_cmd)
+    _pip(hass)
+    hass.states.async_set("media_player.adb", "idle")
+    tv = {"name": "Theater", "pipup": "media_player.pip", "plex_client": plex, "adb": "media_player.adb"}
+    with patch("asyncio.sleep"):
+        set_plex("paused", 600)
+        await play.control(hass, tv, "play_pause")
+        assert adb == ["input keyevent KEYCODE_MEDIA_PLAY_PAUSE"], "play / pause ignored → the ADB media key"
+        for delta, keys in [(30, ["KEYCODE_MEDIA_FAST_FORWARD"]), (-30, ["KEYCODE_MEDIA_REWIND"] * 3),
+                            (10, ["KEYCODE_MEDIA_FAST_FORWARD", "KEYCODE_MEDIA_REWIND", "KEYCODE_MEDIA_REWIND"]), (-10, ["KEYCODE_MEDIA_REWIND"])]:
+            adb.clear(); play._LAST_SEEK.clear(); set_plex("paused", 600)
+            await play.control(hass, tv, "skip", delta)
+            assert adb == ["input keyevent " + " ".join(keys)], f"skip {delta:+} ignored → ADB presses"
+        adb.clear(); play._LAST_SEEK.clear(); set_plex("paused", 600)
+        await play.control(hass, tv, "seek", 720)
+        assert adb == ["input keyevent " + " ".join(["KEYCODE_MEDIA_FAST_FORWARD"] * 4)], "seek ignored → ADB presses"
+        respond["on"] = True
+        for action, value in [("play_pause", None), ("skip", 30), ("skip", -10), ("seek", 900)]:
+            adb.clear(); play._LAST_SEEK.clear(); set_plex("paused", 600)
+            await play.control(hass, tv, action, value)
+            assert adb == [], f"{action} {value}: the TV responded, nothing sent again"
+    hass.states.async_set(plex, "on", {})   # nothing playing: can't tell, no retry
+    adb.clear(); respond["on"] = False
+    with patch("asyncio.sleep"):
+        await play.control(hass, tv, "play_pause")
+    assert adb == []
