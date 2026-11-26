@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.26.152
+// Version: v2026.11.26.153
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.26.152';
+const BUILD_NUMBER = 'v2026.11.26.153';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -5881,11 +5881,18 @@ class PlexCenterCardEditor extends HTMLElement {
   /** The screen chips and the settings that belong to the lit screen. reset: what "Reset this section" clears. */
   _profile(inner, reset = '') {
     const name = (SCREENS.find(([sc]) => sc === this._eds()) || [, ''])[1];
-    return `<div class="plce-group">Screen Profile</div><p class="plce-hint plce-tight">Select Screen type to edit that profile.</p>${this._scrChips('')}
-      <div class="plce-divlbl"><span>Settings for <b>${esc(name)}</b></span>${reset ? `<button class="plce-chip reset" data-secreset="${esc(reset)}" title="Reset this section on ${esc(name)} to the built-in settings"><ha-icon icon="mdi:restore"></ha-icon>Reset</button>` : ''}</div>${inner}`;
+    return `<div class="plce-prof"><div class="plce-divlbl"><span>Only on <b>${esc(name)}</b></span>${reset ? `<button class="plce-chip reset" data-secreset="${esc(reset)}" title="Reset this section on ${esc(name)} to the built-in settings"><ha-icon icon="mdi:restore"></ha-icon>Reset</button>` : ''}</div>
+      <p class="plce-hint plce-tight">These follow the screen type picked here; each one has its own.</p>${this._scrChips('')}${inner}</div>`;
   }
-  /** The settings that don't depend on the screen type, at the bottom of a panel. */
-  _everyScreen(inner) { return inner ? `<div class="plce-divlbl"><span><b>Every screen</b></span></div>${inner}` : ''; }
+  /** The settings that don't depend on the screen type. Placed above a panel's screen-type part after rendering
+   *  (_everyFirst), so the screen chips sit right above the settings they switch. */
+  _everyScreen(inner) { return inner ? `<div class="plce-every"><div class="plce-divlbl"><span><b>On every screen</b></span></div>${inner}</div>` : ''; }
+  _everyFirst() {
+    for (const ev of this.querySelectorAll('.plce-every')) {
+      const prof = ev.parentElement && [...ev.parentElement.children].find((x) => x.classList.contains('plce-prof'));
+      if (prof && prof.compareDocumentPosition(ev) & Node.DOCUMENT_POSITION_FOLLOWING) prof.before(ev);
+    }
+  }
   /** A row's Source as a chip ("Source: Plex Center ▾") that opens its options. */
   _srcChip(id) {
     const s = this._secS(id), t = secType(this._config, id), fn = (x) => this._hass.states[x]?.attributes?.friendly_name || x;
@@ -6372,6 +6379,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._panel('log', 'mdi:text-box-search-outline', 'Log', this._logBody())}
       <div class="plce-foot">Plex Center Card (Ltek) ${BUILD_NUMBER}</div></div>`;
     this._rendered = true;
+    this._everyFirst();
     this._wire();
   }
 

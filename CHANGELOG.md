@@ -1,5 +1,9 @@
 # Changelog
 
+## v2026.11.26.153
+
+- **Editor: clearer split between settings for every screen and settings per screen type.** In each panel that has both, **On every screen** comes first; then **Only on <screen type>**, with the screen-type chips right above the settings they switch (and the Reset for that screen type). It used to be the other way round, with an "Every screen" part under the chips.
+
 ## v2026.11.26.152
 
 - **Now playing**: the picture is cropped from the bottom, keeping the top in view, so heads aren't cut off. The episode line (S · E · title) is centred under the title again, with Move to at the right.
