@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.26.151
+
+- **Global defaults in collapsible subpanels**: Card title, Dates and times, TV picker, Pages, Posters and Play, Watched, Details &amp; popups, Auto Rotate, Surprise me.
+- **TV picker** settings for every screen (Shows, Icon, Tap the icon, Default TV, When playing, Lock) moved from Screens to Global defaults. Screens keeps the picker's form for each screen type.
+- **Hold times**: Play and Mark watched now default to 1500 ms (were 2000), Mark all watched to 2000 ms (was 3000). A time you set yourself stays.
+- Editor buttons in the Log panel and the Showtime Remote's Add / Remove now use the usual chip style; the Reset chips match their size.
+
 ## v2026.11.26.150
 
 - **Global defaults now holds every card-wide setting**, in groups: Card title; Dates and times (with **Weeks start on**); Pages (**Start on**, Remember the view, Recent searches); Posters and Play (**Tapping a poster**, **Hold to play** and its hold times); Watched (**Counts as watched at**); Details &amp; popups (Target dropdown, "This device" opens, Auto-close time); Auto Rotate; Surprise me. Library, Calendar and Continue watching link to it where these used to be. Editor only: config keys don't change.

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.26.150
+// Version: v2026.11.26.151
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.26.150';
+const BUILD_NUMBER = 'v2026.11.26.151';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -581,9 +581,9 @@ const DEFAULTS = {
   stagger_rotate: false,
   full_motion: true,
   hold_play: true,
-  hold_ms: 2000,
-  hold_mark_ms: 2000,       // Mark watched / unwatched (0: a tap, then confirm)
-  hold_markall_ms: 3000,    // a show's Mark all watched / unwatched (0: a tap, then confirm)
+  hold_ms: 1500,
+  hold_mark_ms: 1500,       // Mark watched / unwatched (0: a tap, then confirm)
+  hold_markall_ms: 2000,    // a show's Mark all watched / unwatched (0: a tap, then confirm)
   np_power: false,
   watching_apps: true,
   watched_pct: 95,
@@ -5081,7 +5081,8 @@ const EDITOR_CSS = `
         .plce-chip.al { background: transparent; border: 1px solid var(--divider-color, #444); }
         .plce-chip.st { background: transparent; border: 1px dashed var(--divider-color, #555); color: var(--secondary-text-color); }
         .plce-chip.inuse { background: color-mix(in srgb, var(--accent-color, var(--ltek-c-accent)) 22%, transparent); color: var(--accent-color, var(--ltek-c-accent)); font-weight: 600; }
-        .plce-chip.reset { cursor: pointer; border: 1px solid var(--divider-color, #555); background: transparent; font: inherit; font-size: 12px; margin-left: 8px; }
+        .plce-chip.reset { cursor: pointer; border: 1px solid var(--divider-color, #555); background: transparent; font: inherit; font-size: 13px; padding: 5px 12px; gap: 6px; margin-left: 8px; color: var(--primary-text-color); }
+        .plce-chip.reset ha-icon { --mdc-icon-size: 16px; }
         .plce-chip.reset:hover { border-color: var(--error-color, #db4437); color: var(--error-color, #db4437); }
         .plce-inuse { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 4px; }
         .plce-inuse-on { font-size: 12px; color: var(--secondary-text-color); }
@@ -5654,39 +5655,41 @@ class PlexCenterCardEditor extends HTMLElement {
     void list;
     return `<p class="plce-hint">Settings for the whole card, on every page and screen. The order of the Home sections, which rows they share and their
         Width and Height are in <b>Content Layout</b>. <button class="plce-pick" data-goto="content"><ha-icon icon="mdi:view-dashboard-edit-outline"></ha-icon>Content Layout</button></p>
-      ${this._everyScreen(`<div class="plce-group">Card title</div>
-        ${this._text('title', 'Title', 'Plex')}${this._check('show_title', 'Show the title (in every layout)')}
-        <div class="plce-group">Dates and times</div>
+      ${this._sub('gd-card-title', 'Card title', `
+        ${this._text('title', 'Title', 'Plex')}${this._check('show_title', 'Show the title (in every layout)')}`)}
+      ${this._sub('gd-dates-and-times', 'Dates and times', `
         ${this._text('date', 'Date format', 'mm/dd')}${this._select('clock', 'Clock', [['12', '12-hour'], ['24', '24-hour']])}
         ${this._select('week_start', 'Weeks start on', [['mon', 'Monday'], ['sun', 'Sunday']])}
-        <p class="plce-hint">Everywhere the card shows a date or time: rows, banners, Calendar, Now playing (Ends at).</p>
-        <div class="plce-group">Pages</div>
+        <p class="plce-hint">Everywhere the card shows a date or time: rows, banners, Calendar, Now playing (Ends at).</p>`)}
+      ${this._sub('gd-tv-picker', 'TV picker', `
+        ${this._tvPickerBody()}`)}
+      ${this._sub('gd-pages', 'Pages', `
         ${(() => { const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
           const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
           return this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])]); })()}
         ${this._check('remember_view', 'Remember the tab, filters, sort and view on each device')}
-        ${this._check('recent_searches', 'Show recent searches when the search box is empty')}
-        <div class="plce-group">Posters and Play</div>
+        ${this._check('recent_searches', 'Show recent searches when the search box is empty')}`)}
+      ${this._sub('gd-posters-and-play', 'Posters and Play', `
         ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}
         ${this._check('hold_play', 'Hold to play: Play buttons start only after being held (not in Now playing)')}
         ${this._c('hold_play') ? this._slider('hold_ms', 'Play: hold for', 500, 5000, ' ms') : ''}
         ${this._slider('hold_mark_ms', 'Mark watched: hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
-        ${this._slider('hold_markall_ms', 'Mark all watched (a show): hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
-        <div class="plce-group">Watched</div>
-        ${this._slider('watched_pct', 'Counts as watched at', 50, 100, ' %')}<p class="plce-hint">An episode or movie watched this far counts as watched: it leaves Continue watching, gets the watched tick, and for a show the episode after it moves to <b>Next Episode</b>.</p>
-        <div class="plce-group">Details &amp; popups</div>
+        ${this._slider('hold_markall_ms', 'Mark all watched (a show): hold for (0 = tap, then confirm)', 0, 5000, ' ms')}`)}
+      ${this._sub('gd-watched', 'Watched', `
+        ${this._slider('watched_pct', 'Counts as watched at', 50, 100, ' %')}<p class="plce-hint">An episode or movie watched this far counts as watched: it leaves Continue watching, gets the watched tick, and for a show the episode after it moves to <b>Next Episode</b>.</p>`)}
+      ${this._sub('gd-details-and-popups', 'Details &amp; popups', `
         ${this._check('popup_target', 'Target dropdown (a TV or this device) in details and popups')}
         ${this._select('local_app', '"This device" opens', [['auto', 'Automatic: the Plex app on phones and tablets, Plex Web on computers'], ['app', 'The Plex app'], ['web', 'Plex Web']])}
         <p class="plce-hint">The Plex app and Plex Web open the title's page; press Play there.</p>
-        ${this._slider('popup_timeout', 'Auto-close time', 0, 300, ' s')}<p class="plce-hint">Details (full screen on phones) and popups close after this long without a press. 0 = never. A trailer playing in the card and Surprise me don't close.</p>
-        <div class="plce-group">Auto Rotate</div>
+        ${this._slider('popup_timeout', 'Auto-close time', 0, 300, ' s')}<p class="plce-hint">Details (full screen on phones) and popups close after this long without a press. 0 = never. A trailer playing in the card and Surprise me don't close.</p>`)}
+      ${this._sub('gd-auto-rotate', 'Auto Rotate', `
         ${this._check('stagger_rotate', 'Stagger: sections that fade or slide change one at a time')}
         ${this._chipShowRow('cycle', 'Cycle chip shows')}
         ${this._chipShowRow('kind', 'Movies / TV chips show')}
         ${this._check('full_motion', 'Full motion even when this device asks for less (Android “Remove animations”, battery saver)')}
         <p class="plce-hint">On by default. Off: on such a device, banners change without sliding and rows move an item at a time.</p>
-        ${this._c('stagger_rotate') ? `${this._slider('stagger_gap', 'Time between sections', 1, 15, ' s')}<p class="plce-hint">${esc(this._staggerNote())}</p>` : ''}
-        <div class="plce-group">Surprise me</div>
+        ${this._c('stagger_rotate') ? `${this._slider('stagger_gap', 'Time between sections', 1, 15, ' s')}<p class="plce-hint">${esc(this._staggerNote())}</p>` : ''}`)}
+      ${this._sub('gd-surprise-me', 'Surprise me', `
         ${this._check('surprise', 'Surprise me button')}
         ${this._c('surprise') ? `${this._check('surprise_countdown', 'Countdown: plays the pick after 5 seconds unless cancelled')}
           ${this._select('surprise_style', 'Surprise me shows', [['icon', 'Icon only'], ['both', 'Icon and text'], ['text', 'Text only']])}
@@ -5851,7 +5854,7 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._check(k('swipe'), 'Swipe left / right on the content to change tab')}
         <div class="plce-group">TV picker</div>
         ${this._chips(k('tvs'), 'Picker', [['chips', 'A button per TV'], ['chip', 'Dropdown'], ['button', 'Icon button'], ['hidden', 'Hidden']])}
-        <p class="plce-hint">Dropdown and Icon button open a menu of the TVs. Hidden: always the default TV.</p>
+        <p class="plce-hint">Dropdown and Icon button open a menu of the TVs. Hidden: always the default TV. What the picker shows, and the default TV, are in <b>Global defaults</b>.</p>
         <p class="plce-hint">Now playing (the side panel) has its own panel.</p></div>`;
     };
     return `${this._select('layout', 'Device type', [['auto', `Automatic (phone when the card is narrower than ${PHONE_MAX_W}px)`], ['tablet', 'Always tablet / computer'], ['phone', 'Always phone']])}
@@ -5860,15 +5863,13 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._scrChips('Editing')}
       <div class="plce-row"><button class="plce-chip reset" data-scrreset title="Reset everything for this screen type"><ha-icon icon="mdi:restore"></ha-icon>Reset this screen type</button></div>
       ${screen(this._eds(), '')}
-      <p class="plce-hint">Phones always get 44 px touch targets.</p>
-      ${this._everyScreen(this._tvPickerBody())}`;
+      <p class="plce-hint">Phones always get 44 px touch targets.</p>`;
   }
 
   /** The TV picker settings that are the same on every screen (the picker's form is per screen, above). */
   _tvPickerBody() {
     const tvs = this._conf?.tvs || [];
-    return `<div class="plce-group">TV picker</div>
-      ${this._chips('tv_label', 'Shows', [['icon', 'Icon only'], ['both', 'Icon & label'], ['name', 'Label only']])}
+    return `${this._chips('tv_label', 'Shows', [['icon', 'Icon only'], ['both', 'Icon & label'], ['name', 'Label only']])}
       ${this._chips('tv_indicator', 'Icon', [['cast', 'Cast icon'], ['dot', 'Status dot']])}
       <p class="plce-hint">The icon is the TV's status: grey when off, green when on, the accent colour while playing, orange when it's ready to resume.</p>
       ${this._check('tv_np_tap', 'Tap the icon: switch the page to that TV and open its Now playing')}
@@ -6029,8 +6030,8 @@ class PlexCenterCardEditor extends HTMLElement {
       const have = new Set(arr.map((x) => String(x.name || '').toLowerCase()));
       const ex = kind === 'lights' ? RM_LIGHT_EXAMPLES.filter((n) => !have.has(n.toLowerCase())) : [];
       return `<div class="plce-group">${title}</div><p class="plce-hint">${hint}</p>${rows}
-        <div class="plce-chips">${(kind === 'extra' && arr.length >= 2) ? '' : `<button class="plce-chip" data-rmladd="${kind}|"><ha-icon icon="mdi:plus"></ha-icon>Add a button</button>`}
-        ${ex.map((n) => `<button class="plce-chip" data-rmladd="${kind}|${esc(n)}"><ha-icon icon="mdi:plus"></ha-icon>${esc(n)}</button>`).join('')}</div>`;
+        <div class="plce-chips">${(kind === 'extra' && arr.length >= 2) ? '' : `<button class="plce-pick add" data-rmladd="${kind}|"><ha-icon icon="mdi:plus"></ha-icon>Add a button</button>`}
+        ${ex.map((n) => `<button class="plce-pick add" data-rmladd="${kind}|${esc(n)}"><ha-icon icon="mdi:plus"></ha-icon>${esc(n)}</button>`).join('')}</div>`;
     };
     const scr = Array.isArray(this._config.remote_auto_screens) ? this._config.remote_auto_screens : [];
     const atvs = Array.isArray(this._config.remote_auto_tvs) ? this._config.remote_auto_tvs : [];
@@ -6322,11 +6323,11 @@ class PlexCenterCardEditor extends HTMLElement {
     const lv = this._logs.level || 'error';
     return `<p class="plce-hint">Commands a TV didn't take, why, and what to do. Also in Home Assistant's log (Settings → System → Logs). Kept across restarts (the last 100).</p>
       <div class="plce-row"><label class="lbl">Log</label><div class="plce-chips">
-        <button class="plce-chip${lv === 'error' ? ' on' : ''}" data-loglevel="error">Errors</button>
-        <button class="plce-chip${lv === 'info' ? ' on' : ''}" data-loglevel="info">Errors and info</button></div></div>
+        <button class="plce-pick${lv === 'error' ? ' on' : ''}" data-loglevel="error">Errors</button>
+        <button class="plce-pick${lv === 'info' ? ' on' : ''}" data-loglevel="info">Errors and info</button></div></div>
       <p class="plce-hint">Info adds the times Plex Center worked around a refusal (Back pressed with ADB, a seek done with skip keys).</p>
-      <div class="plce-chips"><button class="plce-chip" data-logload><ha-icon icon="mdi:refresh"></ha-icon>Refresh</button>
-      ${this._logs.list.length ? '<button class="plce-chip" data-logclear><ha-icon icon="mdi:delete-outline"></ha-icon>Clear</button>' : ''}</div>
+      <div class="plce-chips"><button class="plce-pick" data-logload><ha-icon icon="mdi:refresh"></ha-icon>Refresh</button>
+      ${this._logs.list.length ? '<button class="plce-pick" data-logclear><ha-icon icon="mdi:delete-outline"></ha-icon>Clear</button>' : ''}</div>
       <div class="plce-list">${rows || '<p class="plce-hint">Nothing logged since Home Assistant started.</p>'}</div>`;
   }
   _loadLog(lvl) {

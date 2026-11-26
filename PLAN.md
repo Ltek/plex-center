@@ -109,7 +109,7 @@ Not planned: management of the library, Plex sign-in, notifications (automations
   - Keep a short "set in Global defaults" link where each setting used to be, so nobody hunts for it. Config keys
     don't change (editor only), so nothing in anyone's YAML moves.
 
-- [ ] **Old-style chips in the editor → the normal `plce-pick` chips** (user's request, 2026-11-26; next build). The
+- [x] **Old-style chips in the editor → the normal `plce-pick` chips** (done in v2026.11.26.151) (user's request, 2026-11-26; next build). The
   buttons that use the older `plce-chip` look (light outline, larger, as in the Log panel) become the editor's usual
   chips:
   - Log: **Errors / Errors and info** (a choice: `plce-pick`, lit when chosen), **Refresh** and **Clear** (actions).
