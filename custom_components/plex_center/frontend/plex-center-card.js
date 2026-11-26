@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.26.151
+// Version: v2026.11.26.152
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.26.151';
+const BUILD_NUMBER = 'v2026.11.26.152';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1589,8 +1589,9 @@ const CARD_CSS = `
 .plc-info-se { color: #fff; font-size: .98em; text-shadow: 0 1px 6px rgba(0,0,0,.9); margin-right: 4px; }
 .plc-info-status { flex: none; align-self: flex-end; justify-content: flex-end; margin: 0; }
 .plc-side-info .plc-info-sub { color: var(--secondary-text-color); text-shadow: none; }
-.plc-np-facts.withshow { display: flex; flex-wrap: nowrap; align-items: center; width: 100%; gap: 8px; }
-.plc-np-facts.withshow .plc-info-sub { flex: 1 1 auto; min-width: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plc-np-facts.withshow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr); align-items: center; width: 100%; gap: 8px; }
+.plc-np-facts.withshow .plc-info-sub { grid-column: 2; min-width: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* centred on the panel */
+.plc-np-facts.withshow > .plc-np-showchip { grid-column: 3; justify-self: end; }
 .plc-chip.plc-np-showchip { flex: none; margin-left: auto; font-size: .72em; padding: 3px 9px; gap: 4px; min-height: 0; }
 .plc-chip.plc-np-showchip ha-icon { --mdc-icon-size: 14px; }
 .plc-np-showchip[data-movemenu] ha-icon { margin-left: 2px; }
@@ -2205,7 +2206,7 @@ const CARD_CSS = `
 .plc-sess-logo { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 9px; text-align: center; }
 .plc-sess-logo .plc-applogo { width: 70%; height: auto; max-height: 45%; object-fit: contain; }
 .plc-sess-logo span { display: none; } .plc-sess-logo .plc-appword { display: block; font-size: 11px; }
-.plc-side-img { position: absolute; inset: 0; background: center / cover no-repeat; }
+.plc-side-img { position: absolute; inset: 0; background: center 15% / cover no-repeat; }   /* cropped from the bottom: heads stay in view */
 .plc-np-x, .plc-np-move, .plc-np-power { position: absolute; z-index: 2; }
 .plc-np-x { top: 8px; right: 8px; }
 .plc-np-move { top: 8px; left: 8px; max-width: calc(100% - 70px); font-size: .8em; }

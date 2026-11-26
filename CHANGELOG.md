@@ -1,5 +1,9 @@
 # Changelog
 
+## v2026.11.26.152
+
+- **Now playing**: the picture is cropped from the bottom, keeping the top in view, so heads aren't cut off. The episode line (S · E · title) is centred under the title again, with Move to at the right.
+
 ## v2026.11.26.151
 
 - **Global defaults in collapsible subpanels**: Card title, Dates and times, TV picker, Pages, Posters and Play, Watched, Details &amp; popups, Auto Rotate, Surprise me.
