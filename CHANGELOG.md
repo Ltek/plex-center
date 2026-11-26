@@ -1,5 +1,9 @@
 # Changelog
 
+## v2026.11.26.150
+
+- **Global defaults now holds every card-wide setting**, in groups: Card title; Dates and times (with **Weeks start on**); Pages (**Start on**, Remember the view, Recent searches); Posters and Play (**Tapping a poster**, **Hold to play** and its hold times); Watched (**Counts as watched at**); Details &amp; popups (Target dropdown, "This device" opens, Auto-close time); Auto Rotate; Surprise me. Library, Calendar and Continue watching link to it where these used to be. Editor only: config keys don't change.
+
 ## v2026.11.26.149
 
 - **Play / Pause, skip and seek check that the TV responded.** If nothing changes on the TV's players within 2 seconds (Plex on the SHIELD can ignore PiPup's media commands), Plex Center sends it again over ADB: the play / pause media key, or Fast forward / Rewind presses for the 10 s and 30 s skips and the seek bar, as Stop already did. Each retry is noted in the Log panel. TVs without ADB, or with nothing playing, are unchanged.

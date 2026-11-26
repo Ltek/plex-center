@@ -96,7 +96,7 @@ Not planned: management of the library, Plex sign-in, notifications (automations
 - [ ] SHIELD (media room): PiPup + `method: ok` (only TCLs tested).
 
 ### Next (card editor)
-- [ ] **Global defaults: gather every card-wide setting** (user's request, 2026-11-25). Move into Global defaults:
+- [x] **Global defaults: gather every card-wide setting** (done in v2026.11.26.150) (user's request, 2026-11-25). Move into Global defaults:
   - *Counts as watched at* (`watched_pct`), now in Continue watching: it also decides Next Episode and the watched ticks.
   - From the Library panel's *Every screen* part, the settings that apply on every page: *Start on* (`start_tab`),
     *Hold to play* and its hold times (`hold_play`, `hold_ms`, `hold_mark_ms`, `hold_markall_ms`), *Tapping a poster*

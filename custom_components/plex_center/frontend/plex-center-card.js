@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.26.149
+// Version: v2026.11.26.150
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.26.149';
+const BUILD_NUMBER = 'v2026.11.26.150';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -5478,7 +5478,7 @@ class PlexCenterCardEditor extends HTMLElement {
         and Radarr integrations. ${found.length ? `Found: <b>${esc(found.join(', '))}</b>.` : '<b>Neither is set up</b>: add Home Assistant\'s Sonarr or Radarr integration (Settings → Devices &amp; services).'}</p>
       ${this._check('calendar', 'Show the Calendar page (in the page menu)')}
       ${this._select('calendar_view', 'Opens in', [['month', 'Month'], ['week', 'Week'], ['day', 'Day']])}
-      ${this._select('week_start', 'Weeks start on', [['mon', 'Monday'], ['sun', 'Sunday']])}
+      <p class="plce-hint"><b>Weeks start on</b> is in <b>Global defaults</b>. <button class="plce-pick" data-goto="home"><ha-icon icon="mdi:tune-variant"></ha-icon>Global defaults</button></p>
       ${this._slider('calendar_max', 'Entries per day in Month view (then “+N more”)', 1, 10, '')}`)}`;
   }
 
@@ -5547,20 +5547,10 @@ class PlexCenterCardEditor extends HTMLElement {
         <button class="plce-act" data-tup="${i}" title="Move left"${i ? '' : ' disabled'}><ha-icon icon="mdi:arrow-up"></ha-icon></button>
         <button class="plce-act" data-tdown="${i}" title="Move right"${i < all.length - 1 ? '' : ' disabled'}><ha-icon icon="mdi:arrow-down"></ha-icon></button></div></div>`).join('')}</div>
       ${this._config.tab_order ? '<button class="plce-add" data-treset>Back to the default order</button>' : ''}
-      ${this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])])}
-      ${this._check('hold_play', 'Hold to play: Play buttons start only after being held (not in Now playing)')}
-      ${this._c('hold_play') ? this._slider('hold_ms', 'Play: hold for', 500, 5000, ' ms') : ''}
-      ${this._slider('hold_mark_ms', 'Mark watched: hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
-      ${this._slider('hold_markall_ms', 'Mark all watched (a show): hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
-      ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}
       ${this._check('jump_bar', 'A–Z jump bar beside A → Z libraries')}
-      ${this._check('remember_view', 'Remember the tab, filters, sort and view on each device')}
-      ${this._check('recent_searches', 'Show recent searches when the search box is empty')}
+      <p class="plce-hint">Start on, Hold to play, Tapping a poster, Remember the view, Recent searches and Details &amp; popups are in <b>Global defaults</b>. <button class="plce-pick" data-goto="home"><ha-icon icon="mdi:tune-variant"></ha-icon>Global defaults</button></p>
       <p class="plce-hint">Up next and what happens after starting a title are in <b>Now playing</b>.</p>
-      ${this._sub('popups', 'Details &amp; popups', `${this._check('popup_target', 'Target dropdown (a TV or this device) in details and popups')}
-        ${this._select('local_app', '"This device" opens', [['auto', 'Automatic: the Plex app on phones and tablets, Plex Web on computers'], ['app', 'The Plex app'], ['web', 'Plex Web']])}
-        <p class="plce-hint">The Plex app and Plex Web open the title's page; press Play there.</p>
-        ${this._slider('popup_timeout', 'Auto-close time', 0, 300, ' s')}<p class="plce-hint">Details (full screen on phones) and popups close after this long without a press. 0 = never. A trailer playing in the card and Surprise me don't close.</p>`)}`;
+`;
   }
 
   /** The Home list edits one screen type (the preview's first). */
@@ -5668,7 +5658,27 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._text('title', 'Title', 'Plex')}${this._check('show_title', 'Show the title (in every layout)')}
         <div class="plce-group">Dates and times</div>
         ${this._text('date', 'Date format', 'mm/dd')}${this._select('clock', 'Clock', [['12', '12-hour'], ['24', '24-hour']])}
+        ${this._select('week_start', 'Weeks start on', [['mon', 'Monday'], ['sun', 'Sunday']])}
         <p class="plce-hint">Everywhere the card shows a date or time: rows, banners, Calendar, Now playing (Ends at).</p>
+        <div class="plce-group">Pages</div>
+        ${(() => { const tv = (this._conf?.tvs || []).find((t) => t.id === this._config.default_tv) || this._conf?.tvs?.[0];
+          const libs = Array.isArray(this._conf?.libraries?.[tv?.user || '']) ? this._conf.libraries[tv.user || ''] : [];
+          return this._select('start_tab', 'Start on', [['home', 'Home'], ...libs.map((l) => [l.key, l.title])]); })()}
+        ${this._check('remember_view', 'Remember the tab, filters, sort and view on each device')}
+        ${this._check('recent_searches', 'Show recent searches when the search box is empty')}
+        <div class="plce-group">Posters and Play</div>
+        ${this._select('tap_action', 'Tapping a poster', [['details', 'Opens its details'], ['play', 'Plays it at once']])}
+        ${this._check('hold_play', 'Hold to play: Play buttons start only after being held (not in Now playing)')}
+        ${this._c('hold_play') ? this._slider('hold_ms', 'Play: hold for', 500, 5000, ' ms') : ''}
+        ${this._slider('hold_mark_ms', 'Mark watched: hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
+        ${this._slider('hold_markall_ms', 'Mark all watched (a show): hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
+        <div class="plce-group">Watched</div>
+        ${this._slider('watched_pct', 'Counts as watched at', 50, 100, ' %')}<p class="plce-hint">An episode or movie watched this far counts as watched: it leaves Continue watching, gets the watched tick, and for a show the episode after it moves to <b>Next Episode</b>.</p>
+        <div class="plce-group">Details &amp; popups</div>
+        ${this._check('popup_target', 'Target dropdown (a TV or this device) in details and popups')}
+        ${this._select('local_app', '"This device" opens', [['auto', 'Automatic: the Plex app on phones and tablets, Plex Web on computers'], ['app', 'The Plex app'], ['web', 'Plex Web']])}
+        <p class="plce-hint">The Plex app and Plex Web open the title's page; press Play there.</p>
+        ${this._slider('popup_timeout', 'Auto-close time', 0, 300, ' s')}<p class="plce-hint">Details (full screen on phones) and popups close after this long without a press. 0 = never. A trailer playing in the card and Surprise me don't close.</p>
         <div class="plce-group">Auto Rotate</div>
         ${this._check('stagger_rotate', 'Stagger: sections that fade or slide change one at a time')}
         ${this._chipShowRow('cycle', 'Cycle chip shows')}
@@ -6347,7 +6357,7 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._panel('nowplaying', 'mdi:play-box-outline', 'Now playing', this._npBody())}
       ${this._panel('remote', 'mdi:remote-tv', 'Showtime Remote', this._remoteBody())}
       ${this._panel('sec-continue', 'mdi:play-pause', 'Continue watching', `${this._profile(`${this._secStyleBody('continue', 'visual')}${this._secStyleBody('continue', 'rest')}`, 'row:continue')}
-        ${this._everyScreen(`${this._slider('watched_pct', 'Counts as watched at', 50, 100, ' %')}<p class="plce-hint">An episode or movie watched this far leaves Continue watching; for a show, the episode after it moves to <b>Next Episode</b>. Continue watching shows each show's latest episode in progress.</p>`)}`)}
+        ${this._everyScreen(`<p class="plce-hint">Continue watching shows each show's latest episode in progress.</p><p class="plce-hint"><b>Counts as watched at</b> is in <b>Global defaults</b>. <button class="plce-pick" data-goto="home"><ha-icon icon="mdi:tune-variant"></ha-icon>Global defaults</button></p>`)}`)}
       ${this._panel('sec-next', 'mdi:skip-next-circle-outline', 'Next Episode', `${this._profile(`${this._secStyleBody('next', 'visual')}${this._secStyleBody('next', 'rest')}`, 'row:next')}
         ${this._everyScreen('<p class="plce-hint">For each show you are watching, the next episode you haven\'t started (it is in Plex, so it isn\'t in Coming Soon). Shows with an episode in progress are in Continue watching instead.</p>')}`)}
       ${this._rowPanels()}
