@@ -109,6 +109,16 @@ Not planned: management of the library, Plex sign-in, notifications (automations
   - Keep a short "set in Global defaults" link where each setting used to be, so nobody hunts for it. Config keys
     don't change (editor only), so nothing in anyone's YAML moves.
 
+- [ ] **Old-style chips in the editor → the normal `plce-pick` chips** (user's request, 2026-11-26; next build). The
+  buttons that use the older `plce-chip` look (light outline, larger, as in the Log panel) become the editor's usual
+  chips:
+  - Log: **Errors / Errors and info** (a choice: `plce-pick`, lit when chosen), **Refresh** and **Clear** (actions).
+  - Showtime Remote: **Add a button** and the lighting examples (`data-rmladd`), **Remove** (`data-rmldel`).
+  - The Reset chips (`data-secreset`, `data-scrreset`, `data-hreset`, `data-fldreset`, `data-lookresetall`,
+    `data-rowtextclear`): same chip size and shape, keeping their red hover so they still read as a reset.
+  - Leave the non-button labels as they are (Controls layout's Row / place / style tags, "In use", "Hidden").
+  - Check every panel in a render afterwards for any other button that still has the old look.
+
 ### Next (recommended, in order)
 1. [ ] **Entity per TV** `media_player.<tv>_plex_center` (now playing with poster / show / episode; controls routed) and
    **`sensor.plex_center_watching`**. Lets the Theater Movie Lighting automation use one entity per room.
