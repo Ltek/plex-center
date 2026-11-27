@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.27.155
+
+- **Play when ready (Easy AV Control)**: Play on a title while the TV's room is off turns the room on first, then plays once it's on. With several activities that use the TV, the card asks which one; otherwise it starts the only one (or the room's default, if it uses the TV). A room that's on with an activity that doesn't use the TV is switched to one that does.
+- The flow shows **Then playing …** with **Cancel**; if the room fails, the error and **Retry and play**. Waiting is limited by the TV's *Wait for ready* (5 min by default for these rooms).
+- `plex_center.play` has two new fields for automations: `activity` and `start_room` (false: don't turn the room on).
+- TV settings → Easy AV Control: **Play turns the room on** (on by default). A TV with its own Room power / status entities keeps using those.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.27.154
 
 - **Easy AV Control: power the TV's room on and off from Plex Center.** Each TV's room is found by itself (an activity that uses one of the TV's players, else the same area), or picked in TV settings → *Easy AV Control → Room*. Only the activities that use the TV are offered.

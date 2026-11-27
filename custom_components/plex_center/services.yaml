@@ -18,6 +18,14 @@ play:
       selector:
         select:
           options: [play, restart, next]
+    activity:
+      example: Movie
+      selector:
+        text:
+    start_room:
+      default: true
+      selector:
+        boolean:
 control:
   fields:
     tv:

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.27.154
+// Version: v2026.11.27.155
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.27.154';
+const BUILD_NUMBER = 'v2026.11.27.155';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1451,6 +1451,8 @@ const CARD_CSS = `
 .plc-avdev.bad ha-icon, .plc-averr { color: var(--error-color, #db4437); } .plc-avdev.wait ha-icon { color: var(--disabled-text-color, #777); }
 .plc-averr, .plc-avwarn { display: flex; gap: 6px; align-items: flex-start; } .plc-avwarn ha-icon { color: var(--warning-color, #ff9800); }
 .plc-avother { margin-top: 8px; }
+.plc-avthen { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--plc-a) 14%, transparent); }
+.plc-avthen span { flex: 1; min-width: 0; } .plc-avthen ha-icon { color: var(--plc-a); }
 .plc-avbar { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; margin: 0 0 8px; border: 1px solid var(--plc-a); border-radius: 12px;
   background: color-mix(in srgb, var(--plc-a) 14%, transparent); color: var(--primary-text-color); font: inherit; cursor: pointer; text-align: left; }
 .plc-avbar span { flex: 1; } .plc-avbar.error { border-color: var(--error-color, #db4437); background: color-mix(in srgb, var(--error-color, #db4437) 14%, transparent); }
@@ -2869,6 +2871,7 @@ class PlexCenterCard extends HTMLElement {
   /** A popover menu under its button: a title and rows (icon, name, second line, tick on the current one). */
   _menu(anchor, title, rows) {
     this._closeMenu();
+    if (!/data-avpick/.test(rows.map((r) => r.attr || '').join(' ')) && this._avPickDone) { const d = this._avPickDone; this._avPickDone = null; d(undefined); }
     const root = this._root, scale = (Number(cfg(this._c, 'scale')) || 100) / 100;
     root.insertAdjacentHTML('beforeend', `<div class="plc-menu" role="menu"><div class="plc-menu-h">${esc(title)}</div>${rows.map((r) => `<button class="plc-menu-i${r.on ? ' on' : ''}" role="menuitem" ${r.attr}>
       ${r.lead || `<ha-icon icon="${esc(r.icon)}"></ha-icon>`}<span class="plc-menu-t"><b>${esc(r.label)}</b>${r.sub ? `<small>${esc(r.sub)}</small>` : ''}</span>${r.on ? '<ha-icon class="tick" icon="mdi:check"></ha-icon>' : ''}${r.dot || ''}</button>`).join('')}</div>`);
@@ -4222,15 +4225,34 @@ Object.assign(PlexCenterCard.prototype, {
 
   // ---- play
 
-  async _play(it, mode) {
-    const tv = this._target();
+  async _play(it, mode, opts = {}) {
+    const tv = opts.tv || this._target();
     if (!tv || !it?.key) return;
     if (tv === 'local') { this._openLocal(it.type === 'episode' ? it.key : it.key); return; }
     const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : (it.show || it.title);
-    this._toast(`${mode === 'restart' ? 'Starting over' : 'Playing'} ${what} on ${tvLabel(tv)}…`);
-    if (cfg(this._c, 'after_play') === 'nowplaying') this._showPlaying(tv);
+    // Easy AV Control: the room off → Plex Center turns it on first (which activity: asked when several use this TV)
+    let activity = opts.activity, room = null;
+    const info = !tv.power_entity && !tv.status_entity ? await this._avInfoFor(tv.id) : null;
+    if (info?.room && info.play_turns_on !== false) {
+      const page = tv.id === this._tv()?.id, st = page ? this._avState() : null;
+      const on = st === 'active' && info.activities.some((a) => a.id === this._avView?.activity);
+      if (!on) {
+        if (activity === undefined && st && st !== 'starting' && info.activities.length > 1) {
+          activity = await this._avPick(info, `Turn on ${info.name} with`);
+          if (activity === undefined) return;
+        }
+        room = info;
+        this._avPlayItem = { it, mode, activity, tv: tv.id };
+        if (page) { this._v.avOpen = true; this._v.avHidden = null; this._avOnView(this._avView); }
+      }
+    }
+    this._toast(room ? `Turning on ${room.name}, then playing ${what}…` : `${mode === 'restart' ? 'Starting over' : 'Playing'} ${what} on ${tvLabel(tv)}…`);
+    if (!room && cfg(this._c, 'after_play') === 'nowplaying') this._showPlaying(tv);
     const stop = this._roomWatch(tv);
-    try { await this._hass.callService('plex_center', 'play', { tv: tv.id, key: String(it.key), mode }); }
+    try {
+      await this._hass.callService('plex_center', 'play', { tv: tv.id, key: String(it.key), mode, ...(activity ? { activity } : {}) });
+      if (room && cfg(this._c, 'after_play') === 'nowplaying') this._showPlaying(tv);
+    }
     catch (e) { this._toast(`Could not start: ${e?.message || e}`); }
     finally { stop(); }
   },
@@ -4516,6 +4538,22 @@ Object.assign(PlexCenterCard.prototype, {
     }).catch(() => {});
   },
   _avRoom() { const i = this._avInfo?.[this._tv()?.id]; return i?.room && i.activities?.length ? i : null; },
+  /** Any TV's room (Play on another TV than the page's). */
+  async _avInfoFor(id) {
+    const hit = this._avInfo?.[id];
+    if (hit?.available !== undefined) return hit.room && hit.activities?.length ? hit : null;
+    const r = await cached(this._hass, `av:${id}`, 60000, () => ws(this._hass, 'av', { tv: id }).catch(() => null)).catch(() => null);
+    if (r) (this._avInfo ||= {})[id] = { ...r, ts: Date.now() };
+    return r?.room && r.activities?.length ? r : null;
+  },
+  /** Which activity (a menu like the TV picker's): resolves with its id, or undefined when the menu closes. */
+  _avPick(info, title) {
+    return new Promise((resolve) => {
+      this._avPickDone = resolve;
+      const anchor = this._root.querySelector('[data-avbtn]') || this._root.querySelector('.plc-top') || this._root;
+      this._menu(anchor, title, info.activities.map((a) => ({ icon: a.icon || 'mdi:play', label: a.name, attr: `data-avpick="${esc(a.id)}"` })));
+    });
+  },
   /** Follow the room live (Easy AV Control's own subscription: state, step, error, cooling). */
   _avSync() {
     const r = this._avRoom(), key = r ? `${r.entry_id}/${r.room}` : null;
@@ -4536,6 +4574,8 @@ Object.assign(PlexCenterCard.prototype, {
     this._avView = v || null;
     if (prev?.state !== v?.state || prev?.activity !== v?.activity) {
       this._v.avHidden = null;
+      if (v?.state === 'active' || v?.state === 'idle') this._avPending = null;
+      if (v?.state === 'active') this._avPlayItem = null;
       if (v?.state === 'idle' || v?.state === 'active') this._v.avOpen = false;
       this._renderTop();
     }
@@ -4550,6 +4590,8 @@ Object.assign(PlexCenterCard.prototype, {
     if (!r || !this._hass?.callWS) return;
     this._hass.callWS({ type: 'easy_av_control/control/states', room: r.room, entry_id: r.entry_id })
       .then((st) => { this._avStates = st || {}; this._avPaint(); }).catch(() => {});
+    const tv = this._tv();
+    if (tv) ws(this._hass, 'av_pending', { tv: tv.id }).then((p) => { this._avPending = p?.pending || null; this._avPaint(); }).catch(() => {});
   },
   _avState() { return this._avView?.state || 'idle'; },
   /** The flow shows in the Now playing area: while the room starts (unless something already plays), stops or has
@@ -4609,13 +4651,15 @@ Object.assign(PlexCenterCard.prototype, {
     const html = `<div class="plc-avhead"><div class="plc-eyebrow">${esc(word)} · ${esc(r.name)}</div>
         <button class="plc-icon-btn plc-avx" data-avx title="Close"><ha-icon icon="mdi:close"></ha-icon></button></div>
       <h2 class="plc-big">${esc(act?.name || 'Room')}</h2>
+      ${this._avPending?.title && ['starting', 'idle'].includes(v.state) ? `<div class="plc-avthen"><ha-icon icon="mdi:play-circle-outline"></ha-icon><span>Then playing <b>${esc(this._avPending.title)}</b></span>
+        <button class="plc-btn" data-avcancel><ha-icon icon="mdi:close"></ha-icon>Cancel</button></div>` : ''}
       ${total ? `<div class="plc-avsteps"><div class="plc-bar-track"><div class="plc-bar-fill" style="width:${Math.round(step / total * 100)}%"></div></div><span>Step ${step} of ${total}</span></div>` : ''}
       ${doing && ['starting', 'stopping'].includes(v.state) ? `<div class="plc-meta plc-avnow"><ha-icon icon="mdi:loading"></ha-icon>${esc(doing)}</div>` : ''}
       ${rows ? `<div class="plc-avdevs">${rows}</div>` : ''}
       ${cooling.length ? `<div class="plc-meta">Cooling down: ${esc(cooling.join(', '))}</div>` : ''}
       ${v.error ? `<div class="plc-averr"><ha-icon icon="mdi:alert-circle"></ha-icon>${esc(v.error)}</div>` : ''}
       ${(v.warnings || []).map((w) => `<div class="plc-meta plc-avwarn"><ha-icon icon="mdi:alert-outline"></ha-icon>${esc(w)}</div>`).join('')}
-      <div class="plc-btns">${v.state === 'error' && v.activity ? `<button class="plc-btn main" data-avstart="${esc(v.activity)}"><ha-icon icon="mdi:refresh"></ha-icon>Retry</button>` : ''}
+      <div class="plc-btns">${v.state === 'error' && v.activity ? `<button class="plc-btn main" data-avretry><ha-icon icon="mdi:refresh"></ha-icon>Retry${this._avPlayItem ? ` and play ${esc(this._avPlayItem.it.show || this._avPlayItem.it.title || '')}` : ''}</button>` : ''}
         ${['error', 'starting', 'active'].includes(v.state) ? '<button class="plc-btn" data-avstop><ha-icon icon="mdi:power"></ha-icon>Turn off</button>' : ''}</div>
       ${others.length ? `<div class="plc-avother"><div class="plc-eyebrow">Switch to</div><div class="plc-btns">${others.map((a) => `<button class="plc-btn" data-avstart="${esc(a.id)}"><ha-icon icon="${esc(a.icon || 'mdi:play')}"></ha-icon>${esc(a.name)}</button>`).join('')}</div></div>` : ''}`;
     if (box.dataset.v !== html) { box.dataset.v = html; box.innerHTML = html; }
@@ -4978,6 +5022,9 @@ Object.assign(PlexCenterCard.prototype, {
       return;
     }
     if ((el = t('[data-avbtn]'))) { e.stopPropagation(); this._avPress(el); return; }
+    if ((el = t('[data-avpick]'))) { e.stopPropagation(); const done = this._avPickDone; this._avPickDone = null; this._closeMenu?.(); done?.(el.dataset.avpick); return; }
+    if (t('[data-avcancel]')) { const tv = this._tv(); this._avPlayItem = null; this._avPending = null; if (tv) ws(this._hass, 'av_pending', { tv: tv.id, cancel: true }).catch(() => {}); this._avPaint(); return; }
+    if (t('[data-avretry]')) { const p = this._avPlayItem; if (p) this._play(p.it, p.mode, { activity: p.activity, tv: this._tvs().find((x) => x.id === p.tv) }); else if (this._avView?.activity) this._avStart(this._avView.activity); return; }
     if ((el = t('[data-avstart]'))) { e.stopPropagation(); this._closeMenu?.(); this._avStart(el.dataset.avstart); return; }
     if (t('[data-avstop]')) { this._avStop(); return; }
     if (t('[data-avx]')) { const v = this._avView; this._v.avOpen = false; this._v.avFull = false; this._v.avHidden = v ? `${v.state}|${v.activity}` : null; this._npSig = null; this._renderNP(true); this._avBar(); return; }
@@ -5586,7 +5633,9 @@ class PlexCenterCardEditor extends HTMLElement {
     const opts = [['', `Find it by itself`], ['none', 'None (no Activity button)'], ...(got.rooms || []).map((r) => [r.id, r.name])];
     return `<div class="plce-group">Easy AV Control</div>
       <div class="plce-row plce-nowrap"><label class="lbl">Room</label><select data-tvset="${esc(t.id)}|av_room"${dis}>${opts.map(([v, n]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
-      <p class="plce-hint">${esc(found)}${got.room ? ` · activities: ${esc(got.activities.map((a) => a.name).join(', ') || 'none')}` : ''}. The Activity button offers only the activities that use this TV.</p>`;
+      <p class="plce-hint">${esc(found)}${got.room ? ` · activities: ${esc(got.activities.map((a) => a.name).join(', ') || 'none')}` : ''}. The Activity button offers only the activities that use this TV.</p>
+      ${got.room ? `<label class="plce-check"><input type="checkbox" data-tvset="${esc(t.id)}|av_play"${(t.settings || {}).av_play === false ? '' : ' checked'}${dis}>Play turns the room on (then plays once it's on)</label>
+      ${(t.settings || {}).power_entity || (t.settings || {}).status_entity ? '<p class="plce-hint">This TV has a Room power / status of its own (below): Play uses that instead.</p>' : ''}` : ''}`;
   }
   _tvSettings(t) {
     const set = t.settings || {}, admin = !!this._hass?.user?.is_admin, dis = admin ? '' : ' disabled';

@@ -37,7 +37,7 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
     for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar,
-               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update, ws_sleep, ws_markers, ws_av):
+               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update, ws_sleep, ws_markers, ws_av, ws_av_pending):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
@@ -54,7 +54,7 @@ EDIT_ENTITY = {TV_PIPUP: ("media_player",), TV_ADB: ("media_player",), TV_REMOTE
 EDIT_TEXT = (TV_NAME, TV_USER, TV_POWER_ON, TV_POWER_OFF, TV_READY, TV_BUSY, TV_FAIL)
 EDIT_NUM = {TV_SKIP_FWD: (5, 600, 30), TV_SKIP_BACK: (5, 600, 10), TV_READY_S: (10, 900, 120)}
 EDIT_BOOL = (TV_ROOM_OFF,)
-EDITABLE = (*EDIT_ENTITY, *EDIT_TEXT, *EDIT_NUM, *EDIT_BOOL, TV_ROUTE, TV_AV)
+EDITABLE = (*EDIT_ENTITY, *EDIT_TEXT, *EDIT_NUM, *EDIT_BOOL, TV_ROUTE, TV_AV, "av_play")
 
 
 def apply_tv_changes(tv: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
@@ -103,6 +103,11 @@ def apply_tv_changes(tv: dict[str, Any], changes: dict[str, Any]) -> dict[str, A
         elif k in EDIT_BOOL:
             if v:
                 out[k] = True
+            else:
+                out.pop(k, None)
+        elif k == "av_play":   # Play turns the room on (default); off is kept as False
+            if v in (False, "false", "off", 0):
+                out[k] = False
             else:
                 out.pop(k, None)
         elif k == TV_AV:   # Easy AV Control room: empty = find it by itself, none = off, <entry>/<room>
@@ -610,7 +615,21 @@ def ws_av(hass: HomeAssistant, connection, msg) -> None:
     from . import avcontrol  # noqa: PLC0415
     entry = _entry(hass, msg.get("entry_id"))
     tv = _tv(entry, msg.get("tv"))
-    connection.send_result(msg["id"], {**avcontrol.room_for(hass, tv), "rooms": avcontrol.rooms(hass)})
+    connection.send_result(msg["id"], {**avcontrol.room_for(hass, tv), "rooms": avcontrol.rooms(hass),
+                                       "pending": avcontrol.pending(tv["id"]), "play_turns_on": tv.get("av_play") is not False})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/av_pending", vol.Optional("entry_id"): str, vol.Required("tv"): str,
+                                  vol.Optional("cancel", default=False): bool})
+@callback
+def ws_av_pending(hass: HomeAssistant, connection, msg) -> None:
+    """The title waiting for the TV's room to turn on ({title, activity, room, at} or null); cancel=True drops it."""
+    from . import avcontrol  # noqa: PLC0415
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    if msg["cancel"]:
+        avcontrol.cancel(tv["id"])
+    connection.send_result(msg["id"], {"pending": avcontrol.pending(tv["id"])})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/markers", vol.Optional("entry_id"): str, vol.Required("tv"): str})

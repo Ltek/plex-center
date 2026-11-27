@@ -117,3 +117,85 @@ def rooms(hass: HomeAssistant) -> list[dict[str, Any]]:
     """Every room, for the TV setting's choices."""
     return [{"id": f"{c.entry.entry_id}/{rid}", "room": rid, "name": room.get("name") or rid}
             for c in _coordinators(hass) for rid, room in c.rooms.items()]
+
+
+# ---------------------------------------------------------------- play when ready
+
+TV_AV_PLAY = "av_play"   # False: Play doesn't turn the room on (default: it does)
+AV_WAIT_S = 300          # how long a room gets to turn on (the TV's Wait for ready, if set)
+_PENDING: dict[str, dict[str, Any]] = {}   # tv id -> {title, activity, room, at, cancel: asyncio.Event}
+
+
+def pending(tv_id: str) -> dict[str, Any] | None:
+    p = _PENDING.get(tv_id)
+    return {k: v for k, v in p.items() if k != "cancel"} if p else None
+
+
+def cancel(tv_id: str) -> bool:
+    p = _PENDING.get(tv_id)
+    if p:
+        p["cancel"].set()
+    return bool(p)
+
+
+def _find(hass: HomeAssistant, info: dict[str, Any]) -> Any:
+    return next((c for c in _coordinators(hass) if c.entry.entry_id == info.get("entry_id") and info.get("room") in c.rooms), None)
+
+
+def applies(hass: HomeAssistant, tv: dict[str, Any]) -> dict[str, Any] | None:
+    """The TV's room when Play should turn it on: Easy AV Control has one for the TV, Play turning it on isn't switched
+    off, and the TV has no room hook of its own (Room power / status entities win)."""
+    from .const import TV_POWER, TV_STATUS  # noqa: PLC0415
+    if tv.get(TV_POWER) or tv.get(TV_STATUS) or tv.get(TV_AV_PLAY) is False:
+        return None
+    info = room_for(hass, tv)
+    return info if info.get("room") and info.get("activities") else None
+
+
+async def ensure_on(hass: HomeAssistant, tv: dict[str, Any], info: dict[str, Any], title: str = "",
+                    activity: str | None = None, *, poll: float = 1.0) -> bool:
+    """Make the TV's room ready to play: nothing when it's on with an activity that uses the TV; else start one (the
+    given one, the only one, the room's default if it uses the TV, or the first) and wait until it's on. Raises
+    HomeAssistantError when it fails, takes too long or is cancelled. True when it had to start the room."""
+    import asyncio  # noqa: PLC0415
+
+    from homeassistant.exceptions import HomeAssistantError  # noqa: PLC0415
+
+    from .const import TV_ID, TV_READY_S  # noqa: PLC0415
+    coord = _find(hass, info)
+    if coord is None:
+        return False
+    room, ids = info["room"], [a["id"] for a in info["activities"]]
+    rt = coord.runtime(room)
+    if rt.state == "active" and rt.activity in ids:
+        return False
+    if rt.state == "starting" and rt.activity in ids:
+        act = rt.activity   # on its way already: just wait
+    else:
+        default = coord.default_activity(room) if hasattr(coord, "default_activity") else None
+        act = activity if activity in ids else ids[0] if len(ids) == 1 else default if default in ids else ids[0]
+        hass.async_create_task(coord.async_start_activity(room, act))
+    tv_id = tv[TV_ID]
+    old = _PENDING.get(tv_id)
+    if old:
+        old["cancel"].set()
+    me = {"title": title, "activity": act, "room": info.get("name") or room, "at": __import__("time").time(), "cancel": asyncio.Event()}
+    _PENDING[tv_id] = me
+    wait = float(tv.get(TV_READY_S) or AV_WAIT_S)
+    name = info.get("name") or room
+    try:
+        for _ in range(max(1, int(wait / poll))):
+            await asyncio.sleep(poll)
+            if me["cancel"].is_set():
+                raise HomeAssistantError(f"Cancelled: {title or 'the title'} won't play")
+            rt = coord.runtime(room)
+            if rt.state == "active":
+                return True
+            if rt.state == "error":
+                raise HomeAssistantError(f"{name} didn't turn on: {rt.error or 'it failed'}")
+            if rt.state == "idle" and _ > 3:   # stopped (by hand) while waiting
+                raise HomeAssistantError(f"{name} was turned off before it was ready")
+        raise HomeAssistantError(f"{name} didn't turn on within {int(wait)} s")
+    finally:
+        if _PENDING.get(tv_id) is me:
+            _PENDING.pop(tv_id, None)

@@ -158,6 +158,11 @@ a room in the TV's area. TV settings → *Easy AV Control → Room* shows what i
   up the projector, 42 s), every device's state, warnings, and on failure the error with Retry and Turn off. The
   library stays usable next to it; once the room is on (or something plays) Now playing takes over. On phones a slim
   bar shows it; tap it for the full flow. Started from a wall switch or an automation, it shows the same.
+- **Play when ready**: Play on a title while the room is off turns it on first (asking which activity when several use
+  the TV), shows *Then playing …* with **Cancel** in the flow, and plays once the room is on. If the room fails, the
+  flow shows the error and **Retry and play**. Works for `plex_center.play` from automations too (`activity:` picks
+  one, `start_room: false` skips it). Switch it off per TV in TV settings; a TV with its own Room power / status
+  entities keeps using those.
 
 ## Rooms with several devices (a theater)
 

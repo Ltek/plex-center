@@ -120,6 +120,14 @@
         "mode": {
           "name": "Mode",
           "description": "play (resume), restart (from the beginning) or next (next episode of a show)."
+        },
+        "activity": {
+          "name": "Activity",
+          "description": "Easy AV Control: the activity to turn the TV's room on with, if it's off (default: the one that uses this TV)."
+        },
+        "start_room": {
+          "name": "Turn the room on",
+          "description": "Easy AV Control: turn the TV's room on first and play once it's on (default on)."
         }
       }
     },

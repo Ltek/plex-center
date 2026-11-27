@@ -219,11 +219,21 @@ async def open_app(hass: HomeAssistant, tv: dict[str, Any], rec: dict[str, Any])
         pass
 
 
-async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], mode: str = "play") -> str:
-    """Start an item on a TV. mode: play (Watch / Resume) | restart (Start over). Returns the route used."""
+async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], mode: str = "play",
+                activity: str | None = None, start_room: bool = True) -> str:
+    """Start an item on a TV. mode: play (Watch / Resume) | restart (Start over). Returns the route used.
+    With an Easy AV Control room (and no room hook of its own), the room is turned on first: `activity` picks which
+    (else the only / default one that uses the TV); start_room=False skips it."""
     link = item.get("link")
     if not link or not SAFE_LINK.match(link):
         raise HomeAssistantError("This title has no Plex link")
+    from . import avcontrol  # noqa: PLC0415
+    av = avcontrol.applies(hass, tv) if start_room else None
+    if av and await avcontrol.ensure_on(hass, tv, av, item.get("title") or "", activity):
+        for _ in range(60):   # the room just came on: up to 30 s for the TV's players to be there
+            if route_for(hass, tv) is not None:
+                break
+            await asyncio.sleep(0.5)
     route = route_for(hass, tv)
     if route is None:
         raise HomeAssistantError(f"{tv.get(TV_NAME) or 'This TV'} has no usable player (PiPup, ADB or Plex)")

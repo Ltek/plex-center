@@ -16,7 +16,8 @@ from .media import app_link
 from .play import control, open_app, start, trailer
 
 PLAY_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
-                          vol.Optional("title"): cv.string, vol.Optional("mode", default="play"): vol.In(["play", "restart", "next"])})
+                          vol.Optional("title"): cv.string, vol.Optional("mode", default="play"): vol.In(["play", "restart", "next"]),
+                          vol.Optional("activity"): cv.string, vol.Optional("start_room", default=True): cv.boolean})
 MARK_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Required("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
                           vol.Required("watched"): cv.boolean})
 TRAILER_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
@@ -100,7 +101,8 @@ def async_register(hass: HomeAssistant) -> None:
         if not call.data.get("key") and not call.data.get("title"):
             raise HomeAssistantError("Give a key or a title")
         item = await _resolve(hass, entry, tv, call.data.get("key"), call.data.get("title"), call.data["mode"])
-        await start(hass, tv, item, "restart" if call.data["mode"] == "restart" else "play")
+        await start(hass, tv, item, "restart" if call.data["mode"] == "restart" else "play",
+                    activity=call.data.get("activity"), start_room=call.data["start_room"])
 
     async def ctl(call: ServiceCall) -> None:
         _entry, tv = find_tv(hass, call.data["tv"])

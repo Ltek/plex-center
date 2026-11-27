@@ -63,3 +63,76 @@ def test_not_installed_and_the_setting(hass: HomeAssistant) -> None:
     import pytest
     with pytest.raises(ValueError):
         apply_tv_changes({"name": "T", "pipup": "media_player.p"}, {"av_room": "x; rm -rf"})
+
+
+class _Coord:
+    """A fake Easy AV Control coordinator: start_activity runs it to `end` after a moment."""
+
+    def __init__(self, rooms, end="active", error=None):
+        self.rooms, self.entry, self.started = rooms, SimpleNamespace(entry_id="e1"), []
+        self.rt = {r: SimpleNamespace(state="idle", activity=None, error=None) for r in rooms}
+        self.end, self.err = end, error
+
+    def device_name(self, d):
+        return d["entity_id"]
+
+    def runtime(self, room):
+        return self.rt[room]
+
+    def default_activity(self, room):
+        return "music"
+
+    async def async_start_activity(self, room, act):
+        import asyncio
+        self.started.append(act)
+        self.rt[room].state, self.rt[room].activity = "starting", act
+        await asyncio.sleep(0)
+        self.rt[room].state, self.rt[room].error = self.end, self.err
+
+
+async def test_play_when_ready(hass: HomeAssistant) -> None:
+    import asyncio
+    from unittest.mock import patch
+
+    import pytest
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.plex_center import play
+    tv = {"id": "th", "name": "Theater", "adb": "media_player.shield_adb"}
+    c = _Coord({"theater": THEATER})
+    hass.data[avcontrol.AV_DOMAIN] = {"e1": c}
+    info = avcontrol.applies(hass, tv)
+    assert info and info["room"] == "theater"
+    real_sleep = asyncio.sleep
+
+    async def fast(_s):
+        await real_sleep(0)
+    with patch("asyncio.sleep", fast):
+        assert await avcontrol.ensure_on(hass, tv, info, "Dune") is True
+        assert c.started == ["movie"], "the activity that uses the TV (not the room's default, Music)"
+        assert await avcontrol.ensure_on(hass, tv, info, "Dune") is False and c.started == ["movie"], "already on: nothing"
+        c.rt["theater"].state, c.rt["theater"].activity = "active", "music"
+        assert await avcontrol.ensure_on(hass, tv, info, "Dune") is True and c.started[-1] == "movie", "on with Music: switch to Movie"
+        bad = _Coord({"theater": THEATER}, end="error", error="JVC did not turn on")
+        hass.data[avcontrol.AV_DOMAIN] = {"e1": bad}
+        with pytest.raises(HomeAssistantError, match="JVC did not turn on"):
+            await avcontrol.ensure_on(hass, tv, avcontrol.applies(hass, tv), "Dune")
+        assert avcontrol.pending("th") is None
+        slow = _Coord({"theater": THEATER}, end="starting")
+        hass.data[avcontrol.AV_DOMAIN] = {"e1": slow}
+        task = hass.async_create_task(avcontrol.ensure_on(hass, tv, avcontrol.applies(hass, tv), "Dune"))
+        for _ in range(5):
+            await real_sleep(0)
+        assert avcontrol.pending("th")["title"] == "Dune" and avcontrol.cancel("th")
+        with pytest.raises(HomeAssistantError, match="Cancelled"):
+            await task
+    assert avcontrol.applies(hass, {**tv, "status_entity": "sensor.room"}) is None, "the room hook wins"
+    assert avcontrol.applies(hass, {**tv, "av_play": False}) is None, "switched off"
+    # play.start: with the room failing, nothing is played
+    calls = []
+    hass.services.async_register("androidtv", "adb_command", lambda call: calls.append(call))
+    hass.states.async_set("media_player.shield_adb", "idle")
+    hass.data[avcontrol.AV_DOMAIN] = {"e1": _Coord({"theater": THEATER}, end="error", error="no")}
+    with patch("asyncio.sleep", fast), pytest.raises(HomeAssistantError):
+        await play.start(hass, tv, {"key": "1", "type": "movie", "link": "plex://libraries/6d60735f617529a9a566eff288ef0f94d063ff80/movie/x/1"})
+    assert calls == []

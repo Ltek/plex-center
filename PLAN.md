@@ -121,7 +121,7 @@ Not planned: management of the library, Plex sign-in, notifications (automations
 
 - [x] **Easy AV Control**: Activity button, room found from the activities' devices, live flow in the Now playing
   area (v2026.11.27.154).
-- [ ] **Play when ready** (Easy AV Control): Play on a title while the TV's room is off starts the room's activity, waits
+- [x] **Play when ready** (Easy AV Control; v2026.11.27.155): Play on a title while the TV's room is off starts the room's activity, waits
   until it's on, then plays.
 
 ### Next (recommended, in order)
