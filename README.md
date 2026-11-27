@@ -144,6 +144,42 @@ actions:
       entity_id: scene.theater_lights_up
 ```
 
+## Demos (show off the theater)
+
+A library of short, already-trimmed clips (by default the Plex library **Demos**, type Other Videos) that plays clip
+by clip or straight through. Each clip is paused (or stopped) just before its end, so Plex's "up next" screen never
+shows, then the next one starts after a short gap. The volume is never changed.
+
+- **Turn it on per TV**: card editor → TV settings → the TV → **Demos on this TV**, and pick the library. That
+  library is then left out of Home, the library tabs and Surprise me.
+- **Play**: open the Showtime Remote and tap **Demos**. Pick the whole library or one of its collections, then
+  One clip / Play through / Loop. While it runs: which clip, time left, Previous / Pause / Next / Stop.
+- **Settings** (admins, ⚙ in the Demos pane): Pause or Stop at a clip's end and how long before it, the gap between
+  clips, how long the last clip stays paused before it stops, a **session entity** set at the start and set back at
+  the end (also when stopped, on an error, or after a Home Assistant restart: handy for a lighting-automation
+  bypass), and PiPup popups (each clip's label and number; a start and an end message).
+- **Demo builder** (admins): make collections of clips, add to them, reorder, rename, remove, delete. A collection
+  is a Plex collection in the demo library, so it plays in the order you set. A pencil next to a clip sets its label.
+
+```yaml
+action: plex_center.demo_play
+data:
+  tv: Theater
+  sequence: Atmos showcase   # all (the whole library) or a collection
+  start: 1                   # the clip to start with
+  mode: all                  # one | all | loop
+```
+
+```yaml
+action: plex_center.demo_control
+data:
+  tv: Theater
+  action: next               # next | previous | pause | resume | stop, or a clip number
+```
+
+`plex_center.demo_status` (with `response_variable`) returns what the demo on a TV is doing: `state`, `index`,
+`total`, `label`, `ends_at`, and `timing` (where the last clip was paused against where it aimed).
+
 ## Easy AV Control (power the room on and off)
 
 With [Easy AV Control (Ltek)](https://github.com/Ltek/easy-av-control) installed, Plex Center finds each TV's room by

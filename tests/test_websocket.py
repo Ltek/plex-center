@@ -273,3 +273,16 @@ async def test_markers_without_a_plex_player(ws):
     r = await ws(type="plex_center/markers", tv="living_room_tv")
     assert r["success"], r
     assert r["result"] == {"key": None, "intro": None, "credits": None}
+
+
+async def test_demo_library_only_in_demos(ws, hass):
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    r = await ws(type="plex_center/demos/settings", tv="living_room_tv", changes={"enabled": True, "library": "Kids Movies"})
+    assert r["success"], r
+    r = await ws(type="plex_center/config")
+    assert [lib["title"] for lib in r["result"]["libraries"]["LivingRoom"]] == ["TV"], "the demo library leaves the tabs"
+    r = await ws(type="plex_center/demos/settings", tv="living_room_tv", changes={"end": "sideways"})
+    assert not r["success"]
+    assert entry.runtime_data.demos.settings("living_room_tv")["library"] == "Kids Movies"
+    r = await ws(type="plex_center/demos", tv="living_room_tv")
+    assert r["success"] and r["result"]["status"] == {"state": "idle"}

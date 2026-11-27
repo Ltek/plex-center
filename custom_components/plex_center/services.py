@@ -23,6 +23,11 @@ MARK_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Required("key"): vo
 TRAILER_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
                              vol.Optional("url"): cv.string})
 RESUME_SCHEMA = vol.Schema({vol.Required("tv"): cv.string})
+DEMO_PLAY_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("sequence", default="all"): cv.string,
+                               vol.Optional("start", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=10000)),
+                               vol.Optional("mode", default="all"): vol.In(["one", "all", "loop"])})
+DEMO_CONTROL_SCHEMA = vol.Schema({vol.Required("tv"): cv.string,
+                                  vol.Required("action"): vol.Any(vol.In(["next", "previous", "stop", "pause", "resume"]), vol.Match(r"^\d{1,4}$"))})
 SEARCH_SCHEMA = vol.Schema({vol.Required("query"): vol.All(cv.string, vol.Length(min=1, max=100)), vol.Optional("tv"): cv.string,
                             vol.Optional("type", default="any"): vol.In(["any", "movie", "show", "episode"]),
                             vol.Optional("limit", default=10): vol.All(vol.Coerce(int), vol.Range(min=1, max=50))})
@@ -156,6 +161,20 @@ def async_register(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, "mark", _logged(hass, "mark", mark), schema=MARK_SCHEMA)
     hass.services.async_register(DOMAIN, "play_trailer", _logged(hass, "play_trailer", play_trailer), schema=TRAILER_SCHEMA)
     hass.services.async_register(DOMAIN, "play", _logged(hass, "play", play), schema=PLAY_SCHEMA)
+
+    async def demo_play(call: ServiceCall) -> None:
+        entry, tv = find_tv(hass, call.data["tv"])
+        await entry.runtime_data.demos.async_play(tv, call.data["sequence"], call.data["start"], call.data["mode"])
+
+    async def demo_control(call: ServiceCall) -> None:
+        entry, tv = find_tv(hass, call.data["tv"])
+        await entry.runtime_data.demos.async_control(tv, str(call.data["action"]))
+    async def demo_status(call: ServiceCall) -> ServiceResponse:
+        entry, tv = find_tv(hass, call.data["tv"])
+        return entry.runtime_data.demos.status(tv["id"])
+    hass.services.async_register(DOMAIN, "demo_status", demo_status, schema=RESUME_SCHEMA, supports_response=SupportsResponse.ONLY)
+    hass.services.async_register(DOMAIN, "demo_play", _logged(hass, "demo_play", demo_play), schema=DEMO_PLAY_SCHEMA)
+    hass.services.async_register(DOMAIN, "demo_control", _logged(hass, "demo_control", demo_control), schema=DEMO_CONTROL_SCHEMA)
     hass.services.async_register(DOMAIN, "control", _logged(hass, "control", ctl), schema=CONTROL_SCHEMA)
     hass.services.async_register(DOMAIN, "resume", _logged(hass, "resume", resume), schema=RESUME_SCHEMA)
 

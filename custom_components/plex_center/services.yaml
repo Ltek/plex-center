@@ -126,3 +126,49 @@ search:
         number:
           min: 1
           max: 50
+
+demo_play:
+  fields:
+    tv:
+      required: true
+      example: Theater
+      selector:
+        text:
+    sequence:
+      default: all
+      example: Atmos showcase
+      selector:
+        text:
+    start:
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 999
+          mode: box
+    mode:
+      default: all
+      selector:
+        select:
+          options: [one, all, loop]
+
+demo_control:
+  fields:
+    tv:
+      required: true
+      example: Theater
+      selector:
+        text:
+    action:
+      required: true
+      selector:
+        select:
+          options: [next, previous, pause, resume, stop]
+
+demo_status:
+  fields:
+    tv:
+      required: true
+      example: Theater
+      selector:
+        text:

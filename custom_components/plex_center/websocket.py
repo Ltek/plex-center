@@ -17,6 +17,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, TV_ADB, TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_REMOTE, TV_ROUTE, TV_USER, TV_CAST, VERSION
@@ -37,7 +38,8 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
     for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar,
-               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update, ws_sleep, ws_markers, ws_av, ws_av_pending):
+               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update, ws_sleep, ws_markers, ws_av, ws_av_pending,
+               ws_demos, ws_demos_clips, ws_demos_settings, ws_demos_label, ws_demos_collection, ws_demos_subscribe):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
@@ -382,7 +384,9 @@ async def ws_config(hass: HomeAssistant, connection, msg) -> None:
         user = tv.get(TV_USER) or ""
         if user not in libraries:
             try:
-                libraries[user] = await conn.async_call(user, lambda s: [{"key": str(x.key), "title": x.title, "type": x.type} for x in _sections(s)])
+                skip = entry.runtime_data.demos.demo_libraries() if entry.runtime_data.demos else set()   # Demos: only in Demos
+                libraries[user] = await conn.async_call(user, lambda s, skip=skip: [{"key": str(x.key), "title": x.title, "type": x.type}
+                                                                                    for x in _sections(s) if x.title not in skip])
             except Exception as err:  # noqa: BLE001
                 libraries[user] = {"error": str(err)}
         tvs.append({"id": tv[TV_ID], "name": tv[TV_NAME], "user": user, "route_setting": tv.get(TV_ROUTE, "auto"),
@@ -511,6 +515,7 @@ async def ws_hubs(hass: HomeAssistant, connection, msg) -> None:
     n = msg["size"]
 
     pct = msg.get("watched_pct", 95)
+    skip = entry.runtime_data.demos.demo_libraries() if entry.runtime_data.demos else set()
 
     def fetch(server):
         if msg.get("library"):
@@ -518,8 +523,8 @@ async def ws_hubs(hass: HomeAssistant, connection, msg) -> None:
             cont, recent = sec.continueWatching(), _recent_in(sec, n)
             deck = _safe(getattr(sec, "onDeck", None))
         else:
-            cont = server.continueWatching()
-            recent = [i for s in _sections(server) for i in _recent_in(s, n)]
+            cont = [i for i in server.continueWatching() if getattr(i, "librarySectionTitle", None) not in skip]
+            recent = [i for s in _sections(server) if s.title not in skip for i in _recent_in(s, n)]
             recent.sort(key=lambda i: getattr(i, "addedAt", None) or datetime.min, reverse=True)
             deck = _safe(getattr(server.library, "onDeck", None))
         cw, nxt = split_continue([*cont, *deck], pct, lambda ep: _next_episode(ep))
@@ -630,6 +635,117 @@ def ws_av_pending(hass: HomeAssistant, connection, msg) -> None:
     if msg["cancel"]:
         avcontrol.cancel(tv["id"])
     connection.send_result(msg["id"], {"pending": avcontrol.pending(tv["id"])})
+
+
+# ------------------------------------------------------------------------------------------- demos
+
+def _demos(entry):
+    d = entry.runtime_data.demos
+    if d is None:
+        raise HomeAssistantError("Demos aren't set up")
+    return d
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/demos", vol.Optional("entry_id"): str, vol.Required("tv"): str})
+@websocket_api.async_response
+async def ws_demos(hass: HomeAssistant, connection, msg) -> None:
+    """The TV's demo settings, its sequences (the library, then its collections), what's running, and (admins) the
+    video libraries to choose from."""
+    from . import demos as dm  # noqa: PLC0415
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    d = _demos(entry)
+    s = d.settings(tv["id"])
+    out: dict[str, Any] = {"settings": s, "status": d.status(tv["id"]), "sequences": [], "error": None, "libraries": []}
+    try:
+        out["sequences"] = await entry.runtime_data.conn.async_call(tv.get(TV_USER), lambda srv: dm.sequences(srv, s["library"]))
+    except Exception as err:  # noqa: BLE001 - shown in the pane (the library isn't there, Plex is off)
+        out["error"] = str(err)
+    if connection.user.is_admin:
+        try:
+            out["libraries"] = await entry.runtime_data.conn.async_call(tv.get(TV_USER), lambda srv: [x.title for x in srv.library.sections()
+                                                                                                     if x.type in ("movie", "show")])
+        except Exception:  # noqa: BLE001
+            pass
+    connection.send_result(msg["id"], out)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/demos/clips", vol.Optional("entry_id"): str, vol.Required("tv"): str,
+                                  vol.Optional("sequence", default="all"): str})
+@websocket_api.async_response
+async def ws_demos_clips(hass: HomeAssistant, connection, msg) -> None:
+    """The clips of a sequence, in order, with their labels."""
+    from . import demos as dm  # noqa: PLC0415
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    d = _demos(entry)
+    sign = _signer(hass, entry.runtime_data.conn.server_id)
+    lib = d.settings(tv["id"])["library"]
+
+    def fetch(server):
+        return [{**item_dict(i, sign), "label": d.label(str(i.ratingKey), i.title)} for i in dm.clips(server, lib, msg["sequence"])]
+    await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/demos/settings", vol.Optional("entry_id"): str, vol.Required("tv"): str,
+                                  vol.Required("changes"): dict})
+@websocket_api.require_admin
+@callback
+def ws_demos_settings(hass: HomeAssistant, connection, msg) -> None:
+    """Change the TV's demo settings (admins)."""
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    try:
+        connection.send_result(msg["id"], _demos(entry).set_settings(tv["id"], msg["changes"]))
+    except (ValueError, TypeError) as err:
+        connection.send_error(msg["id"], "invalid", str(err))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/demos/label", vol.Optional("entry_id"): str,
+                                  vol.Required("key"): vol.All(str, vol.Match(r"^\d+$")), vol.Required("label"): str})
+@websocket_api.require_admin
+@callback
+def ws_demos_label(hass: HomeAssistant, connection, msg) -> None:
+    """A clip's label (empty: its Plex title)."""
+    entry = _entry(hass, msg.get("entry_id"))
+    _demos(entry).set_label(msg["key"], msg["label"])
+    connection.send_result(msg["id"], {"ok": True})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/demos/collection", vol.Optional("entry_id"): str, vol.Required("tv"): str,
+                                  vol.Required("op"): vol.In(["create", "add", "remove", "move", "rename", "delete"]),
+                                  vol.Optional("id"): str, vol.Optional("title"): str,
+                                  vol.Optional("keys"): [vol.All(str, vol.Match(r"^\d+$"))],
+                                  vol.Optional("key"): vol.All(str, vol.Match(r"^\d+$")), vol.Optional("after"): vol.Any(None, vol.All(str, vol.Match(r"^\d+$")))})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_demos_collection(hass: HomeAssistant, connection, msg) -> None:
+    """The Demo builder: make and edit the demo library's collections (as the server owner)."""
+    from . import demos as dm  # noqa: PLC0415
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    lib = _demos(entry).settings(tv["id"])["library"]
+    await _run(hass, entry.runtime_data.conn, connection, msg, "", lambda srv: dm.collection_edit(srv, lib, msg["op"], msg))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/demos/subscribe", vol.Optional("entry_id"): str, vol.Required("tv"): str})
+@callback
+def ws_demos_subscribe(hass: HomeAssistant, connection, msg) -> None:
+    """What the TV's demo is doing, now and whenever it changes."""
+    from homeassistant.helpers.dispatcher import async_dispatcher_connect  # noqa: PLC0415
+
+    from . import demos as dm  # noqa: PLC0415
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    d = _demos(entry)
+
+    @callback
+    def _send(tv_id: str | None = None) -> None:
+        if tv_id in (None, tv["id"]):
+            connection.send_message(websocket_api.event_message(msg["id"], d.status(tv["id"])))
+    connection.subscriptions[msg["id"]] = async_dispatcher_connect(hass, dm.SIGNAL, _send)
+    connection.send_result(msg["id"])
+    _send()
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/markers", vol.Optional("entry_id"): str, vol.Required("tv"): str})

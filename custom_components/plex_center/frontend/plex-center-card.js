@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.27.155
+// Version: v2026.11.27.156
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.27.155';
+const BUILD_NUMBER = 'v2026.11.27.156';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -2252,6 +2252,39 @@ const CARD_CSS = `
 .plc-remote.condensed .plc-rm-title, .plc-remote.condensed .plc-rm-ends b, .plc-remote.condensed .lbl {
   font-family: "Bebas Neue", "Oswald", "Roboto Condensed", sans-serif-condensed, "Bahnschrift Condensed", "Arial Narrow", sans-serif; font-stretch: condensed; letter-spacing: .02em; }
 .plc-rm-head { display: flex; align-items: flex-end; gap: 16px; }
+.plc-rm-demobtn { flex: none; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid var(--rm-line); background: none; color: var(--rm-a); font: inherit; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; cursor: pointer; }
+.plc-rm-demobtn.on { border-color: var(--rm-a); background: color-mix(in srgb, var(--rm-a) 18%, transparent); }
+.plc-remote.demos { padding-right: calc(min(440px, 44vw) + 40px); }
+.plc-rm-demoslot { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 44vw); z-index: 3; background: var(--rm-p); border-left: 1px solid var(--rm-line);
+  padding: max(18px, env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box; display: flex; }
+@media (max-width: 700px) { .plc-remote.demos { padding-right: 26px; } .plc-rm-demoslot { width: 100%; top: 34%; border-left: none; border-top: 1px solid var(--rm-line); border-radius: 18px 18px 0 0; } }
+.plc-dm { flex: 1 1 0; min-width: 0; max-width: 100%; min-height: 0; display: flex; flex-direction: column; gap: 10px; color: var(--rm-a); }
+.plc-dm-head { display: flex; align-items: center; gap: 6px; min-width: 0; } .plc-dm-head > * { flex: none; } .plc-dm-head .sp { flex: 1; } .plc-dm-head h3 { margin: 0; font-size: 18px; letter-spacing: .12em; text-transform: uppercase; }
+.plc-dm .sp { flex: 1; }
+.plc-dm-tb { display: inline-flex; align-items: center; gap: 4px; min-width: 34px; height: 34px; padding: 0 8px; justify-content: center; border-radius: 999px; border: 1px solid var(--rm-line); background: none; color: inherit; font: inherit; cursor: pointer; }
+.plc-dm-tb.bad { color: var(--error-color, #db4437); } .plc-dm-tb:disabled { opacity: .3; }
+.plc-dm-seqs, .plc-dm-chips, .plc-dm-start { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.plc-dm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--rm-line); background: none; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.plc-dm-chip span { opacity: .6; font-size: .9em; } .plc-dm-chip.on { border-color: var(--rm-a); background: color-mix(in srgb, var(--rm-a) 18%, transparent); font-weight: 700; }
+.plc-dm-go { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 999px; border: none; background: var(--rm-a); color: var(--rm-p); font: inherit; font-weight: 700; cursor: pointer; }
+.plc-dm-go:disabled { opacity: .35; }
+.plc-dm-now { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: color-mix(in srgb, var(--rm-a) 14%, transparent); }
+.plc-dm-nowt { flex: 1; min-width: 0; display: flex; flex-direction: column; } .plc-dm-nowt small { opacity: .75; } .plc-dm-nowt b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+.plc-dm-ctl { display: flex; gap: 6px; } .plc-dm-ctl button { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--rm-line); background: none; color: inherit; display: grid; place-items: center; cursor: pointer; }
+.plc-dm-list { flex: 1 1 auto; min-height: 0; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; }
+.plc-dm-row { display: flex; align-items: center; gap: 6px; min-width: 0; } .plc-dm-row.on .plc-dm-play { border-color: var(--rm-a); background: color-mix(in srgb, var(--rm-a) 14%, transparent); }
+.plc-dm-list.pick .plc-dm-row { padding: 4px 6px; border-radius: 12px; border: 1px solid var(--rm-line); cursor: pointer; }
+.plc-dm-play { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 10px 6px 6px; border-radius: 12px; border: 1px solid var(--rm-line); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.plc-dm .n { width: 22px; text-align: center; opacity: .6; font-size: 12px; flex: none; }
+.plc-dm .th { width: 72px; height: 40px; flex: none; border-radius: 6px; background: center / cover no-repeat rgba(255,255,255,.06); }
+.plc-dm .t { flex: 1; min-width: 0; display: flex; flex-direction: column; } .plc-dm .t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; } .plc-dm .t small { opacity: .6; }
+.plc-dm-msg { opacity: .7; padding: 8px 2px; } .plc-dm-msg.bad { color: var(--error-color, #db4437); opacity: 1; }
+.plc-dm-form { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.plc-dm-g { margin-top: 8px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; opacity: .75; } .plc-dm-h { margin: 0; font-size: 12px; opacity: .65; }
+.plc-dm-f { display: flex; align-items: center; gap: 8px; } .plc-dm-f > span { flex: 0 0 44%; font-size: 13px; } .plc-dm-f em { font-style: normal; opacity: .6; }
+.plc-dm-f input, .plc-dm-f select, .plc-dm select { flex: 1; min-width: 0; padding: 7px 10px; border-radius: 10px; border: 1px solid var(--rm-line); background: rgba(255,255,255,.04); color: inherit; font: inherit; }
+.plc-dm-f input[type=number] { flex: 0 0 6em; } .plc-dm-c { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .plc-rm-ttl { flex: 1; min-width: 0; }
 .plc-rm-eyebrow { font-size: max(12px, calc(var(--rm-sub, 13px) * .95)); font-weight: 700; letter-spacing: .2em; text-transform: uppercase; opacity: .75; }
 .plc-rm-title { font-size: min(var(--rm-ttl, 60px), 9vw); font-weight: 800; line-height: 1; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
@@ -2289,6 +2322,10 @@ const CARD_CSS = `
 .plc-rm-btn .top { display: inline-flex; align-items: center; gap: 10px; }
 .plc-rm-btn ha-icon { --mdc-icon-size: var(--rm-ic, 32px); }
 .plc-rm-btn .lbl { font-size: min(var(--rm-lbl, 26px), 5vw); font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
+.plc-rm-bottom .plc-rm-btn { container-type: inline-size; }   /* labels sized by the button (the Demos pane narrows them) */
+.plc-remote .plc-rm-bottom .plc-rm-btn .lbl { font-size: min(var(--rm-lbl, 26px), 5vw, 8.5cqi); }
+.plc-rm-bottom .plc-rm-btn .top { max-width: 100%; min-width: 0; }
+.plc-rm-bottom .plc-rm-btn .lbl { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plc-rm-btn .sub { font-size: min(var(--rm-sub, 13px), 3.4vw); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; opacity: .7; text-align: center; }
 .plc-rm-btn.mute .top { flex-direction: column; gap: 4px; } .plc-rm-btn.mute .lbl { font-size: min(var(--rm-sub, 13px), 3.4vw); letter-spacing: .16em; }
 .plc-rm-btn.dark { background: #000; }
@@ -2332,6 +2369,7 @@ const CARD_CSS = `
   .plc-rm-bottom { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
   .plc-rm-bottom .plc-rm-btn .top { flex-direction: column; gap: 4px; }
   .plc-rm-bottom .plc-rm-btn .lbl { font-size: min(var(--rm-lbl, 30px), 4.2vw); }
+  .plc-remote .plc-rm-bottom .plc-rm-btn .lbl { font-size: min(var(--rm-lbl, 30px), 4.2vw, 11cqi); }
   .plc-rm-bottom .plc-rm-btn .sub { font-size: min(var(--rm-sub, 15px), 2.8vw); letter-spacing: .06em; }
   .plc-rm-bottom { grid-row: 4; grid-template-columns: 1fr 1fr; }
   .plc-rm-popslot { left: 16px; right: 16px; width: auto; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
@@ -2654,6 +2692,7 @@ class PlexCenterCard extends HTMLElement {
     this._root.addEventListener('pointerdown', (e) => { if (!this._rmScrub(e) && !this._onVolDrag(e)) this._onScrub(e); });
     this._wireGestures();
     this._wireHold();
+    this._wireDemos();
     this._root.addEventListener('keydown', (e) => {
       const h = (e.key === 'Enter' || e.key === ' ') && e.target.closest?.('.plc-sec-h[data-wtoggle]');
       if (h) { e.preventDefault(); h.click(); }
@@ -2680,6 +2719,20 @@ class PlexCenterCard extends HTMLElement {
       return ms > 0 ? { el, ms: Math.max(300, ms), label } : null;
     }
     return null;
+  }
+  /** Demo settings and the builder's Add to (change events inside the remote's Demos pane). */
+  _wireDemos() {
+    this._root.addEventListener('change', (e) => {
+      const el = e.target;
+      if (!el.closest?.('[data-dmslot]')) return;
+      if (el.dataset.dmset) {
+        const k = el.dataset.dmset, v = el.type === 'checkbox' ? el.checked : el.value.trim();
+        this._dmSet({ [k]: el.type === 'number' && v !== '' ? Number(v) : v });
+      } else if (el.hasAttribute('data-dmaddto') && el.value) {
+        const keys = [...(this._dmPick || [])];
+        if (keys.length) { this._dmPick = new Set(); this._dmCol('add', { id: el.value, keys }); }
+      }
+    });
   }
   _wireHold() {
     const cancel = () => { if (!this._hold) return; clearTimeout(this._hold.t); this._hold.el.classList.remove('plc-hold'); this._hold = null; };
@@ -5015,6 +5068,7 @@ Object.assign(PlexCenterCard.prototype, {
       if (t('[data-rmwake]')) { this._rmActive(); return; }   // blacked out: the first tap only wakes it
       this._rmActive();
       if (t('[data-rmclose]')) { this._closeRemote(); return; }
+      if (t('[data-dmslot]') || t('[data-rmdemos]')) { this._dmClick(e, t); return; }
       if (t('[data-rmpopx]')) { this._rmPop = null; this._rmPaintPop(); return; }
       if ((el = t('[data-rmsleep]'))) { this._rmSleepSet(el.dataset.rmsleep); return; }
       if ((el = t('[data-rmitem]'))) { const [k, i] = el.dataset.rmitem.split('|'); const x = this._rmItems(k)[Number(i)]; if (x) this._rmRun(x); return; }
@@ -5620,6 +5674,20 @@ class PlexCenterCardEditor extends HTMLElement {
   }
 
   /** A TV's settings (the integration's): its players and their state, volume, room, skip sizes. Admins edit them. */
+  /** Demos on this TV (the Showtime Remote's Demos button) and its library; the rest is set in the Demos pane. */
+  _demoSetting(t, dis) {
+    const k = `dm:${t.id}`, got = this._dmEd?.[k];
+    if (!got && this._hass) {
+      (this._dmEd ||= {})[k] = { loading: true };
+      ws(this._hass, 'demos', { tv: t.id }).then((r) => { this._dmEd[k] = r; this._render(); }).catch(() => { this._dmEd[k] = { failed: true }; });
+    }
+    if (!got || got.loading || got.failed) return '';
+    const s = got.settings || {}, libs = [...new Set([s.library, ...(got.libraries || [])])].filter(Boolean);
+    return `<div class="plce-group">Demos</div>
+      <label class="plce-check"><input type="checkbox" data-dmed="${esc(t.id)}|enabled"${s.enabled ? ' checked' : ''}${dis}>Demos on this TV (a Demos button in the Showtime Remote)</label>
+      ${s.enabled ? `<div class="plce-row plce-nowrap"><label class="lbl">Library</label><select data-dmed="${esc(t.id)}|library"${dis}>${libs.map((l) => `<option${l === s.library ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+        <p class="plce-hint">${got.error ? esc(got.error) : `${(got.sequences || []).length - 1} collection${(got.sequences || []).length === 2 ? '' : 's'} in it`}. It's left out of Home and the library tabs. The rest (what happens at a clip's end, the session entity, popups, the builder) is in the Showtime Remote's Demos pane.</p>` : ''}`;
+  }
   /** A TV's Easy AV Control room: found by itself (an activity uses the TV's player, or the same area), or picked. */
   _avSetting(t, dis) {
     const k = `av:${t.id}`, got = this._avEd?.[k];
@@ -5662,6 +5730,7 @@ class PlexCenterCardEditor extends HTMLElement {
       <p class="plce-hint">When a TV's Plex app can't seek exactly (the SHIELD): how far one press goes in its Plex app (Plex: Settings → Player).</p>
       ${num('skip_forward', 'Skip forward', 30)}${num('skip_back', 'Skip back', 10)}
       ${this._avSetting(t, dis)}
+      ${this._demoSetting(t, dis)}
       <div class="plce-group">Room (a theater with several devices)</div>
       <p class="plce-hint">Without Easy AV Control: what turns the room on and off, and when it's ready.</p>
       ${ent('power_entity', 'Room power', 'plce-dl-room')}
@@ -6999,6 +7068,11 @@ class PlexCenterCardEditor extends HTMLElement {
       if (!mins.length || mins.join(',') === '30,60,90') delete this._config.remote_sleep_min; else this._config.remote_sleep_min = mins;
       this._emit(); this._render();
     }));
+    all('[data-dmed]', (el) => el.addEventListener('change', () => {
+      const [id, key] = el.dataset.dmed.split('|');
+      ws(this._hass, 'demos/settings', { tv: id, changes: { [key]: el.type === 'checkbox' ? el.checked : el.value } })
+        .then(() => { delete this._dmEd?.[`dm:${id}`]; this._render(); }).catch((e) => window.alert(`Demos: ${e?.message || e}`));
+    }));
     all('[data-tvset]', (el) => el.addEventListener('change', () => {
       const [id, key] = el.dataset.tvset.split('|');
       this._saveTv(id, key, el.type === 'checkbox' ? el.checked : el.value.trim());
@@ -7123,6 +7197,179 @@ function rmEntityCall(entity) {
 }
 
 Object.assign(PlexCenterCard.prototype, {
+  // ---------------------------------------------------------------- Demos (the Showtime Remote's demo clips)
+  /** The remote TV's demo settings, sequences and live status. */
+  _dmLoad(force = false) {
+    const tv = this._rmTv();
+    if (!tv || !this._hass) return;
+    if (!force && this._dm?.tv === tv.id && Date.now() - this._dm.ts < 30000) return;
+    ws(this._hass, 'demos', { tv: tv.id }).then((r) => {
+      this._dm = { ...r, tv: tv.id, ts: Date.now() };
+      this._dmStatus = r.status;
+      if (r.settings?.enabled) this._dmSub(tv.id);
+      this._rmSig = null; this._renderRemote(); this._dmPaint(true);
+    }).catch(() => {});
+  },
+  _dmSub(tvId) {
+    if (this._dmSubTv === tvId) return;
+    this._dmUnsub?.then?.((u) => typeof u === 'function' && u()).catch?.(() => {});
+    this._dmSubTv = tvId;
+    const conn = this._hass?.connection;
+    if (!conn?.subscribeMessage) return;
+    this._dmUnsub = Promise.resolve(conn.subscribeMessage((st) => {
+      const was = this._dmStatus?.state;
+      this._dmStatus = st;
+      if (st?.state === 'idle' && was && was !== 'idle') this._v.dmSeqRun = null;
+      this._dmPaint();
+    }, { type: 'plex_center/demos/subscribe', tv: tvId })).catch(() => null);
+  },
+  async _dmClips(seq, force = false) {
+    const tv = this._rmTv(), key = `${tv?.id}|${seq}`;
+    if (!tv) return [];
+    if (!force && this._dmClipsBy?.[key]) return this._dmClipsBy[key];
+    const r = await ws(this._hass, 'demos/clips', { tv: tv.id, sequence: seq }).catch((e) => { this._toast(`Demos: ${e?.message || e}`); return []; });
+    (this._dmClipsBy ||= {})[key] = r || [];
+    this._dmPaint(true);
+    return r || [];
+  },
+  _dmPaint(force = false) {
+    const slot = this._root?.querySelector('[data-dmslot]');
+    if (!slot) return;
+    const html = this._dmPaneHtml();
+    if (force || slot.dataset.v !== html) { slot.dataset.v = html; slot.innerHTML = html; this._rmTickNow?.(); }
+  },
+  _dmPaneHtml() {
+    const d = this._dm, tv = this._rmTv(), admin = !!this._hass?.user?.is_admin;
+    if (!d || d.tv !== tv?.id) return '<div class="plc-dm"><div class="plc-dm-msg">Loading…</div></div>';
+    const view = admin ? this._v.dmView : null;
+    const head = (title, extra = '') => `<div class="plc-dm-head"><h3>${esc(title)}</h3><span class="sp"></span>${extra}
+      <button class="plc-rm-x small" data-dmclose title="Close Demos"><ha-icon icon="mdi:close"></ha-icon></button></div>`;
+    if (view === 'settings') return `<div class="plc-dm">${head('Demo settings', '<button class="plc-dm-tb" data-dmview="">Done</button>')}${this._dmSettingsHtml()}</div>`;
+    if (view === 'build') return `<div class="plc-dm">${head('Demo builder', '<button class="plc-dm-tb" data-dmview="">Done</button>')}${this._dmBuildHtml()}</div>`;
+    const st = this._dmStatus || { state: 'idle' }, running = st.state && st.state !== 'idle';
+    const seq = this._v.dmSeq || 'all', key = `${tv.id}|${seq}`, list = this._dmClipsBy?.[key];
+    if (!list && !d.error) queueMicrotask(() => this._dmClips(seq));
+    const mode = this._v.dmMode || 'all';
+    const tools = admin ? `<button class="plc-dm-tb" data-dmview="build" title="Make and edit collections"><ha-icon icon="mdi:playlist-edit"></ha-icon></button>
+      <button class="plc-dm-tb" data-dmview="settings" title="Demo settings"><ha-icon icon="mdi:cog-outline"></ha-icon></button>` : '';
+    const seqs = (d.sequences || []).map((x) => `<button class="plc-dm-chip${x.id === seq ? ' on' : ''}" data-dmseq="${esc(x.id)}">${esc(x.title)}<span>${x.count ?? ''}</span></button>`).join('');
+    const word = { starting: 'Starting', playing: 'Playing', paused: 'Paused', gap: 'Next in', ending: 'Ending in' }[st.state] || st.state;
+    const now = running ? `<div class="plc-dm-now"><div class="plc-dm-nowt"><small>${esc(word)} · clip ${st.index} of ${st.total}${['playing', 'gap', 'ending'].includes(st.state) ? ' · <b data-dmleft></b>' : ''}</small><b>${esc(st.label || st.title || '')}</b></div>
+      <div class="plc-dm-ctl"><button data-dmctl="previous" title="Previous clip"><ha-icon icon="mdi:skip-previous"></ha-icon></button>
+        <button data-dmctl="${st.state === 'paused' ? 'resume' : 'pause'}" title="${st.state === 'paused' ? 'Resume' : 'Pause'}"><ha-icon icon="mdi:${st.state === 'paused' ? 'play' : 'pause'}"></ha-icon></button>
+        <button data-dmctl="next" title="Next clip"><ha-icon icon="mdi:skip-next"></ha-icon></button>
+        <button data-dmctl="stop" title="Stop the demo"><ha-icon icon="mdi:stop"></ha-icon></button></div></div>` : '';
+    const rows = !list ? '<div class="plc-dm-msg">Loading the clips…</div>' : !list.length ? '<div class="plc-dm-msg">No clips here.</div>'
+      : list.map((c, i) => {
+        const on = running && st.sequence === seq && st.index === i + 1;
+        return `<div class="plc-dm-row${on ? ' on' : ''}"><button class="plc-dm-play" data-dmplay="${i + 1}" title="Play ${esc(c.label || c.title)}">
+          <span class="n">${i + 1}</span><span class="th"${c.poster || c.art ? ` style="background-image:url('${cssUrl(c.poster || c.art)}')"` : ''}></span>
+          <span class="t"><b>${esc(c.label || c.title)}</b><small>${esc(c.duration ? fmtTime(c.duration) : '')}</small></span><ha-icon icon="mdi:${on ? 'volume-high' : 'play'}"></ha-icon></button>
+          ${admin ? `<button class="plc-dm-tb" data-dmlabel="${esc(c.key)}" data-dmtitle="${esc(c.title)}" title="Label"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>` : ''}</div>`;
+      }).join('');
+    return `<div class="plc-dm">${head('Demos', tools)}
+      ${d.error ? `<div class="plc-dm-msg bad">${esc(d.error)}</div>` : ''}
+      <div class="plc-dm-seqs">${seqs}</div>${now}
+      <div class="plc-dm-start">${[['one', 'One clip'], ['all', 'Play through'], ['loop', 'Loop']].map(([v, n]) => `<button class="plc-dm-chip${mode === v ? ' on' : ''}" data-dmmode="${v}">${n}</button>`).join('')}
+        <span class="sp"></span><button class="plc-dm-go" data-dmplay="1"><ha-icon icon="mdi:play"></ha-icon>${mode === 'one' ? 'Play the first' : 'Play all'}</button></div>
+      <div class="plc-dm-list">${rows}</div></div>`;
+  },
+  _dmSettingsHtml() {
+    const s = this._dm?.settings || {}, libs = this._dm?.libraries || [];
+    const DEF = { lead_s: 1, gap_s: 3, last_pause_s: 10, popup_s: 5 };
+    const num = (k, label, unit, step = 1) => `<label class="plc-dm-f"><span>${label}</span><input type="number" step="${step}" data-dmset="${k}" value="${esc(s[k] ?? '')}" placeholder="${DEF[k] ?? ''}"><em>${unit}</em></label>`;
+    const txt = (k, label, ph = '') => `<label class="plc-dm-f"><span>${label}</span><input type="text" data-dmset="${k}" value="${esc(s[k] || '')}" placeholder="${esc(ph)}"></label>`;
+    const chk = (k, label) => `<label class="plc-dm-c"><input type="checkbox" data-dmset="${k}"${s[k] ? ' checked' : ''}>${label}</label>`;
+    const ents = Object.keys(this._hass?.states || {}).filter((e) => /^(input_boolean|switch|light|script|scene|automation|input_select|select|input_number|number|input_button|button|input_text)\./.test(e)).sort();
+    return `<div class="plc-dm-form">
+      <label class="plc-dm-f"><span>Library</span><select data-dmset="library">${[...new Set([s.library, ...libs])].filter(Boolean).map((l) => `<option${l === s.library ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
+      <div class="plc-dm-g">At the end of each clip</div>
+      <div class="plc-dm-chips">${[['pause', 'Pause (the last frame stays)'], ['stop', 'Stop']].map(([v, n]) => `<button class="plc-dm-chip${(s.end || 'pause') === v ? ' on' : ''}" data-dmend="${v}">${n}</button>`).join('')}</div>
+      ${num('lead_s', 'This long before its end', 's', 0.1)}${num('gap_s', 'Then the next one after', 's')}${num('last_pause_s', 'After the last clip: pause for, then stop', 's')}
+      <div class="plc-dm-g">Demo session</div>
+      <p class="plc-dm-h">Set at the start of a demo and at its end (also when it's stopped or fails): for example a lighting-automation bypass. On / off, an option, a number; scripts and scenes just run.</p>
+      <datalist id="plc-dm-ents">${ents.map((e) => `<option value="${esc(e)}">`).join('')}</datalist>
+      <label class="plc-dm-f"><span>At the start, set</span><input type="text" list="plc-dm-ents" data-dmset="start_entity" value="${esc(s.start_entity || '')}" placeholder="input_boolean.…"></label>
+      ${txt('start_value', 'to', 'on')}
+      <label class="plc-dm-f"><span>At the end, set</span><input type="text" list="plc-dm-ents" data-dmset="stop_entity" value="${esc(s.stop_entity || '')}" placeholder="the same"></label>
+      ${txt('stop_value', 'to', 'off')}
+      <div class="plc-dm-g">On the TV (PiPup popups)</div>
+      ${chk('popup_label', "Each clip's label")}${chk('popup_number', 'Its number (3 / 8)')}
+      ${txt('popup_start', 'When a demo starts, show', 'nothing')}${txt('popup_end', 'When it ends, show', 'nothing')}${num('popup_s', 'For', 's')}
+      <p class="plc-dm-h">The volume is never changed: set it as you like during the demo.</p></div>`;
+  },
+  _dmBuildHtml() {
+    const tv = this._rmTv(), all = this._dmClipsBy?.[`${tv?.id}|all`];
+    if (!all) { queueMicrotask(() => this._dmClips('all')); return '<div class="plc-dm-msg">Loading the clips…</div>'; }
+    const pick = this._dmPick ||= new Set(), cols = (this._dm?.sequences || []).filter((x) => x.id !== 'all');
+    const sel = this._v.dmBuildCol && cols.find((c) => c.id === this._v.dmBuildCol), cl = sel && this._dmClipsBy?.[`${tv.id}|${sel.id}`];
+    if (sel && !cl) queueMicrotask(() => this._dmClips(sel.id));
+    return `<p class="plc-dm-h">Tick clips, then make a collection of them or add them to one. A collection plays in the order shown; every Plex user sees it.</p>
+      <div class="plc-dm-chips"><button class="plc-dm-go" data-dmb="create"${pick.size ? '' : ' disabled'}><ha-icon icon="mdi:plus"></ha-icon>New collection (${pick.size})</button>
+        ${cols.length ? `<select data-dmaddto><option value="">Add to…</option>${cols.map((c) => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join('')}</select>` : ''}</div>
+      <div class="plc-dm-list pick">${all.map((c) => `<label class="plc-dm-row"><input type="checkbox" data-dmpick="${esc(c.key)}"${pick.has(c.key) ? ' checked' : ''}>
+        <span class="th"${c.poster ? ` style="background-image:url('${cssUrl(c.poster)}')"` : ''}></span><span class="t"><b>${esc(c.label || c.title)}</b><small>${esc(c.duration ? fmtTime(c.duration) : '')}</small></span></label>`).join('')}</div>
+      ${cols.length ? `<div class="plc-dm-g">Collections</div><div class="plc-dm-chips">${cols.map((c) => `<button class="plc-dm-chip${sel?.id === c.id ? ' on' : ''}" data-dmbcol="${esc(c.id)}">${esc(c.title)}<span>${c.count ?? ''}</span></button>`).join('')}</div>` : ''}
+      ${sel ? `<div class="plc-dm-chips"><button class="plc-dm-tb" data-dmb="rename">Rename</button><button class="plc-dm-tb bad" data-dmb="delete">Delete the collection</button></div>
+        <div class="plc-dm-list">${!cl ? '<div class="plc-dm-msg">Loading…</div>' : cl.map((c, i) => `<div class="plc-dm-row"><span class="n">${i + 1}</span><span class="t"><b>${esc(c.label || c.title)}</b></span>
+          <button class="plc-dm-tb" data-dmmove="${esc(c.key)}|up"${i ? '' : ' disabled'} title="Up"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
+          <button class="plc-dm-tb" data-dmmove="${esc(c.key)}|down"${i < cl.length - 1 ? '' : ' disabled'} title="Down"><ha-icon icon="mdi:arrow-down"></ha-icon></button>
+          <button class="plc-dm-tb bad" data-dmrm="${esc(c.key)}" title="Remove from the collection"><ha-icon icon="mdi:close"></ha-icon></button></div>`).join('')}</div>` : ''}`;
+  },
+  async _dmCol(op, data) {
+    const tv = this._rmTv();
+    try {
+      await ws(this._hass, 'demos/collection', { tv: tv.id, op, ...data });
+      this._dmClipsBy = {}; this._dmLoad(true);
+    } catch (e) { this._toast(`Demo builder: ${e?.message || e}`); }
+  },
+  _dmClick(e, t) {
+    let el;
+    const tv = this._rmTv();
+    if (t('[data-rmdemos]')) { this._v.rmDemos = !this._v.rmDemos; this._rmSig = null; this._renderRemote(); if (this._v.rmDemos) this._dmLoad(true); return; }
+    if (t('[data-dmclose]')) { this._v.rmDemos = false; this._v.dmView = null; this._rmSig = null; this._renderRemote(); return; }
+    if ((el = t('[data-dmview]'))) { this._v.dmView = el.dataset.dmview || null; this._dmPaint(true); return; }
+    if ((el = t('[data-dmseq]'))) { this._v.dmSeq = el.dataset.dmseq; this._dmPaint(true); return; }
+    if ((el = t('[data-dmmode]'))) { this._v.dmMode = el.dataset.dmmode; this._dmPaint(true); return; }
+    if ((el = t('[data-dmctl]'))) { this._hass.callService('plex_center', 'demo_control', { tv: tv.id, action: el.dataset.dmctl }).catch((err) => this._toast(`Demo: ${err?.message || err}`)); return; }
+    if ((el = t('[data-dmplay]'))) {
+      const n = Number(el.dataset.dmplay), seq = this._v.dmSeq || 'all', st = this._dmStatus;
+      const call = st && st.state !== 'idle' && st.sequence === seq && !el.classList.contains('plc-dm-go')
+        ? this._hass.callService('plex_center', 'demo_control', { tv: tv.id, action: String(n) })
+        : this._hass.callService('plex_center', 'demo_play', { tv: tv.id, sequence: seq, start: n, mode: this._v.dmMode || 'all' });
+      call.catch((err) => this._toast(`Demo: ${err?.message || err}`));
+      return;
+    }
+    if ((el = t('[data-dmlabel]'))) {
+      const v = window.prompt(`Label for ${el.dataset.dmtitle} (empty: its Plex title)`, '');
+      if (v === null) return;
+      ws(this._hass, 'demos/label', { key: el.dataset.dmlabel, label: v }).then(() => { this._dmClipsBy = {}; this._dmPaint(true); }).catch((err) => this._toast(String(err?.message || err)));
+      return;
+    }
+    if ((el = t('[data-dmend]'))) { this._dmSet({ end: el.dataset.dmend }); return; }
+    if ((el = t('[data-dmpick]'))) { const pick = this._dmPick ||= new Set(); if (el.checked) pick.add(el.dataset.dmpick); else pick.delete(el.dataset.dmpick); this._dmPaint(true); return; }
+    if ((el = t('[data-dmbcol]'))) { this._v.dmBuildCol = el.dataset.dmbcol; this._dmPaint(true); return; }
+    if ((el = t('[data-dmb]'))) {
+      const op = el.dataset.dmb, col = this._v.dmBuildCol, keys = [...(this._dmPick || [])];
+      if (op === 'create') { const name = window.prompt('Name of the new collection', 'Demo'); if (name) { this._dmPick = new Set(); this._dmCol('create', { title: name, keys }); } }
+      if (op === 'rename' && col) { const name = window.prompt('New name'); if (name) this._dmCol('rename', { id: col, title: name }); }
+      if (op === 'delete' && col && window.confirm('Delete this collection? The clips stay in the library.')) { this._v.dmBuildCol = null; this._dmCol('delete', { id: col }); }
+      return;
+    }
+    if ((el = t('[data-dmmove]'))) {
+      const [key, dir] = el.dataset.dmmove.split('|'), col = this._v.dmBuildCol, cl = this._dmClipsBy?.[`${tv.id}|${col}`] || [];
+      const i = cl.findIndex((c) => c.key === key);
+      const after = dir === 'up' ? (i >= 2 ? cl[i - 2].key : null) : cl[i + 1]?.key;
+      if (i >= 0) this._dmCol('move', { id: col, key, after });
+      return;
+    }
+    if ((el = t('[data-dmrm]'))) { this._dmCol('remove', { id: this._v.dmBuildCol, keys: [el.dataset.dmrm] }); return; }
+  },
+  _dmSet(changes) {
+    const tv = this._rmTv();
+    ws(this._hass, 'demos/settings', { tv: tv.id, changes }).then((s) => { this._dm.settings = s; if ('library' in changes) { this._dmClipsBy = {}; this._dmLoad(true); } this._dmPaint(true); })
+      .catch((e) => this._toast(`Demo settings: ${e?.message || e}`));
+  },
   /** The TV the remote controls: the page's (pick another TV and the remote follows). */
   _rmTv() { return this._tv(); },
   /** A per-TV Remote setting (RM_PER_TV): the TV's own when it has its own setup, else the shared one. */
@@ -7142,6 +7389,7 @@ Object.assign(PlexCenterCard.prototype, {
   },
   _openRemote() {
     this._v.remote = true; this._rmPop = null; this._rmSig = null;
+    this._dmLoad();
     this._rmAwake();
     this._renderRemote(true);
     this._fetchSleep();
@@ -7188,7 +7436,8 @@ Object.assign(PlexCenterCard.prototype, {
     const tv = this._rmTv(), np = tv ? nowPlaying(this._hass, tv, this._c) : null, live = !!np?.live, playing = live && np.st.state === 'playing';
     const lights = this._rmItems('lights'), extra = this._rmItems('extra');
     const litSig = [...lights, ...extra].map((x) => this._hass.states[x.lit || x.entity]?.state);
-    const sig = JSON.stringify([live, playing, np?.title, np?.sub, litSig, this._rmPop, this._sleep?.[tv?.id], cfg(this._c, 'remote_font'), this._rmCfg('remote_lights_popup'), JSON.stringify(this._c.remote_buttons || {}), lights.length, extra.length, tv?.id]);
+    const demosOn = !!(this._dm?.tv === tv?.id && this._dm?.settings?.enabled);
+    const sig = JSON.stringify([demosOn, demosOn && this._v.rmDemos, live, playing, np?.title, np?.sub, litSig, this._rmPop, this._sleep?.[tv?.id], cfg(this._c, 'remote_font'), this._rmCfg('remote_lights_popup'), JSON.stringify(this._c.remote_buttons || {}), lights.length, extra.length, tv?.id]);
     if (!force && sig === this._rmSig) return;
     this._rmSig = sig;
     const b = (id) => this._rmBtn(id), step = Number(cfg(this._c, 'remote_skip')) || 10;
@@ -7203,10 +7452,11 @@ Object.assign(PlexCenterCard.prototype, {
     const rightHtml = right.map((x) => (x.id === 'lighting' ? this._rmBtnHtml(x) : this._rmItemHtml(x, lights.includes(x) ? 'lights' : 'extra'))).join('');
     const px = (k) => Math.max(6, Number(cfg(this._c, k)) || DEFAULTS[k]);
     const sizes = `--rm-lbl:${px('remote_label_px')}px;--rm-sub:${px('remote_sub_px')}px;--rm-ic:${px('remote_icon_px')}px;--rm-ttl:${px('remote_title_px')}px`;
-    slot.innerHTML = `<div class="plc-remote${cfg(this._c, 'remote_font') === 'condensed' ? ' condensed' : ''}" style="${sizes}" data-rmroot>
+    slot.innerHTML = `<div class="plc-remote${cfg(this._c, 'remote_font') === 'condensed' ? ' condensed' : ''}${demosOn && this._v.rmDemos ? ' demos' : ''}" style="${sizes}" data-rmroot>
       <div class="plc-rm-head"><div class="plc-rm-ttl"><div class="plc-rm-eyebrow">${esc(state)}${tv ? ` · ${esc(tvLabel(tv))}` : ''}</div>
         <div class="plc-rm-title">${esc(title)}</div>${live && np.sub ? `<div class="plc-rm-sub">${esc(np.sub)}</div>` : ''}</div>
         <div class="plc-rm-ends"><span>Ends at</span><b data-rmends>--:--</b></div>
+        ${demosOn ? `<button class="plc-rm-demobtn${this._v.rmDemos ? ' on' : ''}" data-rmdemos title="Demo clips"><ha-icon icon="mdi:filmstrip-box-multiple"></ha-icon><span>Demos</span></button>` : ''}
         <button class="plc-rm-x" data-rmclose title="Close the remote"><ha-icon icon="mdi:close"></ha-icon></button></div>
       <div class="plc-rm-bar"><i data-rmbar></i></div>
       <div class="plc-rm-grid">
@@ -7217,9 +7467,10 @@ Object.assign(PlexCenterCard.prototype, {
         <div class="plc-rm-bottom">${this._rmBtnHtml(b('intermission'), 'wide')}${this._rmBtnHtml(b('endshow'), 'wide')}
           ${this._rmBtnHtml({ ...b('sleep'), sub: sleepSub }, `wide${sl ? ' lit' : ''}`)}</div>
       </div>
-      <div class="plc-rm-popslot"></div>
+      <div class="plc-rm-popslot"></div>${demosOn && this._v.rmDemos ? '<div class="plc-rm-demoslot" data-dmslot></div>' : ''}
       <div class="plc-rm-black" data-rmwake><span class="plc-rm-clock" data-rmclock></span></div></div>`;
     this._rmPaintPop();
+    this._dmPaint(true);
     this._rmTickNow();
     clearInterval(this._rmTickT); this._rmTickT = setInterval(() => this._rmTickNow(), 1000);
     if (force) this._rmActive();
@@ -7232,6 +7483,8 @@ Object.assign(PlexCenterCard.prototype, {
     const d = Number(np?.st?.attributes?.media_duration) || 0, p = np?.live ? livePosition(np.st) ?? 0 : 0;
     const ends = np?.live && d ? endsAt(d - p, cfg(this._c, 'clock')) : '--:--';
     const e = box.querySelector('[data-rmends]'); if (e) e.textContent = ends;
+    const dl = box.querySelector('[data-dmleft]'), at = this._dmStatus?.ends_at;
+    if (dl) dl.textContent = at ? fmtTime(Math.max(0, Math.round(at - Date.now() / 1000))) : '';
     const bar = box.querySelector('[data-rmbar]'); if (bar) bar.style.width = d ? `${Math.min(100, (p / d) * 100)}%` : '0';
     const sp = this._rmSeekTo ?? (this._rmHeld && Date.now() - this._rmHeld.at < 20000 && Math.abs(p - this._rmHeld.to) > 15 ? this._rmHeld.to : p);
     if (this._rmHeld && Math.abs(p - this._rmHeld.to) <= 15) this._rmHeld = null;

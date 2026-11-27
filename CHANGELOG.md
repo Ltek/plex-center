@@ -1,5 +1,15 @@
 # Changelog
 
+## v2026.11.27.156
+
+- **Demos**: a library of short clips (default **Demos**, Other Videos) that plays one clip, all of them, or in a loop. Each clip is paused (or stopped) just before its end so Plex's "up next" screen doesn't show, then the next one starts after a gap (3 s by default). After the last clip it stays paused for a while (10 s by default), then stops. The volume is never changed.
+- Turned on per TV (TV settings → **Demos on this TV**, and its library). The demo library is then left out of Home, the library tabs, Continue Watching, Recently Added and Surprise me.
+- **Showtime Remote → Demos**: the whole library and its collections, the clips, what's playing ("clip 3 of 8" and time left), Previous / Pause / Next / Stop.
+- Admins: the **Demo settings** (end with Pause or Stop and how long before the end, gap, the after-last pause, a session entity set at the start and back at the end, also after a stop, an error or a restart, and PiPup popups) and the **Demo builder** (make, add to, reorder, rename and delete collections; clip labels).
+- New actions: `plex_center.demo_play`, `plex_center.demo_control`, `plex_center.demo_status` (returns the status and the last clip's timing).
+- Showtime Remote: the Intermission / End show / Sleep labels fit their buttons when the remote is narrow.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.27.155
 
 - **Play when ready (Easy AV Control)**: Play on a title while the TV's room is off turns the room on first, then plays once it's on. With several activities that use the TV, the card asks which one; otherwise it starts the only one (or the room's default, if it uses the TV). A room that's on with an activity that doesn't use the TV is switched to one that does.
