@@ -115,7 +115,9 @@
         "tv": {"name": "TV", "description": "Name or id of the TV."},
         "sequence": {"name": "Sequence", "description": "all (the whole library), or a collection of it (its name or key)."},
         "start": {"name": "Start at", "description": "The clip to start with (1 = the first)."},
-        "mode": {"name": "Mode", "description": "one (just that clip), all (to the end), or loop."}
+        "mode": {"name": "Mode", "description": "one (just that clip), all (to the end), or loop."},
+        "skip": {"name": "Leave out", "description": "Keys of clips to leave out of this session."},
+        "order": {"name": "Order", "description": "Keys of clips in the order to play them, for this session only (the collection keeps its own)."}
       }
     },
     "demo_control": {
@@ -123,7 +125,7 @@
       "description": "Next, previous, pause, resume or stop the demo running on a TV (or a clip number to play now).",
       "fields": {
         "tv": {"name": "TV", "description": "Name or id of the TV."},
-        "action": {"name": "Action", "description": "next, previous, pause, resume, stop, or a clip number."}
+        "action": {"name": "Action", "description": "next, previous, pause, resume, stop, a clip number, skip:<key> / unskip:<key> to leave a clip out or put it back, or move:<key>:<after key or first> to change the order."}
       }
     },
     "play": {

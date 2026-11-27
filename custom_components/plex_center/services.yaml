@@ -151,6 +151,14 @@ demo_play:
       selector:
         select:
           options: [one, all, loop]
+    skip:
+      example: '["720622"]'
+      selector:
+        object:
+    order:
+      example: '["720625", "720622"]'
+      selector:
+        object:
 
 demo_control:
   fields:

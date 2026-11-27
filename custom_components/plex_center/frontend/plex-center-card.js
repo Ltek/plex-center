@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.27.157
+// Version: v2026.11.27.158
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.27.157';
+const BUILD_NUMBER = 'v2026.11.27.158';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -2279,6 +2279,20 @@ const CARD_CSS = `
 .plc-dm .n { width: 22px; text-align: center; opacity: .6; font-size: 12px; flex: none; }
 .plc-dm .th { width: 72px; height: 40px; flex: none; border-radius: 6px; background: center / cover no-repeat rgba(255,255,255,.06); }
 .plc-dm .t { flex: 1; min-width: 0; display: flex; flex-direction: column; } .plc-dm .t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; } .plc-dm .t small { opacity: .6; }
+.plc-dm-chip ha-icon { --mdc-icon-size: 16px; }
+.plc-dm-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; opacity: .9; } .plc-dm-sum .out { color: var(--warning-color, #e0a030); } .plc-dm-sum .plc-dm-tb { height: 28px; margin-left: auto; font-size: 12px; }
+.plc-dm-sess { opacity: .75; font-size: 12px; margin-top: 2px; }
+.plc-dm .t small em { font-style: normal; font-weight: 600; opacity: 1; }
+.plc-dm-row.on .t small em { color: var(--rm-a); }
+.plc-dm-row.done .plc-dm-play { opacity: .55; } .plc-dm-row.done .n ha-icon { --mdc-icon-size: 16px; color: var(--success-color, #43a047); }
+.plc-dm-row.out .plc-dm-play { opacity: .4; } .plc-dm-row.out .t b { text-decoration: line-through; }
+.plc-dm-x { flex: none; width: 34px; height: 34px; border-radius: 50%; border: none; background: none; color: inherit; display: grid; place-items: center; cursor: pointer; }
+.plc-dm-list .t b { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.25; overflow-wrap: anywhere; }
+.plc-dm-mv { flex: none; display: flex; flex-direction: column; gap: 2px; }
+.plc-dm-mv button { width: 32px; height: 19px; border-radius: 8px; border: 1px solid var(--rm-line); background: none; color: inherit; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.plc-dm-mv button:disabled { opacity: .25; cursor: default; } .plc-dm-mv ha-icon { --mdc-icon-size: 18px; }
+.plc-dm-skip { flex: none; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--rm-line); background: none; color: inherit; display: grid; place-items: center; cursor: pointer; opacity: .75; }
+.plc-dm-skip.out { opacity: 1; color: var(--warning-color, #e0a030); border-color: currentColor; }
 .plc-dm-msg { opacity: .7; padding: 8px 2px; } .plc-dm-msg.bad { color: var(--error-color, #db4437); opacity: 1; }
 .plc-dm-form { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .plc-dm-g { margin-top: 8px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; opacity: .75; } .plc-dm-h { margin: 0; font-size: 12px; opacity: .65; }
@@ -7249,6 +7263,8 @@ Object.assign(PlexCenterCard.prototype, {
     this._dmUnsub = Promise.resolve(conn.subscribeMessage((st) => {
       const was = this._dmStatus?.state;
       this._dmStatus = st;
+      if (st && st.state !== 'idle' && st.sequence) (this._v.dmSkip ||= {})[st.sequence] = new Set(st.skip || []);
+      if (st && st.state !== 'idle' && st.sequence && st.keys?.length) (this._v.dmOrder ||= {})[st.sequence] = [...st.keys];
       if (st?.state === 'idle' && was && was !== 'idle') this._v.dmSeqRun = null;
       this._dmPaint();
     }, { type: 'plex_center/demos/subscribe', tv: tvId })).catch(() => null);
@@ -7257,7 +7273,11 @@ Object.assign(PlexCenterCard.prototype, {
     const tv = this._rmTv(), key = `${tv?.id}|${seq}`;
     if (!tv) return [];
     if (!force && this._dmClipsBy?.[key]) return this._dmClipsBy[key];
+    const busy = (this._dmBusy ||= new Set());
+    if (busy.has(key) && !force) return [];
+    busy.add(key);
     const r = await ws(this._hass, 'demos/clips', { tv: tv.id, sequence: seq }).catch((e) => { this._toast(`Demos: ${e?.message || e}`); return []; });
+    busy.delete(key);
     (this._dmClipsBy ||= {})[key] = r || [];
     this._dmPaint(true);
     return r || [];
@@ -7268,36 +7288,79 @@ Object.assign(PlexCenterCard.prototype, {
     const html = this._dmPaneHtml();
     if (force || slot.dataset.v !== html) { slot.dataset.v = html; slot.innerHTML = html; this._rmTickNow?.(); }
   },
+  /** Clips left out of a sequence: the running demo's (from Home Assistant), else the ones picked here before Play. */
+  _dmSkipSet(seq) {
+    const st = this._dmStatus;
+    if (st && st.state !== 'idle' && st.sequence === seq) return new Set(st.skip || []);
+    return ((this._v.dmSkip ||= {})[seq] ||= new Set());
+  },
+  /** A sequence's clips in this demo's order: the running demo's, else the one picked here before Play. */
+  _dmOrdered(seq, list) {
+    const st = this._dmStatus, here = st && st.state !== 'idle' && st.sequence === seq;
+    const keys = here ? st.keys : this._v.dmOrder?.[seq];
+    if (!list || !keys?.length) return list;
+    const by = new Map(list.map((c) => [c.key, c])), out = keys.map((k) => by.get(k)).filter(Boolean);
+    list.forEach((c) => { if (!keys.includes(c.key)) out.push(c); });
+    return out;
+  },
   _dmPaneHtml() {
     const d = this._dm, tv = this._rmTv(), admin = !!this._hass?.user?.is_admin;
     if (!d || d.tv !== tv?.id) return '<div class="plc-dm"><div class="plc-dm-msg">Loading…</div></div>';
-    const head = (title, extra = '') => `<div class="plc-dm-head"><h3>${esc(title)}</h3><span class="sp"></span>${extra}
-      <button class="plc-rm-x small" data-dmclose title="Close Demos"><ha-icon icon="mdi:close"></ha-icon></button></div>`;
-    const st = this._dmStatus || { state: 'idle' }, running = st.state && st.state !== 'idle';
-    const seq = this._v.dmSeq || 'all', key = `${tv.id}|${seq}`, list = this._dmClipsBy?.[key];
-    if (!list && !d.error) queueMicrotask(() => this._dmClips(seq));
-    const mode = this._v.dmMode || 'all';
+    const st = this._dmStatus || { state: 'idle' }, running = !!st.state && st.state !== 'idle';
+    if (!this._v.dmSeq && running) this._v.dmSeq = st.sequence;
+    const seq = this._v.dmSeq || 'all', list = this._dmOrdered(seq, this._dmClipsBy?.[`${tv.id}|${seq}`]);
+    // every sequence's clips, for their counts and running times
+    if (!d.error) (d.sequences || []).forEach((x) => { if (!this._dmClipsBy?.[`${tv.id}|${x.id}`]) queueMicrotask(() => this._dmClips(x.id)); });
+    const secs = (l) => l.reduce((a, c) => a + (Number(c.duration) || 0), 0);
+    const mode = this._v.dmMode || 'all', gap = Number(d.settings?.gap_s ?? 3) || 0;
     const tools = admin ? '<button class="plc-dm-tb" data-dmbuild title="Make and edit collections, label clips (a full page)"><ha-icon icon="mdi:playlist-edit"></ha-icon>Demo builder</button>' : '';
-    const seqs = (d.sequences || []).map((x) => `<button class="plc-dm-chip${x.id === seq ? ' on' : ''}" data-dmseq="${esc(x.id)}">${esc(x.title)}<span>${x.count ?? ''}</span></button>`).join('');
+    const seqs = (d.sequences || []).map((x) => {
+      const l = this._dmClipsBy?.[`${tv.id}|${x.id}`], live = running && st.sequence === x.id;
+      return `<button class="plc-dm-chip${x.id === seq ? ' on' : ''}" data-dmseq="${esc(x.id)}">${live ? '<ha-icon icon="mdi:play-circle"></ha-icon>' : ''}${esc(x.title)}<span>${l ? `${l.length} · ${fmtTime(secs(l))}` : (x.count ?? '')}</span></button>`;
+    }).join('');
+    const here = running && st.sequence === seq, skip = this._dmSkipSet(seq), played = new Set(here ? st.played || [] : []);
+    const cur = here ? st.index - 1 : -1;
+    const upcoming = !list ? [] : list.map((c, i) => ({ c, i })).filter(({ c, i }) => !skip.has(c.key) && !played.has(c.key) && (here ? i > cur : true));
+    const next = here ? upcoming[0]?.c.key : null;
+    // the session's time left: the rest of this clip, then every clip still to play, with the gaps
+    let sess = '';
+    if (here && list && st.mode !== 'loop') {
+      const nowLeft = st.ends_at && ['playing', 'gap', 'ending'].includes(st.state) ? Math.max(0, st.ends_at - Date.now() / 1000) : 0;
+      const rest = st.mode === 'one' ? [] : upcoming;
+      const left = nowLeft + secs(rest.map((x) => x.c)) + gap * rest.length + (st.state === 'ending' ? 0 : Number(d.settings?.last_pause_s ?? 10) || 0);
+      sess = `<small class="plc-dm-sess">The demo: about ${fmtTime(Math.round(left))} left · ends at ${esc(endsAt(left, cfg(this._c, 'clock')))}</small>`;
+    } else if (here && st.mode === 'loop') sess = '<small class="plc-dm-sess">Looping until stopped</small>';
     const word = { starting: 'Starting', playing: 'Playing', paused: 'Paused', gap: 'Next in', ending: 'Ending in' }[st.state] || st.state;
-    const now = running ? `<div class="plc-dm-now"><div class="plc-dm-nowt"><small>${esc(word)} · clip ${st.index} of ${st.total}${['playing', 'gap', 'ending'].includes(st.state) ? ' · <b data-dmleft></b>' : ''}</small><b>${esc(st.label || st.title || '')}</b></div>
+    const seqName = (d.sequences || []).find((x) => x.id === st.sequence)?.title || '';
+    const now = running ? `<div class="plc-dm-now"><div class="plc-dm-nowt"><small>${esc(word)} · clip ${st.index} of ${st.total}${['playing', 'gap', 'ending'].includes(st.state) ? ' · <b data-dmleft></b>' : ''}${seqName && !here ? ` · ${esc(seqName)}` : ''}</small>
+        <b>${esc(st.label || st.title || '')}</b>${sess}</div>
       <div class="plc-dm-ctl"><button data-dmctl="previous" title="Previous clip"><ha-icon icon="mdi:skip-previous"></ha-icon></button>
         <button data-dmctl="${st.state === 'paused' ? 'resume' : 'pause'}" title="${st.state === 'paused' ? 'Resume' : 'Pause'}"><ha-icon icon="mdi:${st.state === 'paused' ? 'play' : 'pause'}"></ha-icon></button>
         <button data-dmctl="next" title="Next clip"><ha-icon icon="mdi:skip-next"></ha-icon></button>
         <button data-dmctl="stop" title="Stop the demo"><ha-icon icon="mdi:stop"></ha-icon></button></div></div>` : '';
+    const kept = list ? list.filter((c) => !skip.has(c.key)) : [];
+    const sum = list ? `<div class="plc-dm-sum"><b>${list.length} clip${list.length === 1 ? '' : 's'}</b> · ${fmtTime(secs(list))}${skip.size ? ` · <span class="out">${skip.size} left out</span> · plays ${fmtTime(secs(kept))}` : ''}
+      ${this._v.dmOrder?.[seq] && !here ? '<button class="plc-dm-tb" data-dmorderclear title="Back to the collection\'s order">Reset order</button>' : ''}
+      ${skip.size && !here ? '<button class="plc-dm-tb" data-dmskipclear title="Put every clip back">Put all back</button>' : ''}</div>` : '';
     const rows = !list ? '<div class="plc-dm-msg">Loading the clips…</div>' : !list.length ? '<div class="plc-dm-msg">No clips here.</div>'
       : list.map((c, i) => {
-        const on = running && st.sequence === seq && st.index === i + 1;
-        return `<div class="plc-dm-row${on ? ' on' : ''}"><button class="plc-dm-play" data-dmplay="${i + 1}" title="Play ${esc(c.label || c.title)}">
-          <span class="n">${i + 1}</span><span class="th"${c.poster || c.art ? ` style="background-image:url('${cssUrl(c.poster || c.art)}')"` : ''}></span>
-          <span class="t"><b>${esc(c.label || c.title)}</b><small>${esc(c.duration ? fmtTime(c.duration) : '')}</small></span><ha-icon icon="mdi:${on ? 'volume-high' : 'play'}"></ha-icon></button></div>`;
+        const out = skip.has(c.key), on = here && i === cur, done = !on && played.has(c.key);
+        const tag = out ? 'Left out' : on ? word : done ? 'Played' : c.key === next ? 'Up next' : '';
+        return `<div class="plc-dm-row${on ? ' on' : ''}${done ? ' done' : ''}${out ? ' out' : ''}"><button class="plc-dm-play" data-dmplay="${i + 1}" title="Play ${esc(c.label || c.title)}">
+          <span class="n">${done ? '<ha-icon icon="mdi:check"></ha-icon>' : i + 1}</span><span class="th"${c.poster || c.art ? ` style="background-image:url('${cssUrl(c.poster || c.art)}')"` : ''}></span>
+          <span class="t"><b>${esc(c.label || c.title)}</b><small>${esc(c.duration ? fmtTime(c.duration) : '')}${tag ? ` · <em>${esc(tag)}</em>` : ''}</small></span><ha-icon icon="mdi:${on ? 'volume-high' : 'play'}"></ha-icon></button>
+          <span class="plc-dm-mv"><button data-dmmove="${esc(c.key)}|up"${i ? '' : ' disabled'} title="Earlier in this demo"><ha-icon icon="mdi:chevron-up"></ha-icon></button>
+            <button data-dmmove="${esc(c.key)}|down"${i < list.length - 1 ? '' : ' disabled'} title="Later in this demo"><ha-icon icon="mdi:chevron-down"></ha-icon></button></span>
+          <button class="plc-dm-skip${out ? ' out' : ''}" data-dmskip="${esc(c.key)}" title="${out ? 'Put back in' : 'Leave out of this demo'}"><ha-icon icon="mdi:${out ? 'plus-circle-outline' : 'minus-circle-outline'}"></ha-icon></button></div>`;
       }).join('');
-    return `<div class="plc-dm">${head('Demos', tools)}
+    const go = here ? 'Start over' : mode === 'one' ? 'Play the first' : skip.size ? `Play ${kept.length}` : 'Play all';
+    return `<div class="plc-dm"><div class="plc-dm-head"><h3>Demos</h3><span class="sp"></span>${tools}
+        <button class="plc-dm-x" data-dmclose title="Close Demos"><ha-icon icon="mdi:close"></ha-icon></button></div>
       ${d.error ? `<div class="plc-dm-msg bad">${esc(d.error)}</div>` : ''}
       <div class="plc-dm-seqs">${seqs}</div>${now}
       <div class="plc-dm-start">${[['one', 'One clip'], ['all', 'Play through'], ['loop', 'Loop']].map(([v, n]) => `<button class="plc-dm-chip${mode === v ? ' on' : ''}" data-dmmode="${v}">${n}</button>`).join('')}
-        <span class="sp"></span><button class="plc-dm-go" data-dmplay="1"><ha-icon icon="mdi:play"></ha-icon>${mode === 'one' ? 'Play the first' : 'Play all'}</button></div>
-      <div class="plc-dm-list">${rows}</div></div>`;
+        <span class="sp"></span><button class="plc-dm-go" data-dmplay="1"${list && !kept.length ? ' disabled' : ''}><ha-icon icon="mdi:play"></ha-icon>${go}</button></div>
+      ${sum}<div class="plc-dm-list">${rows}</div></div>`;
   },
   _dmClick(e, t) {
     let el;
@@ -7308,11 +7371,38 @@ Object.assign(PlexCenterCard.prototype, {
     if ((el = t('[data-dmseq]'))) { this._v.dmSeq = el.dataset.dmseq; this._dmPaint(true); return; }
     if ((el = t('[data-dmmode]'))) { this._v.dmMode = el.dataset.dmmode; this._dmPaint(true); return; }
     if ((el = t('[data-dmctl]'))) { this._hass.callService('plex_center', 'demo_control', { tv: tv.id, action: el.dataset.dmctl }).catch((err) => this._toast(`Demo: ${err?.message || err}`)); return; }
+    if ((el = t('[data-dmskip]'))) {
+      const key = el.dataset.dmskip, seq = this._v.dmSeq || 'all', st = this._dmStatus, set = this._dmSkipSet(seq), out = !set.has(key);
+      if (st && st.state !== 'idle' && st.sequence === seq) {
+        this._hass.callService('plex_center', 'demo_control', { tv: tv.id, action: `${out ? 'skip' : 'unskip'}:${key}` }).catch((err) => this._toast(`Demo: ${err?.message || err}`));
+      } else { if (out) set.add(key); else set.delete(key); this._dmPaint(true); }
+      return;
+    }
+    if ((el = t('[data-dmmove]'))) {
+      const [key, dir] = el.dataset.dmmove.split('|'), seq = this._v.dmSeq || 'all', st = this._dmStatus;
+      const shown = this._dmOrdered(seq, this._dmClipsBy?.[`${tv.id}|${seq}`]) || [], keys = shown.map((c) => c.key), i = keys.indexOf(key);
+      const j = dir === 'up' ? i - 1 : i + 1;
+      if (i < 0 || j < 0 || j >= keys.length) return;
+      if (st && st.state !== 'idle' && st.sequence === seq) {
+        const after = dir === 'up' ? (keys[i - 2] ?? 'first') : keys[i + 1];
+        this._hass.callService('plex_center', 'demo_control', { tv: tv.id, action: `move:${key}:${after}` }).catch((err) => this._toast(`Demo: ${err?.message || err}`));
+      } else {
+        [keys[i], keys[j]] = [keys[j], keys[i]];
+        (this._v.dmOrder ||= {})[seq] = keys;
+        this._dmPaint(true);
+      }
+      return;
+    }
+    if (t('[data-dmorderclear]')) { delete this._v.dmOrder?.[this._v.dmSeq || 'all']; this._dmPaint(true); return; }
+    if (t('[data-dmskipclear]')) { (this._v.dmSkip ||= {})[this._v.dmSeq || 'all'] = new Set(); this._dmPaint(true); return; }
     if ((el = t('[data-dmplay]'))) {
-      const n = Number(el.dataset.dmplay), seq = this._v.dmSeq || 'all', st = this._dmStatus;
-      const call = st && st.state !== 'idle' && st.sequence === seq && !el.classList.contains('plc-dm-go')
+      const n = Number(el.dataset.dmplay), seq = this._v.dmSeq || 'all', st = this._dmStatus, set = this._dmSkipSet(seq);
+      const list = this._dmOrdered(seq, this._dmClipsBy?.[`${tv.id}|${seq}`]) || [], key = list[n - 1]?.key, go = el.classList.contains('plc-dm-go');
+      const order = this._v.dmOrder?.[seq] ? list.map((c) => c.key) : [];
+      if (!go && key) set.delete(key);   // a clip picked by hand plays, even if it was left out
+      const call = st && st.state !== 'idle' && st.sequence === seq && !go
         ? this._hass.callService('plex_center', 'demo_control', { tv: tv.id, action: String(n) })
-        : this._hass.callService('plex_center', 'demo_play', { tv: tv.id, sequence: seq, start: n, mode: this._v.dmMode || 'all' });
+        : this._hass.callService('plex_center', 'demo_play', { tv: tv.id, sequence: seq, start: n, mode: this._v.dmMode || 'all', skip: [...set], order });
       call.catch((err) => this._toast(`Demo: ${err?.message || err}`));
       return;
     }

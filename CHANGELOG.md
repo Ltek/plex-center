@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.27.158
+
+- **Demos pane (Showtime Remote)**: the collections show their number of clips and running time; the one playing is marked.
+- **Leave clips out** of a demo (⊖ / ⊕ on each clip), before it starts or while it plays. Leaving out the clip that's playing moves on to the next one.
+- **Change the order** of a demo (up / down on each clip), before it starts or while it plays. It's for that demo only: the collection keeps its own order (change that in the Demo builder).
+- Each clip shows **Played**, **Playing**, **Up next** or **Left out**, and the demo shows its time left and when it ends.
+- `plex_center.demo_play` has `skip` and `order`; `plex_center.demo_control` takes `skip:<key>`, `unskip:<key>` and `move:<key>:<after key or first>`. `demo_status` now has `played`, `skip` and the demo's order (`keys`).
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.27.157
 
 - **The Demo builder is a full page** (on top of everything, Home Assistant's dialogs included), so it's usable on any screen: every clip with a search box and tick boxes on the left; on the right the collections, a new collection of the ticked clips, and the open collection's clips in order (up / down, take out), Add ticked, Rename and Delete (asks first). Clip labels are edited in place.

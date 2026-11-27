@@ -159,8 +159,11 @@ shows, then the next one starts after a short gap. The volume is never changed.
 - **Demo builder** (admins): a full page, opened from that section or from the Demos pane. Tick clips (with a search
   box), make a collection of them or add them to one, put a collection's clips in order, take clips out, rename or
   delete a collection, and give clips labels. A collection is a Plex collection in the demo library.
-- **Play**: open the Showtime Remote and tap **Demos**. Pick the whole library or one of its collections, then
-  One clip / Play through / Loop. While it runs: which clip, time left, Previous / Pause / Next / Stop.
+- **Play**: open the Showtime Remote and tap **Demos** (tap it again, or ×, to close the pane). The collections show
+  their number of clips and running time. Pick one, then One clip / Play through / Loop. Before or during the demo,
+  **leave clips out** (⊖, put back with ⊕) and **change the order** (up / down): for this demo only, the collection
+  keeps its own. Each clip shows Played, Playing, Up next or Left out; the demo shows its time left and when it ends,
+  with Previous / Pause / Next / Stop.
 
 ```yaml
 action: plex_center.demo_play
@@ -169,13 +172,16 @@ data:
   sequence: Atmos showcase   # all (the whole library) or a collection
   start: 1                   # the clip to start with
   mode: all                  # one | all | loop
+  skip: ["720622"]           # optional: clips left out (Plex keys)
+  order: ["720625", "720622"]   # optional: this demo's order (the rest follow)
 ```
 
 ```yaml
 action: plex_center.demo_control
 data:
   tv: Theater
-  action: next               # next | previous | pause | resume | stop, or a clip number
+  action: next               # next | previous | pause | resume | stop, a clip number,
+                             # skip:<key> / unskip:<key>, or move:<key>:<after key or first>
 ```
 
 `plex_center.demo_status` (with `response_variable`) returns what the demo on a TV is doing: `state`, `index`,

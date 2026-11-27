@@ -265,7 +265,8 @@ class Demos:
             (self.data.get("active") or {}).pop(tv_id, None)
         self._save()
 
-    async def async_play(self, tv: dict[str, Any], seq: str = "all", start: int = 1, mode: str = "all") -> dict[str, Any]:
+    async def async_play(self, tv: dict[str, Any], seq: str = "all", start: int = 1, mode: str = "all",
+                         skip: list[str] | None = None, order: list[str] | None = None) -> dict[str, Any]:
         s = self.settings(tv[TV_ID])
         from .media import item_dict  # noqa: PLC0415
 
@@ -275,7 +276,13 @@ class Demos:
         old = self.runs.get(tv[TV_ID])
         if old:
             await old.async_cancel(quiet=True)
-        r = Runner(self, tv, items, seq or "all", max(0, min(len(items) - 1, int(start) - 1)), mode)
+        if order:   # this demo's own order (the collection keeps its own); clips not named keep theirs, after
+            rank = {str(k): n for n, k in enumerate(order)}
+            items = sorted(items, key=lambda x: (rank.get(str(x.get("key")), len(rank)), items.index(x)))
+        left_out = {str(k) for k in (skip or [])} & {str(x.get("key")) for x in items}
+        if len(left_out) >= len(items):
+            raise HomeAssistantError("Every clip is left out")
+        r = Runner(self, tv, items, seq or "all", max(0, min(len(items) - 1, int(start) - 1)), mode, left_out)
         self.runs[tv[TV_ID]] = r
         r.task = self.hass.async_create_background_task(r.run(), f"plex_center demo {tv[TV_ID]}")
         return r.status()
@@ -295,9 +302,14 @@ class Demos:
 class Runner:
     """One demo on one TV."""
 
-    def __init__(self, demos: Demos, tv: dict[str, Any], items: list[dict[str, Any]], seq: str, start: int, mode: str) -> None:
+    def __init__(self, demos: Demos, tv: dict[str, Any], items: list[dict[str, Any]], seq: str, start: int, mode: str,
+                 skip: set[str] | None = None) -> None:
         self.demos, self.hass, self.tv, self.items, self.seq, self.mode = demos, demos.hass, tv, items, seq, mode
+        self.skip: set[str] = set(skip or ())     # clips left out of this session (can change while it runs)
+        self.played: list[str] = []               # clips played to their end (this round, for a loop)
         self.i, self.state, self.done, self.task = start, "starting", False, None
+        if self._left_out(self.i):
+            self.i = self._step(self.i, 1, wrap=True) or 0
         self.ends_at: float | None = None
         self._jump: int | None = None
         self._kick = asyncio.Event()
@@ -310,7 +322,26 @@ class Runner:
                 "total": len(self.items), "key": it.get("key"), "title": it.get("title"),
                 "label": self.demos.label(it.get("key", ""), it.get("title", "")),
                 "ends_at": self.ends_at, "timing": self.last_timing,
-                "keys": [x.get("key") for x in self.items]}
+                "keys": [x.get("key") for x in self.items], "played": list(self.played), "skip": sorted(self.skip)}
+
+    def _key(self, i: int) -> str:
+        return str(self.items[i].get("key"))
+
+    def _left_out(self, i: int) -> bool:
+        return 0 <= i < len(self.items) and self._key(i) in self.skip
+
+    def _step(self, i: int, d: int, *, wrap: bool) -> int | None:
+        """The next (d=1) or previous (d=-1) clip from i that isn't left out; None at the end (unless it wraps)."""
+        n = len(self.items)
+        for k in range(1, n + 1):
+            j = i + d * k
+            if wrap:
+                j %= n
+            elif not 0 <= j < n:
+                return None
+            if not self._left_out(j):
+                return None if j == i and k == n else j
+        return None
 
     def _set(self, state: str) -> None:
         self.state = state
@@ -319,12 +350,41 @@ class Runner:
     async def control(self, action: str) -> None:
         from .play import control  # noqa: PLC0415
         if action in ("next", "previous"):
-            n = self.i + (1 if action == "next" else -1)
-            if self.mode == "loop":
-                n %= len(self.items)
-            if 0 <= n < len(self.items):
+            n = self._step(self.i, 1 if action == "next" else -1, wrap=self.mode == "loop")
+            if n is not None:
                 self._jump = n
                 self._kick.set()
+        elif action.startswith("move:"):   # this demo's order: move a clip to just after another (or first)
+            _, key, after = action.split(":", 2)
+            keys = [self._key(j) for j in range(len(self.items))]
+            if key not in keys or (after != "first" and after not in keys) or after == key:
+                raise HomeAssistantError("No such clip in this demo")
+            cur, jump = keys[self.i], (keys[self._jump] if self._jump is not None else None)
+            it = self.items.pop(keys.index(key))
+            pos = 0 if after == "first" else [self._key(j) for j in range(len(self.items))].index(after) + 1
+            self.items.insert(pos, it)
+            keys = [self._key(j) for j in range(len(self.items))]
+            self.i = keys.index(cur)
+            if jump is not None:
+                self._jump = keys.index(jump)
+            self.demos.notify(self.tv[TV_ID])
+        elif action.startswith(("skip:", "unskip:")):   # leave a clip out of this session, or put it back
+            what, key = action.split(":", 1)
+            if what == "unskip":
+                self.skip.discard(key)
+                self.demos.notify(self.tv[TV_ID])
+                return
+            if all(self._key(j) == key or self._key(j) in self.skip for j in range(len(self.items))):
+                raise HomeAssistantError("That would leave every clip out")
+            self.skip.add(key)
+            if self._key(self.i) == key and self.state in ("starting", "playing", "paused"):
+                n = self._step(self.i, 1, wrap=self.mode == "loop")
+                if n is None:
+                    await self.async_cancel(quiet=False)
+                    return
+                self._jump = n
+                self._kick.set()
+            self.demos.notify(self.tv[TV_ID])
         elif action == "stop":
             await self.async_cancel(quiet=False)
         elif action == "pause":
@@ -336,6 +396,7 @@ class Runner:
         elif action.isdigit():   # play that clip now (1-based)
             n = int(action) - 1
             if 0 <= n < len(self.items):
+                self.skip.discard(self._key(n))   # picked by hand: it's back in
                 self._jump = n
                 self._kick.set()
         else:
@@ -379,14 +440,19 @@ class Runner:
                 if self._jump is not None:
                     self.i, self._jump = self._jump, None
                     continue
+                if self._key(self.i) not in self.played:
+                    self.played.append(self._key(self.i))
+                    self.demos.notify(tv_id)
                 if self.mode == "one":
                     break
-                if self.i + 1 >= len(self.items):
+                nxt = self._step(self.i, 1, wrap=False)
+                if nxt is None:
                     if self.mode != "loop":
                         break
-                    nxt = 0
-                else:
-                    nxt = self.i + 1
+                    nxt = self._step(-1, 1, wrap=False)
+                    if nxt is None:
+                        break
+                    self.played = []   # a new round
                 self._set("gap")
                 self.ends_at = time.time() + float(s["gap_s"])
                 if await self._wait(float(s["gap_s"])) and self._jump is not None:

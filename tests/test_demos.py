@@ -68,7 +68,7 @@ class FakeConn:
         return fn(SERVER)
 
 
-async def _run(hass, settings, mode="all", start=1, act=None):
+async def _run(hass, settings, mode="all", start=1, act=None, skip=None):
     """A demo with fake playback: each start() plays from 0, each position() read moves 1 s on."""
     events, pos = [], {"v": None, "key": None}
 
@@ -98,7 +98,7 @@ async def _run(hass, settings, mode="all", start=1, act=None):
     with patch("custom_components.plex_center.play.start", fake_start), patch("custom_components.plex_center.play.position", fake_position), \
             patch("custom_components.plex_center.play.control", fake_control), patch("custom_components.plex_center.demos.asyncio.sleep", fast), \
             patch("custom_components.plex_center.demos._popup_target", lambda h, tv: "binary_sensor.th_popup"):
-        await d.async_play(TV, "all", start, mode)
+        await d.async_play(TV, "all", start, mode, skip)
         if act:
             await act(d)
         r = d.runs["th"]
@@ -154,3 +154,45 @@ async def test_status_action(hass: HomeAssistant) -> None:
         services.async_register(hass)
         r = await hass.services.async_call("plex_center", "demo_status", {"tv": "Theater"}, blocking=True, return_response=True)
     assert r == {"state": "idle"}
+
+
+async def test_clips_left_out(hass: HomeAssistant) -> None:
+    events, d = await _run(hass, {}, skip=["2"])
+    assert [e[1] for e in events if e[0] == "play"] == ["Gravity - Opening", "Top Gun - Jets"], "clip 2 left out from the start"
+    assert d.runs["th"].played == ["1", "3"] and d.runs["th"].skip == {"2"}
+    with pytest.raises(Exception):
+        await d.async_play(TV, "all", 1, "all", ["1", "2", "3"])
+
+
+async def test_left_out_while_running(hass: HomeAssistant) -> None:
+    async def act(d):
+        await d.async_control(TV, "skip:3")     # the last clip: left out on the fly
+        st = d.status("th")
+        assert st["skip"] == ["3"] and st["index"] == 1
+    events, d = await _run(hass, {}, act=act)
+    assert [e[1] for e in events if e[0] == "play"] == ["Gravity - Opening", "Dune - Worm"]
+
+
+async def test_leaving_out_the_current_clip_moves_on(hass: HomeAssistant) -> None:
+    async def act(d):
+        await asyncio.sleep(0)
+        await d.async_control(TV, "skip:1")
+    events, _d = await _run(hass, {}, act=act)
+    plays = [e[1] for e in events if e[0] == "play"]
+    assert plays[-2:] == ["Dune - Worm", "Top Gun - Jets"] and plays.count("Gravity - Opening") <= 1
+
+
+async def test_order_at_start_and_while_running(hass: HomeAssistant) -> None:
+    async def act(d):
+        st = d.status("th")
+        assert st["keys"] == ["3", "2", "1"] and st["key"] == "3", "the order given at the start"
+        await d.async_control(TV, "move:1:3")   # while clip 3 plays: clip 1 up next
+        st = d.status("th")
+        assert st["keys"] == ["3", "1", "2"] and st["index"] == 1 and st["key"] == "3"
+    real = dm.Demos.async_play
+
+    async def ordered(self, tv, seq="all", start=1, mode="all", skip=None, order=None):
+        return await real(self, tv, seq, start, mode, skip, ["3", "2"])
+    with patch.object(dm.Demos, "async_play", ordered):
+        events, _d = await _run(hass, {}, act=act)
+    assert [e[1] for e in events if e[0] == "play"] == ["Top Gun - Jets", "Gravity - Opening", "Dune - Worm"]

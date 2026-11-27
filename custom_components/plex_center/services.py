@@ -25,9 +25,12 @@ TRAILER_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"):
 RESUME_SCHEMA = vol.Schema({vol.Required("tv"): cv.string})
 DEMO_PLAY_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("sequence", default="all"): cv.string,
                                vol.Optional("start", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=10000)),
-                               vol.Optional("mode", default="all"): vol.In(["one", "all", "loop"])})
+                               vol.Optional("mode", default="all"): vol.In(["one", "all", "loop"]),
+                               vol.Optional("skip", default=list): vol.All(cv.ensure_list, [vol.All(cv.string, vol.Match(r"^\d{1,12}$"))]),
+                               vol.Optional("order", default=list): vol.All(cv.ensure_list, [vol.All(cv.string, vol.Match(r"^\d{1,12}$"))])})
 DEMO_CONTROL_SCHEMA = vol.Schema({vol.Required("tv"): cv.string,
-                                  vol.Required("action"): vol.Any(vol.In(["next", "previous", "stop", "pause", "resume"]), vol.Match(r"^\d{1,4}$"))})
+                                  vol.Required("action"): vol.Any(vol.In(["next", "previous", "stop", "pause", "resume"]), vol.Match(r"^\d{1,4}$"), vol.Match(r"^(skip|unskip):\d{1,12}$"),
+                                                                  vol.Match(r"^move:\d{1,12}:(\d{1,12}|first)$"))})
 SEARCH_SCHEMA = vol.Schema({vol.Required("query"): vol.All(cv.string, vol.Length(min=1, max=100)), vol.Optional("tv"): cv.string,
                             vol.Optional("type", default="any"): vol.In(["any", "movie", "show", "episode"]),
                             vol.Optional("limit", default=10): vol.All(vol.Coerce(int), vol.Range(min=1, max=50))})
@@ -164,7 +167,7 @@ def async_register(hass: HomeAssistant) -> None:
 
     async def demo_play(call: ServiceCall) -> None:
         entry, tv = find_tv(hass, call.data["tv"])
-        await entry.runtime_data.demos.async_play(tv, call.data["sequence"], call.data["start"], call.data["mode"])
+        await entry.runtime_data.demos.async_play(tv, call.data["sequence"], call.data["start"], call.data["mode"], call.data["skip"], call.data["order"])
 
     async def demo_control(call: ServiceCall) -> None:
         entry, tv = find_tv(hass, call.data["tv"])
