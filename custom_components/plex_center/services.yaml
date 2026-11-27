@@ -180,3 +180,15 @@ demo_status:
       example: Theater
       selector:
         text:
+
+room_power:
+  fields:
+    tv:
+      required: true
+      example: Theater
+      selector:
+        text:
+    "on":
+      required: true
+      selector:
+        boolean:

@@ -158,7 +158,10 @@ shows, then the next one starts after a short gap. The volume is never changed.
   bypass), and PiPup popups (each clip's label and number; a start and an end message).
 - **Demo builder** (admins): a full page, opened from that section or from the Demos pane. Tick clips (with a search
   box), make a collection of them or add them to one, put a collection's clips in order, take clips out, rename or
-  delete a collection, and give clips labels. A collection is a Plex collection in the demo library.
+  delete a collection, give it a description, and give clips (scene) labels, in the library list or inside a
+  collection. A collection is a Plex collection in the demo library; its description is the collection's Plex summary.
+- **In the Showtime Remote** (same section): the collections as a dropdown (default) or buttons, and whether admins
+  see the Demo builder button there.
 - **Play**: open the Showtime Remote and tap **Demos** (tap it again, or ×, to close the pane). The collections show
   their number of clips and running time. Pick one, then One clip / Play through / Loop. Before or during the demo,
   **leave clips out** (⊖, put back with ⊕) and **change the order** (up / down): for this demo only, the collection
@@ -188,6 +191,11 @@ data:
 `total`, `label`, `ends_at`, and `timing` (where the last clip was paused against where it aimed).
 
 ## Easy AV Control (power the room on and off)
+
+The Showtime Remote can have a **System power** button (card editor → Showtime Remote → Buttons → System power: at
+the top or in the bottom row; off by default). Hold it 3 s to turn the TV's room on and 5 s to turn it off, the
+same times as the Activity button. It uses the TV's Easy AV Control room, or the TV's own Room power entity (then
+`plex_center.room_power` with `on: true / false` does the same from an automation).
 
 With [Easy AV Control (Ltek)](https://github.com/Ltek/easy-av-control) installed, Plex Center finds each TV's room by
 itself: the room with an activity that uses one of the TV's players (PiPup, ADB, Android TV Remote, Cast or Plex), else

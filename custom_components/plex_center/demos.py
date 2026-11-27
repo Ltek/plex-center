@@ -146,7 +146,8 @@ def sequences(server, library: str) -> list[dict[str, Any]]:
     sec = _section(server, library)
     out = [{"id": "all", "title": f"All of {sec.title}", "count": getattr(sec, "totalSize", None) or len(sec.all())}]
     for c in sec.collections():
-        out.append({"id": str(c.ratingKey), "title": c.title, "count": getattr(c, "childCount", None) or len(c.items())})
+        out.append({"id": str(c.ratingKey), "title": c.title, "count": getattr(c, "childCount", None) or len(c.items()),
+                    "summary": getattr(c, "summary", "") or ""})
     return out
 
 
@@ -162,7 +163,7 @@ def clips(server, library: str, seq: str) -> list:
 
 
 def collection_edit(server, library: str, op: str, data: dict[str, Any]) -> dict[str, Any]:
-    """The Demo builder (as the server owner): create / add / remove / move / rename / delete a collection.
+    """The Demo builder (as the server owner): create / add / remove / move / rename / describe / delete a collection.
     New collections keep the order clips are added in (custom sort)."""
     sec = _section(server, library)
     fetch = lambda keys: [server.fetchItem(int(k)) for k in keys]  # noqa: E731
@@ -175,6 +176,8 @@ def collection_edit(server, library: str, op: str, data: dict[str, Any]) -> dict
             col.sortUpdate(sort="custom")
         except Exception:  # noqa: BLE001 - an older plexapi / server: Plex's default order
             pass
+        if data.get("summary"):
+            col.editSummary(str(data["summary"]).strip()[:2000])
         return {"id": str(col.ratingKey)}
     col = next((c for c in sec.collections() if str(c.ratingKey) == str(data.get("collection"))), None)
     if col is None:
@@ -189,6 +192,8 @@ def collection_edit(server, library: str, op: str, data: dict[str, Any]) -> dict
         col.moveItem(item, after=after)
     elif op == "rename":
         col.editTitle(str(data.get("title") or "").strip()[:100] or col.title)
+    elif op == "describe":   # the collection's description (Plex's summary)
+        col.editSummary(str(data.get("summary") or "").strip()[:2000])
     elif op == "delete":
         col.delete()
     else:

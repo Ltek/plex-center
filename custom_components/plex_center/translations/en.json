@@ -101,6 +101,14 @@
     }
   },
   "services": {
+    "room_power": {
+      "name": "Room power",
+      "description": "Turn the TV's own Room power entity (TV settings) on or off. A TV in an Easy AV Control room uses that integration's actions instead.",
+      "fields": {
+        "tv": {"name": "TV", "description": "Name or id of the TV."},
+        "on": {"name": "On", "description": "True to turn the room on, false to turn it off."}
+      }
+    },
     "demo_status": {
       "name": "Demo status",
       "description": "What the demo on a TV is doing: its state, the clip (number, label), when it ends, and the last clip's timing (where it was paused or stopped).",

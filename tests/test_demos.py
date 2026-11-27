@@ -40,7 +40,7 @@ def test_settings_checked() -> None:
 
 
 def test_sequences_and_clips() -> None:
-    assert dm.sequences(SERVER, "Demos") == [{"id": "all", "title": "All of Demos", "count": 3}, {"id": "50", "title": "Atmos showcase", "count": 2}]
+    assert dm.sequences(SERVER, "Demos") == [{"id": "all", "title": "All of Demos", "count": 3}, {"id": "50", "title": "Atmos showcase", "count": 2, "summary": ""}]
     assert [c.title for c in dm.clips(SERVER, "Demos", "all")] == ["Gravity - Opening", "Dune - Worm", "Top Gun - Jets"]
     assert [c.title for c in dm.clips(SERVER, "Demos", "Atmos showcase")] == ["Dune - Worm", "Gravity - Opening"], "the collection's order"
     with pytest.raises(Exception):
@@ -196,3 +196,28 @@ async def test_order_at_start_and_while_running(hass: HomeAssistant) -> None:
     with patch.object(dm.Demos, "async_play", ordered):
         events, _d = await _run(hass, {}, act=act)
     assert [e[1] for e in events if e[0] == "play"] == ["Top Gun - Jets", "Gravity - Opening", "Dune - Worm"]
+
+
+def test_collection_description() -> None:
+    said = []
+    col = NS(ratingKey=50, title="Atmos showcase", childCount=2, summary="Loud ones", items=lambda: [B, A],
+             editSummary=lambda s: said.append(s))
+    sec = NS(title="Demos", key=9, totalSize=3, all=lambda: [A, B, C], collections=lambda: [col])
+    server = NS(library=NS(sections=lambda: [sec]))
+    assert dm.sequences(server, "Demos")[1]["summary"] == "Loud ones"
+    assert dm.collection_edit(server, "Demos", "describe", {"collection": "50", "summary": "  For the Atmos demo  "}) == {"id": "50"}
+    assert said == ["For the Atmos demo"]
+
+
+async def test_room_power_action(hass: HomeAssistant) -> None:
+    from custom_components.plex_center import services
+    got = []
+    hass.services.async_register("homeassistant", "turn_on", _fake(lambda call: got.append(("on", call.data["entity_id"]))))
+    hass.services.async_register("homeassistant", "turn_off", _fake(lambda call: got.append(("off", call.data["entity_id"]))))
+    hass.states.async_set("input_boolean.theater", "off")
+    tv = {**TV, "power_entity": "input_boolean.theater"}
+    with patch.object(services, "find_tv", lambda h, name: (None, tv)):
+        services.async_register(hass)
+        await hass.services.async_call("plex_center", "room_power", {"tv": "Theater", "on": True}, blocking=True)
+        await hass.services.async_call("plex_center", "room_power", {"tv": "Theater", "on": False}, blocking=True)
+    assert got == [("on", "input_boolean.theater"), ("off", "input_boolean.theater")]

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.27.159
+// Version: v2026.11.27.160
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.27.159';
+const BUILD_NUMBER = 'v2026.11.27.160';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -603,6 +603,9 @@ const DEFAULTS = {
   np_auto_open: false,
   remote_hold_ms: 2000,     // Showtime Remote: how long a button is held (volume up / down never need it)
   remote_skip: 10,          // its skip buttons, s
+  remote_power: 'off',      // a System power button: off | top (next to the title) | bottom (the bottom row); holds as av_hold_ms / av_off_ms
+  remote_demo_picker: 'dropdown',   // the Demos pane's collections: dropdown | chips
+  remote_demo_builder: true,        // the Demos pane's Demo builder button (admins)
   remote_auto_open: false,  // opens by itself remote_auto_s after a title starts
   remote_auto_s: 10,
   remote_blackout: true,    // the screen goes black when not used; the first tap only wakes it
@@ -2254,6 +2257,7 @@ const CARD_CSS = `
 .plc-rm-head { display: flex; align-items: flex-end; gap: 16px; }
 .plc-rm-demobtn { flex: none; align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-radius: 999px;
   border: 1px solid var(--rm-line); background: none; color: var(--rm-a); font: inherit; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; cursor: pointer; }
+.plc-rm-pwr.busy { opacity: .7; } .plc-rm-demobtn.plc-rm-pwr.on { color: var(--success-color, #43a047); border-color: currentColor; }
 .plc-rm-demobtn.on { border-color: var(--rm-a); background: color-mix(in srgb, var(--rm-a) 18%, transparent); }
 .plc-remote.demos { padding-right: calc(min(440px, 44vw) + 40px); }
 .plc-rm-demoslot { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 44vw); z-index: 3; background: var(--rm-p); border-left: 1px solid var(--rm-line);
@@ -2280,6 +2284,9 @@ const CARD_CSS = `
 .plc-dm .th { width: 72px; height: 40px; flex: none; border-radius: 6px; background: center / cover no-repeat rgba(255,255,255,.06); }
 .plc-dm .t { flex: 1; min-width: 0; display: flex; flex-direction: column; } .plc-dm .t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; } .plc-dm .t small { opacity: .6; }
 .plc-dm-chip ha-icon { --mdc-icon-size: 16px; }
+.plc-dm .plc-dm-sel { flex: 1 1 100%; min-width: 0; height: 42px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--rm-line); background: rgba(255,255,255,.04); color: inherit; font: inherit; font-size: 15px; font-weight: 600; }
+.plc-dm .plc-dm-sel option { background: var(--rm-p, #12161a); color: var(--rm-a); }
+.plc-dm-desc { margin: 0; font-size: 13px; line-height: 1.4; opacity: .8; white-space: pre-line; }
 .plc-dm-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; opacity: .9; } .plc-dm-sum .out { color: var(--warning-color, #e0a030); } .plc-dm-sum .plc-dm-tb { height: 28px; margin-left: auto; font-size: 12px; }
 .plc-dm-sess { opacity: .75; font-size: 12px; margin-top: 2px; }
 .plc-dm .t small em { font-style: normal; font-weight: 600; opacity: 1; }
@@ -2706,6 +2713,7 @@ class PlexCenterCard extends HTMLElement {
     this._root.addEventListener('pointerdown', (e) => { if (!this._rmScrub(e) && !this._onVolDrag(e)) this._onScrub(e); });
     this._wireGestures();
     this._wireHold();
+    this._wireDemos();
     this._root.addEventListener('keydown', (e) => {
       const h = (e.key === 'Enter' || e.key === ' ') && e.target.closest?.('.plc-sec-h[data-wtoggle]');
       if (h) { e.preventDefault(); h.click(); }
@@ -2732,6 +2740,14 @@ class PlexCenterCard extends HTMLElement {
       return ms > 0 ? { el, ms: Math.max(300, ms), label } : null;
     }
     return null;
+  }
+  /** The Demos pane's collection dropdown. */
+  _wireDemos() {
+    this._root.addEventListener('change', (e) => {
+      const el = e.target;
+      if (!el.matches?.('[data-dmseqsel]')) return;
+      this._v.dmSeq = el.value; this._dmPaint(true);
+    });
   }
   _wireHold() {
     const cancel = () => { if (!this._hold) return; clearTimeout(this._hold.t); this._hold.el.classList.remove('plc-hold'); this._hold = null; };
@@ -5071,6 +5087,8 @@ Object.assign(PlexCenterCard.prototype, {
       if (t('[data-rmpopx]')) { this._rmPop = null; this._rmPaintPop(); return; }
       if ((el = t('[data-rmsleep]'))) { this._rmSleepSet(el.dataset.rmsleep); return; }
       if ((el = t('[data-rmitem]'))) { const [k, i] = el.dataset.rmitem.split('|'); const x = this._rmItems(k)[Number(i)]; if (x) this._rmRun(x); return; }
+      if ((el = t('[data-rmpower]'))) { this._rmPowerPress(); return; }
+      if ((el = t('[data-rmavstart]'))) { this._rmPop = null; this._rmPaintPop(); this._avStart(el.dataset.rmavstart); this._toast('Starting…'); return; }
       if ((el = t('[data-rm]'))) { this._rmPress(el.dataset.rm); return; }
       return;
     }
@@ -5699,6 +5717,9 @@ class PlexCenterCardEditor extends HTMLElement {
     const seqs = got.sequences || [], libs = [...new Set([s.library, ...(got.libraries || [])])].filter(Boolean);
     const ents = Object.keys(this._hass?.states || {}).filter((e) => /^(input_boolean|switch|light|script|scene|automation|input_select|select|input_number|number|input_button|button|input_text)\./.test(e)).sort();
     const count = got.error ? `<span style="color:var(--ltek-c-error)">${esc(got.error)}</span>` : `${seqs[0]?.count ?? 0} clips, ${Math.max(0, seqs.length - 1)} collection${seqs.length === 2 ? '' : 's'}.`;
+    const remote = this._sub('dm-remote', 'In the Showtime Remote', `${this._chips('remote_demo_picker', 'Collections as', [['dropdown', 'A dropdown'], ['chips', 'Buttons']])}
+      ${this._check('remote_demo_builder', 'Demo builder button in the Demos pane (admins)')}
+      <p class="plce-hint">These are this card's; the rest of this section is kept by Plex Center for each TV.</p>`);
     return `${admin ? '' : '<p class="plce-hint">Only admins can change demos.</p>'}
       <p class="plce-hint">Short clips (a Plex library of Other Videos) played clip by clip or straight through, from the Showtime Remote's <b>Demos</b> button. Set per TV.</p>
       ${tvChips}
@@ -5716,7 +5737,8 @@ class PlexCenterCardEditor extends HTMLElement {
         ${field('start_entity', 'At the start, set', 'input_boolean.…', { list: 'plce-dm-ents' })}${field('start_value', 'to', 'on')}
         ${field('stop_entity', 'At the end, set', 'the same', { list: 'plce-dm-ents' })}${field('stop_value', 'to', 'off')}`)}
       ${this._sub('dm-popups', 'On the TV (PiPup popups)', `${chk('popup_label', "Each clip's label")}${chk('popup_number', 'Its number (3 / 8)')}
-        ${field('popup_start', 'When a demo starts, show', 'nothing')}${field('popup_end', 'When it ends, show', 'nothing')}${field('popup_s', 'For', '5', { num: true, unit: 's' })}`)}` : ''}`;
+        ${field('popup_start', 'When a demo starts, show', 'nothing')}${field('popup_end', 'When it ends, show', 'nothing')}${field('popup_s', 'For', '5', { num: true, unit: 's' })}`)}` : ''}
+      ${remote}`;
   }
   _dmeSet(changes) {
     const id = this._dmTvCur;
@@ -6445,6 +6467,8 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._sub('rm-btns', 'Buttons', `${this._slider('remote_hold_ms', 'Hold every button for', 0, 5000, ' ms')}
         <p class="plce-hint">Guards against a touch in the dark: a button acts only after this long (a ring fills while you hold). Volume up / down are a tap. Each button can have its own time.</p>
         ${this._chips('remote_skip', 'Skip buttons', [[10, '10 s'], [30, '30 s']])}
+        ${this._chips('remote_power', 'System power', [['off', 'Off'], ['top', 'At the top'], ['bottom', 'Bottom row']])}
+        <p class="plce-hint">Powers the TV's room on and off: its Easy AV Control room, or its own Room power entity (TV settings). Hold ${Math.round(Number(this._c('av_hold_ms')) / 100) / 10} s to turn it on and ${Math.round(Number(this._c('av_off_ms')) / 100) / 10} s to turn it off (the Activity button's times, in Controls layout). With several activities, it asks which. TVs with no room don't show it.</p>
         ${RM_SLOTS.map(slot).join('')}`)}
       ${this._sub('rm-lights', 'Lighting', `<div class="plce-chiprow"><span class="plce-chiplbl">Show them</span>${[[false, 'On the remote (right column)'], [true, 'In a popup (a Lighting button)']].map(([v, n]) => `<button class="plce-pick${!!(ed.remote_lights_popup ?? DEFAULTS.remote_lights_popup) === v ? ' on' : ''}" data-rmpop="${v}">${n}</button>`).join('')}</div>
         ${list('lights', 'Lighting buttons', 'Each runs a script, scene or automation, or toggles a light, and lights up while its entity is on.')}`)}
@@ -7313,8 +7337,13 @@ Object.assign(PlexCenterCard.prototype, {
     if (!d.error) (d.sequences || []).forEach((x) => { if (!this._dmClipsBy?.[`${tv.id}|${x.id}`]) queueMicrotask(() => this._dmClips(x.id)); });
     const secs = (l) => l.reduce((a, c) => a + (Number(c.duration) || 0), 0);
     const mode = this._v.dmMode || 'all', gap = Number(d.settings?.gap_s ?? 3) || 0;
-    const tools = admin ? '<button class="plc-dm-tb" data-dmbuild title="Make and edit collections, label clips (a full page)"><ha-icon icon="mdi:playlist-edit"></ha-icon>Demo builder</button>' : '';
-    const seqs = (d.sequences || []).map((x) => {
+    const tools = admin && cfg(this._c, 'remote_demo_builder') !== false ? '<button class="plc-dm-tb" data-dmbuild title="Make and edit collections, label clips (a full page)"><ha-icon icon="mdi:playlist-edit"></ha-icon>Demo builder</button>' : '';
+    const desc = (d.sequences || []).find((x) => x.id === seq)?.summary || '';
+    const chips = cfg(this._c, 'remote_demo_picker') === 'chips';
+    const seqs = !chips ? `<select class="plc-dm-sel" data-dmseqsel title="Collection">${(d.sequences || []).map((x) => {
+      const l = this._dmClipsBy?.[`${tv.id}|${x.id}`], live = running && st.sequence === x.id;
+      return `<option value="${esc(x.id)}"${x.id === seq ? ' selected' : ''}>${live ? '▶ ' : ''}${esc(x.title)} · ${l ? `${l.length} · ${fmtTime(secs(l))}` : (x.count ?? '')}</option>`;
+    }).join('')}</select>` : (d.sequences || []).map((x) => {
       const l = this._dmClipsBy?.[`${tv.id}|${x.id}`], live = running && st.sequence === x.id;
       return `<button class="plc-dm-chip${x.id === seq ? ' on' : ''}" data-dmseq="${esc(x.id)}">${live ? '<ha-icon icon="mdi:play-circle"></ha-icon>' : ''}${esc(x.title)}<span>${l ? `${l.length} · ${fmtTime(secs(l))}` : (x.count ?? '')}</span></button>`;
     }).join('');
@@ -7357,7 +7386,7 @@ Object.assign(PlexCenterCard.prototype, {
     return `<div class="plc-dm"><div class="plc-dm-head"><h3>Demos</h3><span class="sp"></span>${tools}
         <button class="plc-dm-x" data-dmclose title="Close Demos"><ha-icon icon="mdi:close"></ha-icon></button></div>
       ${d.error ? `<div class="plc-dm-msg bad">${esc(d.error)}</div>` : ''}
-      <div class="plc-dm-seqs">${seqs}</div>${now}
+      <div class="plc-dm-seqs">${seqs}</div>${desc ? `<p class="plc-dm-desc">${esc(desc)}</p>` : ''}${now}
       <div class="plc-dm-start">${[['one', 'One clip'], ['all', 'Play through'], ['loop', 'Loop']].map(([v, n]) => `<button class="plc-dm-chip${mode === v ? ' on' : ''}" data-dmmode="${v}">${n}</button>`).join('')}
         <span class="sp"></span><button class="plc-dm-go" data-dmplay="1"${list && !kept.length ? ' disabled' : ''}><ha-icon icon="mdi:play"></ha-icon>${go}</button></div>
       ${sum}<div class="plc-dm-list">${rows}</div></div>`;
@@ -7406,6 +7435,49 @@ Object.assign(PlexCenterCard.prototype, {
       call.catch((err) => this._toast(`Demo: ${err?.message || err}`));
       return;
     }
+  },
+  // ---------------------------------------------------------------- System power (Showtime Remote)
+  /** The room's power for the remote's TV: its own Room power entity, else its Easy AV Control room. null: neither. */
+  _rmPower() {
+    const tv = this._rmTv();
+    if (!tv) return null;
+    const onMs = Number(cfg(this._c, 'av_hold_ms')) || 0, offMs = Number(cfg(this._c, 'av_off_ms')) || 0;
+    if (tv.power_entity) {
+      const st = this._hass?.states?.[tv.power_entity];
+      if (!st) return null;
+      const on = st.state === String(tv.power_on || 'on');
+      return { kind: 'own', on, busy: false, label: on ? 'Power off' : 'Power on', sub: on ? 'On' : 'Off', hold: on ? offMs : onMs };
+    }
+    const r = this._avRoom();
+    if (!r) return null;
+    const st = this._avState(), v = this._avView, [step, total] = Array.isArray(v?.progress) ? v.progress : [0, 0];
+    const busy = ['starting', 'stopping'].includes(st), on = st === 'active';
+    const label = on ? 'Power off' : st === 'starting' ? 'Starting…' : st === 'stopping' ? 'Turning off…' : st === 'error' ? 'Failed' : 'Power on';
+    const sub = busy && total ? `${step} of ${total}` : on ? (r.activities.find((a) => a.id === v?.activity)?.name || 'On') : st === 'error' ? 'Hold to retry' : r.name;
+    return { kind: 'av', on, busy, st, label, sub, hold: busy ? 0 : on ? offMs : onMs };
+  },
+  _rmPowerHtml(p, where) {
+    const hold = p.hold > 0 ? ` data-rmhold="${p.hold}" data-rmlabel="${esc(p.label)}"` : '';
+    if (where === 'top') {
+      return `<button class="plc-rm-demobtn plc-rm-pwr${p.on ? ' on' : ''}${p.busy ? ' busy' : ''}" data-rmpower${hold} title="${esc(`${p.label} (${p.sub})`)}"><ha-icon icon="mdi:power"></ha-icon><span>${esc(p.label)}</span></button>`;
+    }
+    return `<button class="plc-rm-btn wide plc-rm-pwr${p.on ? ' lit' : ''}${p.busy ? ' busy' : ''}" data-rmpower${hold}><span class="top"><ha-icon icon="mdi:power"></ha-icon><span class="lbl">${esc(p.label)}</span></span><span class="sub">${esc(p.sub)}</span></button>`;
+  },
+  _rmPowerPress() {
+    const tv = this._rmTv(), p = this._rmPower();
+    if (!tv || !p) return;
+    if (p.busy) { this._toast(`${p.label} ${p.sub}`); return; }
+    const confirmMs = p.on ? Number(cfg(this._c, 'av_off_ms')) : Number(cfg(this._c, 'av_hold_ms'));
+    if (!(confirmMs > 0) && !window.confirm(p.on ? 'Turn the room off?' : 'Turn the room on?')) return;
+    if (p.kind === 'own') {
+      this._hass.callService('plex_center', 'room_power', { tv: tv.id, on: !p.on }).then(() => this._toast(p.on ? 'Turning off' : 'Turning on'))
+        .catch((err) => this._toast(`Power: ${err?.message || err}`));
+      return;
+    }
+    if (p.on) { this._avStop(); this._toast('Turning off'); return; }
+    const r = this._avRoom();
+    if (r.activities.length === 1) { this._avStart(r.activities[0].id); this._toast(`Starting ${r.activities[0].name}`); return; }
+    this._rmPop = 'power'; this._rmPaintPop();
   },
   /** The TV the remote controls: the page's (pick another TV and the remote follows). */
   _rmTv() { return this._tv(); },
@@ -7474,7 +7546,8 @@ Object.assign(PlexCenterCard.prototype, {
     const lights = this._rmItems('lights'), extra = this._rmItems('extra');
     const litSig = [...lights, ...extra].map((x) => this._hass.states[x.lit || x.entity]?.state);
     const demosOn = !!(this._dm?.tv === tv?.id && this._dm?.settings?.enabled);
-    const sig = JSON.stringify([demosOn, demosOn && this._v.rmDemos, live, playing, np?.title, np?.sub, litSig, this._rmPop, this._sleep?.[tv?.id], cfg(this._c, 'remote_font'), this._rmCfg('remote_lights_popup'), JSON.stringify(this._c.remote_buttons || {}), lights.length, extra.length, tv?.id]);
+    const pw = this._rmPower(), pwPos = cfg(this._c, 'remote_power');
+    const sig = JSON.stringify([pw && pwPos, pw?.label, pw?.sub, demosOn, demosOn && this._v.rmDemos, live, playing, np?.title, np?.sub, litSig, this._rmPop, this._sleep?.[tv?.id], cfg(this._c, 'remote_font'), this._rmCfg('remote_lights_popup'), JSON.stringify(this._c.remote_buttons || {}), lights.length, extra.length, tv?.id]);
     if (!force && sig === this._rmSig) return;
     this._rmSig = sig;
     const b = (id) => this._rmBtn(id), step = Number(cfg(this._c, 'remote_skip')) || 10;
@@ -7493,6 +7566,7 @@ Object.assign(PlexCenterCard.prototype, {
       <div class="plc-rm-head"><div class="plc-rm-ttl"><div class="plc-rm-eyebrow">${esc(state)}${tv ? ` · ${esc(tvLabel(tv))}` : ''}</div>
         <div class="plc-rm-title">${esc(title)}</div>${live && np.sub ? `<div class="plc-rm-sub">${esc(np.sub)}</div>` : ''}</div>
         <div class="plc-rm-ends"><span>Ends at</span><b data-rmends>--:--</b></div>
+        ${pw && pwPos === 'top' ? this._rmPowerHtml(pw, 'top') : ''}
         ${demosOn ? `<button class="plc-rm-demobtn${this._v.rmDemos ? ' on' : ''}" data-rmdemos title="Demo clips"><ha-icon icon="mdi:filmstrip-box-multiple"></ha-icon><span>Demos</span></button>` : ''}
         <button class="plc-rm-x" data-rmclose title="Close the remote"><ha-icon icon="mdi:close"></ha-icon></button></div>
       <div class="plc-rm-bar"><i data-rmbar></i></div>
@@ -7502,7 +7576,7 @@ Object.assign(PlexCenterCard.prototype, {
           ${live ? `<div class="plc-rm-seek"><span data-rmpos>0:00</span><div class="plc-rm-track" data-rmseek><i data-rmfill></i><b data-rmknob></b></div><span data-rmdur>${esc(fmtTime(Number(np.st.attributes.media_duration) || 0))}</span></div>` : ''}</div>
         <div class="plc-rm-right${popup ? '' : ' lights'}${right.length > 5 ? ' two' : ''}">${rightHtml}</div>
         <div class="plc-rm-bottom">${this._rmBtnHtml(b('intermission'), 'wide')}${this._rmBtnHtml(b('endshow'), 'wide')}
-          ${this._rmBtnHtml({ ...b('sleep'), sub: sleepSub }, `wide${sl ? ' lit' : ''}`)}</div>
+          ${this._rmBtnHtml({ ...b('sleep'), sub: sleepSub }, `wide${sl ? ' lit' : ''}`)}${pw && pwPos === 'bottom' ? this._rmPowerHtml(pw, 'bottom') : ''}</div>
       </div>
       <div class="plc-rm-popslot"></div>${demosOn && this._v.rmDemos ? '<div class="plc-rm-demoslot" data-dmslot></div>' : ''}
       <div class="plc-rm-black" data-rmwake><span class="plc-rm-clock" data-rmclock></span></div></div>`;
@@ -7544,6 +7618,13 @@ Object.assign(PlexCenterCard.prototype, {
     const tv = this._rmTv(), sl = this._sleep?.[tv?.id];
     const head = (t) => `<div class="plc-rm-pophead"><span>${esc(t)}</span><button class="plc-rm-x small" data-rmpopx title="Close"><ha-icon icon="mdi:close"></ha-icon></button></div>`;
     const hold = Number(cfg(this._c, 'remote_hold_ms'));
+    if (this._rmPop === 'power') {
+      const r = this._avRoom();
+      if (!r) { this._rmPop = null; box.innerHTML = ''; return; }
+      box.innerHTML = `<div class="plc-rm-pop">${head(`Turn on ${r.name}`)}<div class="plc-rm-popgrid">${r.activities.map((a) => `<button class="plc-rm-btn" data-rmavstart="${esc(a.id)}">
+        <span class="top"><ha-icon icon="${esc(a.icon || 'mdi:play')}"></ha-icon></span><span class="lbl">${esc(a.name)}</span></button>`).join('')}</div></div>`;
+      return;
+    }
     if (this._rmPop === 'sleep') {
       const opt = (v, l, sub = '') => `<button class="plc-rm-btn" data-rmsleep="${v}" data-rmhold="${hold}" data-rmlabel="${esc(l)}"><span class="lbl">${esc(l)}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</button>`;
       box.innerHTML = `<div class="plc-rm-pop">${head('Turn the room off')}<div class="plc-rm-popgrid">${opt('after', 'After this', 'When it ends')}
@@ -7654,7 +7735,7 @@ Object.assign(PlexCenterCard.prototype, {
   },
 });
 
-PlexCenterCard._test = { markerSkip, rowShares, homeRows, rowFit, rowMaster, packRows, rmEntityCall, RM_SLOTS, lookDefault, SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
+PlexCenterCard._test = { openDemoBuilder, markerSkip, rowShares, homeRows, rowFit, rowMaster, packRows, rmEntityCall, RM_SLOTS, lookDefault, SHOTS, appLogo, fieldLayout, fieldLines, rowVals, boxMask, fanShade, lookFor, LOOK_BASE, layoutItems, layoutKeyFor, flatPageStyle, presetLook, exportPageStyle, importPageStyle, pageLook, pageButtonsHtml, PAGE_PRESETS, PAGE_GROUPS, effectiveConfig, migratePhone, SCREENS, screenOf, secType, upcomingSensors, secStyle, plexAsUmc, headerLayout, DEFAULT_HEADER, normalizeConfig, cardVars, haCardStyle, homeOrder, homeSections, isRealPlayback, livePosition, fmtTime, nowPlaying, deepLinkKey, umcItems, umcLines,
   formatDate, colorMode, CARD_CSS, CACHE, VIEW };
 
 
@@ -8003,6 +8084,8 @@ dialog.plc-dmb::backdrop { background: rgba(0,0,0,.6); }
 .plc-dmb input[type=text], .plc-dmb input[type=search] { height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--divider-color, rgba(127,127,127,.35));
   background: var(--input-fill-color, rgba(127,127,127,.08)); color: inherit; font: inherit; min-width: 0; }
 .plc-dmb input.grow { flex: 1 1 200px; }
+.plc-dmb textarea.desc { width: 100%; min-height: 56px; resize: vertical; padding: 8px 12px; border-radius: 10px; border: 1px solid var(--divider-color, rgba(127,127,127,.35));
+  background: var(--input-fill-color, rgba(127,127,127,.08)); color: inherit; font: inherit; line-height: 1.4; }
 .plc-dmb .hint { margin: 0; opacity: .7; font-size: 13.5px; line-height: 1.4; }
 .plc-dmb .box { padding: 12px; border-radius: 12px; background: rgba(127,127,127,.08); display: flex; flex-direction: column; gap: 10px; }
 @media (max-width: 900px) {
@@ -8034,7 +8117,10 @@ class DemoBuilder {
     d.className = 'plc-dmb';
     d.addEventListener('click', (e) => this._click(e));
     d.addEventListener('input', (e) => this._input(e));
-    d.addEventListener('change', (e) => { if (e.target.dataset.pick) this._tick(e.target.dataset.pick, e.target.checked); });
+    d.addEventListener('change', (e) => {
+      if (e.target.dataset.pick) this._tick(e.target.dataset.pick, e.target.checked);
+      else if (e.target.hasAttribute('data-desc') && this.col) this._op('describe', { collection: this.col, summary: e.target.value }, 'Description saved.');
+    });
     d.addEventListener('keydown', (e) => this._key(e));
     d.addEventListener('close', () => this._closed());
     document.body.appendChild(d);
@@ -8092,10 +8178,13 @@ class DemoBuilder {
   }
   _rename(v) { const name = v.trim(); this.renaming = false; if (name) this._op('rename', { collection: this.col, title: name }, 'Renamed.'); else this.paint(); }
   _create() {
-    const inp = this.el.querySelector('[data-newname]'), name = inp?.value.trim(), keys = [...this.pick];
+    const inp = this.el.querySelector('[data-newname]'), name = inp?.value.trim(), keys = [...this.pick], summary = this.el.querySelector('[data-newdesc]')?.value.trim() || '';
     if (!keys.length) { this._say('Tick some clips first.', true); this.paint(); return; }
     if (!name) { this._say('Give the new collection a name.', true); this.paint(); inp?.focus(); return; }
-    this._op('create', { title: name, keys }, `Made "${name}".`, () => { this.pick = new Set(); const n = this.el.querySelector('[data-newname]'); if (n) n.value = ''; });
+    this._op('create', { title: name, keys, ...(summary ? { summary } : {}) }, `Made "${name}".`, () => {
+      this.pick = new Set();
+      for (const sel of ['[data-newname]', '[data-newdesc]']) { const n = this.el.querySelector(sel); if (n) n.value = ''; }
+    });
   }
   _click(e) {
     const t = (sel) => e.target.closest?.(sel);
@@ -8130,10 +8219,13 @@ class DemoBuilder {
     if (!d || this._gone) return;
     const scroll = [...d.querySelectorAll('[data-scroll]')].map((x) => [x.dataset.scroll, x.scrollTop]);
     const f = d.querySelector('[data-find]'), hadFocus = f && document.activeElement === f, newName = d.querySelector('[data-newname]')?.value;
+    const newDesc = d.querySelector('[data-newdesc]')?.value, descBox = d.querySelector('[data-desc]'), descNow = descBox && document.activeElement === descBox ? descBox.value : null;
     d.classList.toggle('busy', this.busy);
     d.innerHTML = this._html();
     scroll.forEach(([k, top]) => { const x = d.querySelector(`[data-scroll="${k}"]`); if (x) x.scrollTop = top; });
     if (newName) { const n = d.querySelector('[data-newname]'); if (n) n.value = newName; }
+    if (newDesc) { const n = d.querySelector('[data-newdesc]'); if (n) n.value = newDesc; }
+    if (descNow !== null) { const n = d.querySelector('[data-desc]'); if (n) { n.value = descNow; n.focus(); } }
     if (hadFocus) { const n = d.querySelector('[data-find]'); n?.focus(); n?.setSelectionRange?.(n.value.length, n.value.length); }
   }
   _html() {
@@ -8143,27 +8235,34 @@ class DemoBuilder {
     const len = (list) => fmtTime(list.reduce((a, c) => a + (Number(c.duration) || 0), 0));
     const inSel = new Set((cl || []).map((c) => c.key));
     const libRows = !all ? '<p class="hint">Loading the clips…</p>' : !all.length ? '<p class="hint">No clips in this library.</p>' : all.map((c) => {
-      const ed = this.edit === c.key, hay = `${c.label || ''} ${c.title || ''}`.toLowerCase();
+      const ed = this.edit === `lib:${c.key}`, hay = `${c.label || ''} ${c.title || ''}`.toLowerCase();
       return `<div class="row${this.pick.has(c.key) ? ' on' : ''}" data-row="${esc(c.key)}" data-hay="${esc(hay)}"${this.filter && !hay.includes(this.filter) ? ' hidden' : ''}>
         <label class="pick" title="Tick"><input type="checkbox" data-pick="${esc(c.key)}"${this.pick.has(c.key) ? ' checked' : ''}></label>${th(c)}
         <div class="t">${ed ? `<input type="text" class="grow" data-labin="${esc(c.key)}" value="${esc(c.label && c.label !== c.title ? c.label : '')}" placeholder="${esc(c.title)}">`
           : `<b title="${esc(c.title)}">${esc(c.label || c.title)}</b>`}
           <small>${esc(c.duration ? fmtTime(c.duration) : '')}${c.label && c.label !== c.title ? ` · Plex: ${esc(c.title)}` : ''}${sel && inSel.has(c.key) ? ` · in ${esc(sel.title)}` : ''}</small></div>
         ${ed ? `<button class="ib" data-labsave="${esc(c.key)}" title="Save the label (empty: the Plex title)"><ha-icon icon="mdi:check"></ha-icon></button><button class="ib" data-labx title="Cancel"><ha-icon icon="mdi:close"></ha-icon></button>`
-          : `<button class="ib" data-lab="${esc(c.key)}" title="Label (shown in Plex Center and the popups)"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>`}</div>`;
+          : `<button class="ib" data-lab="lib:${esc(c.key)}" title="Label (shown in Plex Center and the popups)"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>`}</div>`;
     }).join('');
-    const colRows = !sel ? '' : !cl ? '<p class="hint">Loading…</p>' : !cl.length ? '<p class="hint">Empty. Tick clips on the left, then Add.</p>' : cl.map((c, k) => `<div class="row">
-        <span class="n">${k + 1}</span>${th(c)}<div class="t"><b title="${esc(c.title)}">${esc(c.label || c.title)}</b><small>${esc(c.duration ? fmtTime(c.duration) : '')}</small></div>
+    const colRows = !sel ? '' : !cl ? '<p class="hint">Loading…</p>' : !cl.length ? '<p class="hint">Empty. Tick clips on the left, then Add.</p>' : cl.map((c, k) => {
+      const ed = this.edit === `col:${c.key}`;
+      return `<div class="row">
+        <span class="n">${k + 1}</span>${th(c)}<div class="t">${ed ? `<input type="text" class="grow" data-labin="${esc(c.key)}" value="${esc(c.label && c.label !== c.title ? c.label : '')}" placeholder="${esc(c.title)}">`
+          : `<b title="${esc(c.title)}">${esc(c.label || c.title)}</b>`}<small>${esc(c.duration ? fmtTime(c.duration) : '')}${c.label && c.label !== c.title ? ` · Plex: ${esc(c.title)}` : ''}</small></div>
+        ${ed ? `<button class="ib" data-labsave="${esc(c.key)}" title="Save the label (empty: the Plex title)"><ha-icon icon="mdi:check"></ha-icon></button><button class="ib" data-labx title="Cancel"><ha-icon icon="mdi:close"></ha-icon></button>`
+          : `<button class="ib" data-lab="col:${esc(c.key)}" title="Label (the scene name shown in Plex Center and the popups)"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>`}
         <button class="ib" data-move="${esc(c.key)}|up"${k ? '' : ' disabled'} title="Up"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
         <button class="ib" data-move="${esc(c.key)}|down"${k < cl.length - 1 ? '' : ' disabled'} title="Down"><ha-icon icon="mdi:arrow-down"></ha-icon></button>
-        <button class="ib bad" data-rm="${esc(c.key)}" title="Take out of ${esc(sel.title)} (it stays in the library)"><ha-icon icon="mdi:playlist-remove"></ha-icon></button></div>`).join('');
+        <button class="ib bad" data-rm="${esc(c.key)}" title="Take out of ${esc(sel.title)} (it stays in the library)"><ha-icon icon="mdi:playlist-remove"></ha-icon></button></div>`;
+    }).join('');
     const head = !sel ? '' : this.renaming
       ? `<div class="bar"><input type="text" class="grow" data-renin value="${esc(sel.title)}"><button class="btn go" data-rensave>Save</button><button class="btn" data-renx>Cancel</button></div>`
       : this.confirmDel
         ? `<div class="box"><b>Delete "${esc(sel.title)}"?</b><span class="hint">The clips stay in the library; only the collection goes.</span><div class="bar"><button class="btn bad" data-delyes><ha-icon icon="mdi:delete-outline"></ha-icon>Delete it</button><button class="btn" data-delno>Cancel</button></div></div>`
         : `<div class="bar"><h4>${esc(sel.title)}</h4><span class="sub">${cl ? `${cl.length} clip${cl.length === 1 ? '' : 's'} · ${len(cl)}` : ''}</span><span class="sp"></span>
           <button class="btn go" data-add${n ? '' : ' disabled'}><ha-icon icon="mdi:playlist-plus"></ha-icon>Add ${n || ''} ticked</button>
-          <button class="btn" data-ren><ha-icon icon="mdi:rename-outline"></ha-icon>Rename</button><button class="btn bad" data-del><ha-icon icon="mdi:delete-outline"></ha-icon>Delete</button></div>`;
+          <button class="btn" data-ren><ha-icon icon="mdi:rename-outline"></ha-icon>Rename</button><button class="btn bad" data-del><ha-icon icon="mdi:delete-outline"></ha-icon>Delete</button></div>
+        <textarea class="desc" data-desc rows="2" placeholder="Description (optional): what this demo shows. Saved when you leave the box.">${esc(sel.summary || '')}</textarea>`;
     return `<header class="dmb-top"><div><h2>Demo builder</h2><small>${esc(this.tv.name || this.tv.id)} · library ${esc(s.library || '…')}</small></div><span class="sp"></span>
         ${this.msg ? `<span class="msg${this.bad ? ' bad' : ''}">${esc(this.msg)}</span>` : ''}
         <button class="ib" data-close title="Close (Esc)"><ha-icon icon="mdi:close"></ha-icon></button></header>
@@ -8176,6 +8275,7 @@ class DemoBuilder {
         <section class="pane"><div class="bar"><h3>Collections</h3><span class="sub">the sequences you play, each in its own order</span></div>
           <div class="bar">${cols.map((c) => `<button class="btn${c.id === this.col ? ' on' : ''}" data-col="${esc(c.id)}">${esc(c.title)} <span class="c">${c.count ?? ''}</span></button>`).join('') || '<span class="hint">None yet.</span>'}</div>
           <div class="box"><div class="bar"><input type="text" class="grow" data-newname placeholder="New collection name">
+            <input type="text" class="grow" data-newdesc placeholder="Description (optional)">
             <button class="btn go" data-create${n ? '' : ' disabled'}><ha-icon icon="mdi:plus"></ha-icon>New collection of ${n || 'the'} ticked</button></div></div>
           ${head}
           <div class="list" data-scroll="col">${sel ? colRows : '<p class="hint">Pick a collection to see its clips and put them in order.</p>'}</div>

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.27.160
+
+- **Showtime Remote: a System power button** (Buttons → System power: off, at the top, or in the bottom row). Hold 3 s to turn the room on, 5 s to turn it off (the Activity button's times). It uses the TV's Easy AV Control room (asking which activity when several use the TV, and showing the start's progress), or the TV's own Room power entity.
+- New action `plex_center.room_power` (`tv`, `on`) for a TV's own Room power entity.
+- **Demo builder**: edit a clip's label (its scene name) inside a collection, not just in the library list. Collections have a **description** (Plex's summary), set when making one or changed below the collection's name.
+- **Demos pane**: the collections are a dropdown by default (Buttons is the other choice), with the chosen collection's description under it. The Demo builder button can be turned off. Both are in the card editor → Demo builder → In the Showtime Remote.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.27.159
 
 - Fixed: the Demo builder couldn't make or change collections ("Plex: expected str at 'id'"). Its collection field clashed with the id every Home Assistant websocket message carries; it's now called `collection`.

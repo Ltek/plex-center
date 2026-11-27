@@ -23,6 +23,7 @@ MARK_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Required("key"): vo
 TRAILER_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("key"): vol.All(cv.string, vol.Match(r"^\d+$")),
                              vol.Optional("url"): cv.string})
 RESUME_SCHEMA = vol.Schema({vol.Required("tv"): cv.string})
+ROOM_POWER_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Required("on"): cv.boolean})
 DEMO_PLAY_SCHEMA = vol.Schema({vol.Required("tv"): cv.string, vol.Optional("sequence", default="all"): cv.string,
                                vol.Optional("start", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=10000)),
                                vol.Optional("mode", default="all"): vol.In(["one", "all", "loop"]),
@@ -172,6 +173,14 @@ def async_register(hass: HomeAssistant) -> None:
     async def demo_control(call: ServiceCall) -> None:
         entry, tv = find_tv(hass, call.data["tv"])
         await entry.runtime_data.demos.async_control(tv, str(call.data["action"]))
+    async def room_power(call: ServiceCall) -> None:
+        """The TV's own Room power entity on / off (TVs in an Easy AV Control room use that integration instead)."""
+        from .play import set_room  # noqa: PLC0415
+        _entry, tv = find_tv(hass, call.data["tv"])
+        if not await set_room(hass, tv, call.data["on"]):
+            raise HomeAssistantError(f"{tv.get('name')} has no Room power entity that can turn it {'on' if call.data['on'] else 'off'}")
+    hass.services.async_register(DOMAIN, "room_power", _logged(hass, "room power", room_power), schema=ROOM_POWER_SCHEMA)
+
     async def demo_status(call: ServiceCall) -> ServiceResponse:
         entry, tv = find_tv(hass, call.data["tv"])
         return entry.runtime_data.demos.status(tv["id"])
