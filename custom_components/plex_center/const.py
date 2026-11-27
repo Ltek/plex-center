@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 DOMAIN = "plex_center"
-VERSION = "2026.11.26.153"
+VERSION = "2026.11.27.154"
 
 CONF_SERVER_ID = "server_id"
 CONF_TVS = "tvs"
@@ -30,6 +30,7 @@ TV_SKIP_FWD = "skip_forward"  # seconds one Fast forward key skips in the TV's P
 TV_SKIP_BACK = "skip_back"    # seconds one Rewind key skips back (default 10)
 TV_VOLUME = "volume_entity"   # optional: the player whose volume the buttons change (an AV processor such as StormAudio)
 TV_CREDITS = "credits_entity"  # optional: a scene / script run when the final credits start
+TV_AV = "av_room"          # Easy AV Control room: "" = found by itself, "none" = off, "<entry>/<room>"
 TV_ROUTE = "route"          # auto | pipup | adb | plex
 
 ROUTES = ["auto", "pipup", "adb", "plex"]

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.26.153
+// Version: v2026.11.27.154
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.26.153';
+const BUILD_NUMBER = 'v2026.11.27.154';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -212,30 +212,33 @@ const SIZE_PX = { title_size: { large: 17, medium: 14, small: 12 }, line_size: {
 const SHADOWS = { none: 'none', soft: '0 2px 8px rgba(0,0,0,.25)', strong: '0 8px 28px rgba(0,0,0,.55)' };
 const HEADER_ITEMS = [['title', 'Title'], ['tabs', 'Page menu (Home and libraries)'], ['search', 'Search'], ['surprise', 'Surprise me'],
   ['watched', 'All / Unwatched'], ['genre', 'Genre'], ['decade', 'Decade'], ['rating', 'Content rating'], ['length', 'Under 2 h (movies)'],
-  ['sort', 'Sort'], ['view', 'Grid / list switch'], ['filterbtn', 'Filters button (opens the Filters popup)'], ['achips', 'Active filters (a chip per filter that is on)'], ['watchchip', 'Watching now (a chip that opens the cards)'], ['remote', 'Showtime Remote (an icon that opens it)'], ['tvs', 'TV picker']];
+  ['sort', 'Sort'], ['view', 'Grid / list switch'], ['filterbtn', 'Filters button (opens the Filters popup)'], ['achips', 'Active filters (a chip per filter that is on)'], ['watchchip', 'Watching now (a chip that opens the cards)'], ['remote', 'Showtime Remote (an icon that opens it)'], ['tvs', 'TV picker'], ['activity', 'Activity (power on / off the TV\'s room, Easy AV Control)']];
 const SORT_OPTS = [['title', 'A → Z'], ['added', 'Recently added'], ['released', 'Release date'], ['year', 'Year'], ['rating', 'Rating'], ['viewed', 'Last watched']];
 const FLABEL = { watched: 'Show', genre: 'Genre', decade: 'Decade', rating: 'Rating', sort: 'Sort', length: 'Length', view: 'View' };
 /** An icon for each controls-layout item (editor list). */
 const ITEM_ICONS = { title: 'mdi:format-title', tabs: 'mdi:tab', search: 'mdi:magnify', surprise: 'mdi:auto-fix', watched: 'mdi:eye-check-outline',
   genre: 'mdi:drama-masks', decade: 'mdi:calendar-range', rating: 'mdi:shield-account-outline', length: 'mdi:timer-outline', sort: 'mdi:sort',
-  view: 'mdi:view-grid-outline', filterbtn: 'mdi:filter-variant', achips: 'mdi:filter-check-outline', watchchip: 'mdi:account-eye', remote: 'mdi:remote-tv', tvs: 'mdi:television' };
+  view: 'mdi:view-grid-outline', filterbtn: 'mdi:filter-variant', achips: 'mdi:filter-check-outline', watchchip: 'mdi:account-eye', remote: 'mdi:remote-tv', tvs: 'mdi:television', activity: 'mdi:power' };
 /** Library filter items: each can sit in the header / footer or in the Filters popup. */
 const FILTER_IDS = new Set(['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view']);
 /** Styles an item can be shown in (first = default). */
 const ITEM_STYLES = { watched: [['buttons', 'All | Unwatched buttons'], ['chip', 'A chip with a menu']],
   genre: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']], decade: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']],
-  rating: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']], sort: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']] };
+  rating: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']], sort: [['chip', 'A chip with a menu'], ['dropdown', 'A dropdown']],
+  activity: [['both', 'Icon and label'], ['icon', 'Icon only'], ['label', 'Label only']] };
 const DEFAULT_HEADER = [
   { id: 'title', section: 'library', row: 1, align: 'left' }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view', 'filterbtn'].map((id) => ({ id, section: 'library', row: 1, align: 'right' })),
-  { id: 'tvs', section: 'library', row: 2, align: 'left' }, { id: 'achips', section: 'library', row: 3, align: 'left', hidden: true },
+  { id: 'tvs', section: 'library', row: 2, align: 'left' }, { id: 'activity', section: 'library', row: 2, align: 'left' },
+  { id: 'achips', section: 'library', row: 3, align: 'left', hidden: true },
   { id: 'watchchip', section: 'library', row: 1, align: 'right', hidden: true }, { id: 'remote', section: 'library', row: 1, align: 'right', hidden: true }];
 const DEFAULT_HEADER_PHONE = [
   { id: 'title', section: 'library', row: 1, align: 'left', hidden: true }, { id: 'tabs', section: 'library', row: 1, align: 'left' },
   { id: 'search', section: 'library', row: 1, align: 'right' }, { id: 'surprise', section: 'library', row: 1, align: 'right' },
   ...['watched', 'genre', 'decade', 'rating', 'length', 'sort', 'view'].map((id) => ({ id, section: 'popover', row: 1, align: 'right' })),
   { id: 'filterbtn', section: 'library', row: 1, align: 'right' }, { id: 'tvs', section: 'library', row: 1, align: 'right' },
+  { id: 'activity', section: 'library', row: 1, align: 'right' },
   { id: 'achips', section: 'library', row: 2, align: 'left', hidden: true }, { id: 'watchchip', section: 'library', row: 1, align: 'right', hidden: true },
   { id: 'remote', section: 'library', row: 1, align: 'right', hidden: true }];
 const ALIGNS = ['left', 'center', 'right'];
@@ -583,6 +586,8 @@ const DEFAULTS = {
   hold_play: true,
   hold_ms: 1500,
   hold_mark_ms: 1500,       // Mark watched / unwatched (0: a tap, then confirm)
+  av_hold_ms: 3000,         // the Activity button: hold this long to power the room on (0: a tap, then confirm)
+  av_off_ms: 5000,          // … and this long to power it off
   hold_markall_ms: 2000,    // a show's Mark all watched / unwatched (0: a tap, then confirm)
   np_power: false,
   watching_apps: true,
@@ -1273,6 +1278,9 @@ function markerSkip(mk, p, d) {
   if (mk.credits && p >= cs && p < ce - 2 && (!d || ce < d - 10)) return { label: 'Skip credits', to: ce };
   return null;
 }
+/** What Easy AV Control says a start / stop is busy with (its `current.kind`). */
+const AV_DOING = { power_on: 'Power on', boot: 'Starting up', reload: 'Reconnecting', ready: 'Waiting until ready', turn_on: 'Turning on',
+  warm_up: 'Warming up', step: 'Setting up', wait: 'Waiting', hooks: 'Running scripts', turn_off: 'Turning off', power_off: 'Power off' };
 const isPortrait = () => (typeof matchMedia === 'function' ? matchMedia('(orientation: portrait)').matches : true);
 /** The config the card renders with: the current screen's settings, under the names the renderer reads. */
 function screenOf(phone, portrait) { return `${phone ? 'phone' : 'tablet'}_${portrait ? 'portrait' : 'landscape'}`; }
@@ -1425,6 +1433,27 @@ const CARD_CSS = `
 .plc-dot.on { background: var(--success-color, #4caf50); } .plc-dot.play { background: var(--plc-a); }
 .plc-cast { --mdc-icon-size: 18px; flex: none; color: var(--disabled-text-color, #777); padding: 4px; margin: -4px; border-radius: 50%; }
 .plc-cast.tap, .plc-dothit { cursor: pointer; }
+.plc-avbtn { gap: 6px; }
+.plc-avbtn.st-active { border-color: var(--success-color, #4caf50); color: var(--success-color, #4caf50); }
+.plc-avbtn.st-starting, .plc-avbtn.st-stopping { border-color: var(--plc-a); color: var(--plc-a); animation: plc-avpulse 1.4s ease-in-out infinite; }
+.plc-avbtn.st-error { border-color: var(--error-color, #db4437); color: var(--error-color, #db4437); }
+@keyframes plc-avpulse { 50% { opacity: .55; } }
+.plc-avflow { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.plc-avhead { display: flex; align-items: center; gap: 8px; } .plc-avhead .plc-eyebrow { flex: 1; }
+.plc-avsteps { display: flex; align-items: center; gap: 10px; font-size: .85em; color: var(--secondary-text-color); } .plc-avsteps .plc-bar-track { flex: 1; }
+.plc-avnow ha-icon, .plc-avdev.busy ha-icon, .plc-avbar ha-icon:first-child { animation: plc-spin 1s linear infinite; }
+.plc-avbar.error ha-icon:first-child { animation: none; }
+@keyframes plc-spin { to { transform: rotate(360deg); } }
+.plc-avdevs { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.plc-avdev { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; background: var(--plc-bg2); }
+.plc-avdev ha-icon { --mdc-icon-size: 20px; } .plc-avdev .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .plc-avdev .s { font-size: .85em; color: var(--secondary-text-color); }
+.plc-avdev.ok ha-icon { color: var(--success-color, #4caf50); } .plc-avdev.busy ha-icon { color: var(--plc-a); }
+.plc-avdev.bad ha-icon, .plc-averr { color: var(--error-color, #db4437); } .plc-avdev.wait ha-icon { color: var(--disabled-text-color, #777); }
+.plc-averr, .plc-avwarn { display: flex; gap: 6px; align-items: flex-start; } .plc-avwarn ha-icon { color: var(--warning-color, #ff9800); }
+.plc-avother { margin-top: 8px; }
+.plc-avbar { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; margin: 0 0 8px; border: 1px solid var(--plc-a); border-radius: 12px;
+  background: color-mix(in srgb, var(--plc-a) 14%, transparent); color: var(--primary-text-color); font: inherit; cursor: pointer; text-align: left; }
+.plc-avbar span { flex: 1; } .plc-avbar.error { border-color: var(--error-color, #db4437); background: color-mix(in srgb, var(--error-color, #db4437) 14%, transparent); }
 .plc-dothit { display: inline-flex; align-items: center; justify-content: center; padding: 8px; margin: -8px; border-radius: 50%; flex: none; }
 .plc-dothit:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .plc-cast.on { color: var(--success-color, #4caf50); } .plc-cast.play { color: var(--plc-a); } .plc-cast.resume { color: var(--warning-color, #ff9800); }
@@ -2585,6 +2614,7 @@ class PlexCenterCard extends HTMLElement {
   }
   _setTv(tv) {
     this._v.tv = tv.id;
+    this._v.avOpen = false; this._v.avFull = false;
     queueMicrotask?.(() => this._paintWatching?.());
     try { localStorage.setItem(`plc-tv:${this._key}`, tv.id); } catch { /* private mode */ }
     this._v.detail = null;
@@ -2609,7 +2639,7 @@ class PlexCenterCard extends HTMLElement {
     this._built = true;
     this.innerHTML = `<ha-card><div class="plc"><style>${CARD_CSS}</style><div class="plc-wrap">
       <div class="plc-side" hidden></div>
-      <div class="plc-content"><div class="plc-top"></div>
+      <div class="plc-content"><div class="plc-top"></div><div class="plc-avbar-slot"></div>
         <div class="plc-body"><div class="plc-main"></div><div class="plc-detail-slot"></div></div>
         <div class="plc-bnav-slot"></div></div></div>
       <div class="plc-sheet-slot"></div><div class="plc-npfull-slot"></div><div class="plc-remote-slot"></div></div></ha-card>`;
@@ -2665,8 +2695,9 @@ class PlexCenterCard extends HTMLElement {
     this._root.addEventListener('click', (e) => {
       const h = this._holdTarget(e);
       if (!h) return;
-      if (this._holdPass === h.el) { this._holdPass = null; return; }
+      if (this._holdPass === h.el) { this._holdPass = null; this._avTapped = false; return; }
       if (!e.detail) return;   // keyboard (Enter / Space): no hold needed
+      if (h.el.hasAttribute('data-avtap')) { this._avTapped = true; return; }   // the Activity button: a tap shows the room
       e.stopImmediatePropagation(); e.preventDefault();
       if (Date.now() - (this._holdAt || 0) > 800) this._toast(`Hold ${h.label} for ${Math.round(h.ms / 100) / 10} s`);
     }, true);
@@ -2764,7 +2795,7 @@ class PlexCenterCard extends HTMLElement {
     if (this._built) this._renderAll();
   }
 
-  _renderAll() { this._renderTop(); this._renderMain(); this._renderDetail(); this._renderNP(true); }
+  _renderAll() { this._avFetch(); this._renderTop(); this._renderMain(); this._renderDetail(); this._renderNP(true); }
 
   // ---- header
 
@@ -2825,6 +2856,7 @@ class PlexCenterCard extends HTMLElement {
       achips: inLib ? this._chipsHtml() : '',
       watchchip: (() => { const n = this._watchList().length; return n ? `<button class="plc-chip plc-menuchip" data-watchpop title="Watching now"><ha-icon icon="mdi:account-eye"></ha-icon><span class="plc-menuchip-n">Watching</span><span class="plc-fcount">${n}</span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>` : ''; })(),
       remote: '<button class="plc-icon-btn" data-remoteopen title="Showtime Remote"><ha-icon icon="mdi:remote-tv"></ha-icon></button>',
+      activity: this._avButtonHtml(styleOf.activity),
       surprise: !cfg(this._c, 'surprise') || !libs.length ? ''
         : style === 'icon' ? `<button class="plc-icon-btn" data-surprise title="${esc(label)}"><ha-icon icon="${esc(icon)}"></ha-icon></button>`
           : `<button class="plc-chip" data-surprise>${style === 'both' ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ''}${esc(label)}</button>`,
@@ -4432,6 +4464,7 @@ Object.assign(PlexCenterCard.prototype, {
   // ---- now playing: side panel and full screen
 
   _renderNP(force = false) {
+    if (this._avRender()) return;
     const tv = this._tv();
     const np = nowPlaying(this._hass, tv, this._c);
     const mode = this._npMode();
@@ -4466,6 +4499,182 @@ Object.assign(PlexCenterCard.prototype, {
     this._rmAuto();
     if (this._v.remote) this._renderRemote();
   },
+  // ---------------------------------------------------------------- Easy AV Control: the TV's room
+  /** The page TV's room and the activities that use the TV (from the integration), asked again after a minute. */
+  _avFetch(force = false) {
+    const tv = this._tv();
+    if (!tv || !this._hass) return;
+    const hit = this._avInfo?.[tv.id];
+    if (!force && hit && Date.now() - hit.ts < 60000) { this._avSync(); return; }
+    (this._avInfo ||= {})[tv.id] = { ...(hit || {}), ts: Date.now() };
+    // shared by every card on the page (and a recreated one): asked again after a minute
+    cached(this._hass, `av:${tv.id}`, 60000, () => ws(this._hass, 'av', { tv: tv.id }).catch(() => null), { force }).then((r) => {
+      if (!r) return;
+      const same = JSON.stringify(this._avInfo[tv.id]?.activities) === JSON.stringify(r.activities) && this._avInfo[tv.id]?.room === r.room;
+      this._avInfo[tv.id] = { ...r, ts: Date.now() };
+      this._avSync(); if (!same) this._renderTop();
+    }).catch(() => {});
+  },
+  _avRoom() { const i = this._avInfo?.[this._tv()?.id]; return i?.room && i.activities?.length ? i : null; },
+  /** Follow the room live (Easy AV Control's own subscription: state, step, error, cooling). */
+  _avSync() {
+    const r = this._avRoom(), key = r ? `${r.entry_id}/${r.room}` : null;
+    if (this._avSub?.key === key) return;
+    const old = this._avSub; this._avSub = null; this._avView = null; this._avStates = null;
+    old?.unsub?.then?.((u) => { if (typeof u === 'function') u(); }).catch?.(() => {});
+    clearInterval(this._avPoll);
+    if (!key) { this._avBar(); return; }
+    const conn = this._hass?.connection;
+    if (!conn?.subscribeMessage) return;
+    const sub = { key };
+    this._avSub = sub;
+    sub.unsub = Promise.resolve(conn.subscribeMessage((v) => { if (this._avSub === sub) this._avOnView(v); },
+      { type: 'easy_av_control/control/subscribe', room: r.room, entry_id: r.entry_id })).catch(() => null);
+  },
+  _avOnView(v) {
+    const prev = this._avView;
+    this._avView = v || null;
+    if (prev?.state !== v?.state || prev?.activity !== v?.activity) {
+      this._v.avHidden = null;
+      if (v?.state === 'idle' || v?.state === 'active') this._v.avOpen = false;
+      this._renderTop();
+    }
+    const want = this._avShown();
+    clearInterval(this._avPoll);
+    if (want) { this._avPollNow(); this._avPoll = setInterval(() => this._avPollNow(), 2000); }
+    this._npSig = null; this._renderNP(true); this._avBar();
+  },
+  /** Each device's state now (for the rows), while the flow shows. */
+  _avPollNow() {
+    const r = this._avRoom();
+    if (!r || !this._hass?.callWS) return;
+    this._hass.callWS({ type: 'easy_av_control/control/states', room: r.room, entry_id: r.entry_id })
+      .then((st) => { this._avStates = st || {}; this._avPaint(); }).catch(() => {});
+  },
+  _avState() { return this._avView?.state || 'idle'; },
+  /** The flow shows in the Now playing area: while the room starts (unless something already plays), stops or has
+   *  failed, or when opened from the button; not after ✕ until the room changes. */
+  _avShown() {
+    const v = this._avView, r = this._avRoom();
+    if (!v || !r) return false;
+    if (this._v.avHidden === `${v.state}|${v.activity}`) return false;
+    if (this._v.avOpen || this._v.avFull) return true;
+    const np = nowPlaying(this._hass, this._tv(), this._c);
+    return v.state === 'stopping' || v.state === 'error' || (v.state === 'starting' && !np?.live);
+  },
+  _avRender() {
+    const side = this._root?.querySelector('.plc-side');
+    if (!side) return false;
+    const show = this._avShown(), tablet = this._npMode() === 'panel' && !this._phone;
+    if (!show || (!tablet && !this._v.avFull)) {
+      if (this._avDrawn) { this._avDrawn = false; this._npSig = null; side.innerHTML = ''; const full = this._root.querySelector('.plc-npfull-slot'); if (full) full.innerHTML = ''; }
+      return false;
+    }
+    this._avDrawn = true;
+    if (tablet) {
+      this._root.classList.toggle('side', true);
+      side.hidden = false;
+      if (!side.querySelector('.plc-avflow')) { side.innerHTML = `<div class="plc-phead"></div><div class="plc-avflow" data-avflow></div>`; this._root.dataset.panel = '1'; this._renderTop(); }
+    } else {
+      const full = this._root.querySelector('.plc-npfull-slot');
+      if (full && !full.querySelector('.plc-avflow')) full.innerHTML = '<div class="plc-npfull"><div class="plc-avflow" data-avflow></div></div>';
+    }
+    this._avPaint();
+    return true;
+  },
+  /** The flow: activity, step bar, what it's doing, a row per device, error / warnings, and the buttons. */
+  _avPaint() {
+    const box = this._root?.querySelector('[data-avflow]'), v = this._avView, r = this._avRoom();
+    if (!box || !v || !r) return;
+    const act = r.activities.find((a) => a.id === v.activity) || null;
+    const [step, total] = Array.isArray(v.progress) ? v.progress : [0, 0];
+    const word = { idle: 'Off', starting: 'Starting', active: 'On', stopping: 'Turning off', error: 'Failed' }[v.state] || v.state;
+    const cur = v.current || null, until = cur?.until ? Math.max(0, Math.round((Date.parse(cur.until) - Date.now()) / 1000)) : null;
+    const doing = cur ? `${AV_DOING[cur.kind] || cur.kind}${cur.name ? ` · ${cur.name}` : ''}${until ? ` (${until} s)` : ''}` : '';
+    const cooling = (v.cooling || []).map((c) => (c.names || []).join(', ')).filter(Boolean);
+    const rows = (act?.devices || []).map((d) => {
+      const g = this._avStates?.[d.id]?.group, val = this._avStates?.[d.id]?.value;
+      const busy = cur?.device === d.id;
+      const cool = (v.cooling || []).some((c) => (c.names || []).includes(d.name));
+      const [cls, icon, text] = busy ? ['busy', 'mdi:loading', AV_DOING[cur.kind] || 'Working']
+        : g === 'error' ? ['bad', 'mdi:close-circle', 'Failed']
+          : cool ? ['wait', 'mdi:snowflake', 'Cooling down']
+            : g === 'on' ? ['ok', 'mdi:check-circle', v.state === 'stopping' ? 'Still on' : 'Ready']
+              : g === 'starting' ? ['busy', 'mdi:loading', 'Turning on'] : g === 'stopping' ? ['busy', 'mdi:loading', 'Turning off']
+                : g === 'unavailable' ? ['bad', 'mdi:lan-disconnect', 'Unavailable']
+                  : ['wait', 'mdi:circle-outline', v.state === 'stopping' ? 'Off' : 'Waiting'];
+      return `<div class="plc-avdev ${cls}"><ha-icon icon="${icon}"></ha-icon><span class="n">${esc(d.name)}</span><span class="s">${esc(text)}${val && !['on', 'off'].includes(val) && cls !== 'busy' ? ` · ${esc(val)}` : ''}</span></div>`;
+    }).join('');
+    const others = v.state === 'active' ? r.activities.filter((a) => a.id !== v.activity) : [];
+    const html = `<div class="plc-avhead"><div class="plc-eyebrow">${esc(word)} · ${esc(r.name)}</div>
+        <button class="plc-icon-btn plc-avx" data-avx title="Close"><ha-icon icon="mdi:close"></ha-icon></button></div>
+      <h2 class="plc-big">${esc(act?.name || 'Room')}</h2>
+      ${total ? `<div class="plc-avsteps"><div class="plc-bar-track"><div class="plc-bar-fill" style="width:${Math.round(step / total * 100)}%"></div></div><span>Step ${step} of ${total}</span></div>` : ''}
+      ${doing && ['starting', 'stopping'].includes(v.state) ? `<div class="plc-meta plc-avnow"><ha-icon icon="mdi:loading"></ha-icon>${esc(doing)}</div>` : ''}
+      ${rows ? `<div class="plc-avdevs">${rows}</div>` : ''}
+      ${cooling.length ? `<div class="plc-meta">Cooling down: ${esc(cooling.join(', '))}</div>` : ''}
+      ${v.error ? `<div class="plc-averr"><ha-icon icon="mdi:alert-circle"></ha-icon>${esc(v.error)}</div>` : ''}
+      ${(v.warnings || []).map((w) => `<div class="plc-meta plc-avwarn"><ha-icon icon="mdi:alert-outline"></ha-icon>${esc(w)}</div>`).join('')}
+      <div class="plc-btns">${v.state === 'error' && v.activity ? `<button class="plc-btn main" data-avstart="${esc(v.activity)}"><ha-icon icon="mdi:refresh"></ha-icon>Retry</button>` : ''}
+        ${['error', 'starting', 'active'].includes(v.state) ? '<button class="plc-btn" data-avstop><ha-icon icon="mdi:power"></ha-icon>Turn off</button>' : ''}</div>
+      ${others.length ? `<div class="plc-avother"><div class="plc-eyebrow">Switch to</div><div class="plc-btns">${others.map((a) => `<button class="plc-btn" data-avstart="${esc(a.id)}"><ha-icon icon="${esc(a.icon || 'mdi:play')}"></ha-icon>${esc(a.name)}</button>`).join('')}</div></div>` : ''}`;
+    if (box.dataset.v !== html) { box.dataset.v = html; box.innerHTML = html; }
+  },
+  /** Phones: a slim bar above the content while the room starts / stops / failed; a tap opens the flow full screen. */
+  _avBar() {
+    const slot = this._root?.querySelector('.plc-avbar-slot');
+    if (!slot) return;
+    const v = this._avView, r = this._avRoom(), tablet = this._npMode() === 'panel' && !this._phone;
+    const on = !!(v && r && !tablet && !this._v.avFull && ['starting', 'stopping', 'error'].includes(v.state));
+    const [step, total] = Array.isArray(v?.progress) ? v.progress : [0, 0];
+    const html = on ? `<button class="plc-avbar ${esc(v.state)}" data-avbar><ha-icon icon="${v.state === 'error' ? 'mdi:alert-circle' : 'mdi:loading'}"></ha-icon>
+      <span>${esc(r.name)}: ${esc({ starting: 'starting', stopping: 'turning off', error: 'failed' }[v.state])}${total ? ` · ${step} of ${total}` : ''}</span><ha-icon icon="mdi:chevron-right"></ha-icon></button>` : '';
+    if (slot.dataset.v !== html) { slot.dataset.v = html; slot.innerHTML = html; }
+  },
+  /** The header's Activity button: Power on / off, or Activity with a menu when several use this TV. */
+  _avButtonHtml(style) {
+    const r = this._avRoom();
+    if (!r) return '';
+    const st = this._avState(), one = r.activities.length === 1, run = r.activities.find((a) => a.id === this._avView?.activity);
+    const label = st === 'idle' ? (one ? 'Power on' : 'Activity') : st === 'active' ? 'Power off' : st === 'starting' ? 'Starting…' : st === 'stopping' ? 'Turning off…' : 'Failed';
+    const hold = st === 'idle' ? Number(cfg(this._c, 'av_hold_ms')) : st === 'active' ? Number(cfg(this._c, 'av_off_ms')) : 0;
+    const title = st === 'idle' ? (one ? `Start ${r.activities[0].name}` : `Start an activity in ${r.name}`) : st === 'active' ? `${run?.name || 'On'} · hold to turn ${r.name} off; tap to see it` : `${r.name}: ${label}`;
+    const s = style || 'both', ic = '<ha-icon icon="mdi:power"></ha-icon>';
+    const face = s === 'icon' ? ic : s === 'label' ? esc(label) : `${ic}${esc(label)}`;
+    return `<button class="plc-chip plc-avbtn st-${esc(st)}${s === 'icon' ? ' icononly' : ''}" data-avbtn${hold > 0 ? ` data-rmhold="${hold}" data-rmlabel="${esc(st === 'idle' ? 'Power on' : 'Power off')}"` : ''}${st === 'active' ? ' data-avtap' : ''} title="${esc(title)}">${face}</button>`;
+  },
+  _avPress(el) {
+    const r = this._avRoom();
+    if (!r) return;
+    const st = this._avState(), tapped = this._avTapped; this._avTapped = false;
+    if (st === 'starting' || st === 'stopping' || st === 'error' || (st === 'active' && tapped)) { this._v.avOpen = true; this._v.avHidden = null; this._avOnView(this._avView); return; }
+    if (st === 'active') {
+      if (!(Number(cfg(this._c, 'av_off_ms')) > 0) && !window.confirm(`Turn ${r.name} off?`)) return;
+      this._avStop(); return;
+    }
+    if (r.activities.length === 1) {
+      const a = r.activities[0];
+      if (!(Number(cfg(this._c, 'av_hold_ms')) > 0) && !window.confirm(`Would you like to start activity: ${a.name}?`)) return;
+      this._avStart(a.id); return;
+    }
+    if (!(Number(cfg(this._c, 'av_hold_ms')) > 0) && !window.confirm(`Start an activity in ${r.name}?`)) return;
+    this._menu(el, `Start in ${r.name}`, r.activities.map((a) => ({ icon: a.icon || 'mdi:play', label: a.name, attr: `data-avstart="${esc(a.id)}"` })));
+  },
+  _avStart(id) {
+    const r = this._avRoom();
+    if (!r) return;
+    this._v.avOpen = true; this._v.avHidden = null;
+    this._hass.callService('easy_av_control', 'start_activity', { room: r.room, activity: id }).catch((err) => this._toast(`Start: ${err?.message || err}`));
+    this._avOnView(this._avView);
+  },
+  _avStop() {
+    const r = this._avRoom();
+    if (!r) return;
+    this._v.avOpen = true; this._v.avHidden = null;
+    this._hass.callService('easy_av_control', 'stop_activity', { room: r.room }).catch((err) => this._toast(`Turn off: ${err?.message || err}`));
+    this._avOnView(this._avView);
+  },
+
   /** The auto close countdown: a ring with the seconds and Cancel over the poster. */
   _npRing() {
     const C = 2 * Math.PI * 26, e = this._npEnd, left = Math.max(0, e.total - (Date.now() - e.at));
@@ -4733,6 +4942,7 @@ Object.assign(PlexCenterCard.prototype, {
   },
   _updateStates() {
     if (!this._root) return;
+    this._avFetch();
     const psig = JSON.stringify(this._tvs().map((t) => [t.id, tvPower(this._hass, t), realOn(this._hass, t)]));
     if (this._psig !== undefined && psig !== this._psig) { clearTimeout(this._rsT); this._rsT = setTimeout(() => this._fetchResumes(true), 2500); }
     this._psig = psig;
@@ -4767,6 +4977,11 @@ Object.assign(PlexCenterCard.prototype, {
       if ((el = t('[data-rm]'))) { this._rmPress(el.dataset.rm); return; }
       return;
     }
+    if ((el = t('[data-avbtn]'))) { e.stopPropagation(); this._avPress(el); return; }
+    if ((el = t('[data-avstart]'))) { e.stopPropagation(); this._closeMenu?.(); this._avStart(el.dataset.avstart); return; }
+    if (t('[data-avstop]')) { this._avStop(); return; }
+    if (t('[data-avx]')) { const v = this._avView; this._v.avOpen = false; this._v.avFull = false; this._v.avHidden = v ? `${v.state}|${v.activity}` : null; this._npSig = null; this._renderNP(true); this._avBar(); return; }
+    if (t('[data-avbar]')) { this._v.avFull = true; this._v.avHidden = null; this._renderNP(true); return; }
     if ((el = t('[data-npfor]'))) { e.stopPropagation(); this._openNpFor(this._tvs().find((x) => x.id === el.dataset.npfor), true); return; }
     if (t('[data-remoteopen]')) { this._openRemote(); return; }
     if (t('.plc-vasheet .plc-tile') && !t('[data-qplay]')) this._closeSheet(true);
@@ -5358,6 +5573,21 @@ class PlexCenterCardEditor extends HTMLElement {
   }
 
   /** A TV's settings (the integration's): its players and their state, volume, room, skip sizes. Admins edit them. */
+  /** A TV's Easy AV Control room: found by itself (an activity uses the TV's player, or the same area), or picked. */
+  _avSetting(t, dis) {
+    const k = `av:${t.id}`, got = this._avEd?.[k];
+    if (!got && this._hass) {
+      (this._avEd ||= {})[k] = { loading: true };
+      ws(this._hass, 'av', { tv: t.id }).then((r) => { this._avEd[k] = r; this._render(); }).catch(() => { this._avEd[k] = { available: false }; });
+    }
+    if (!got || got.loading || !got.available) return '';
+    const cur = (t.settings || {}).av_room || '';
+    const found = got.room ? `found: ${got.name} (${{ devices: 'an activity uses this TV', area: 'same area', picked: 'picked here' }[got.how] || got.how})` : got.candidates?.length ? `several rooms match (${got.candidates.map((c) => c.name).join(', ')}): pick one` : got.how === 'off' ? 'off' : 'none found';
+    const opts = [['', `Find it by itself`], ['none', 'None (no Activity button)'], ...(got.rooms || []).map((r) => [r.id, r.name])];
+    return `<div class="plce-group">Easy AV Control</div>
+      <div class="plce-row plce-nowrap"><label class="lbl">Room</label><select data-tvset="${esc(t.id)}|av_room"${dis}>${opts.map(([v, n]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></div>
+      <p class="plce-hint">${esc(found)}${got.room ? ` · activities: ${esc(got.activities.map((a) => a.name).join(', ') || 'none')}` : ''}. The Activity button offers only the activities that use this TV.</p>`;
+  }
   _tvSettings(t) {
     const set = t.settings || {}, admin = !!this._hass?.user?.is_admin, dis = admin ? '' : ' disabled';
     const state = (e) => {
@@ -5382,7 +5612,9 @@ class PlexCenterCardEditor extends HTMLElement {
       <div class="plce-group">Seeking with skip keys</div>
       <p class="plce-hint">When a TV's Plex app can't seek exactly (the SHIELD): how far one press goes in its Plex app (Plex: Settings → Player).</p>
       ${num('skip_forward', 'Skip forward', 30)}${num('skip_back', 'Skip back', 10)}
+      ${this._avSetting(t, dis)}
       <div class="plce-group">Room (a theater with several devices)</div>
+      <p class="plce-hint">Without Easy AV Control: what turns the room on and off, and when it's ready.</p>
       ${ent('power_entity', 'Room power', 'plce-dl-room')}
       ${room ? `${txt('power_on', 'Its on value', 'on')}${txt('power_off', 'Its off value', 'off')}` : ''}
       ${ent('status_entity', 'Room status', 'plce-dl-status')}
@@ -5675,7 +5907,10 @@ class PlexCenterCardEditor extends HTMLElement {
         ${this._check('hold_play', 'Hold to play: Play buttons start only after being held (not in Now playing)')}
         ${this._c('hold_play') ? this._slider('hold_ms', 'Play: hold for', 500, 5000, ' ms') : ''}
         ${this._slider('hold_mark_ms', 'Mark watched: hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
-        ${this._slider('hold_markall_ms', 'Mark all watched (a show): hold for (0 = tap, then confirm)', 0, 5000, ' ms')}`)}
+        ${this._slider('hold_markall_ms', 'Mark all watched (a show): hold for (0 = tap, then confirm)', 0, 5000, ' ms')}
+        ${this._slider('av_hold_ms', 'Activity: hold to power on (0 = tap, then confirm)', 0, 8000, ' ms')}
+        ${this._slider('av_off_ms', 'Activity: hold to power off (0 = tap, then confirm)', 0, 10000, ' ms')}
+        <p class="plce-hint">The Activity button (Easy AV Control) is placed in <b>Controls layout</b>. With several activities, holding opens their menu and a tap on one starts it.</p>`)}
       ${this._sub('gd-watched', 'Watched', `
         ${this._slider('watched_pct', 'Counts as watched at', 50, 100, ' %')}<p class="plce-hint">An episode or movie watched this far counts as watched: it leaves Continue watching, gets the watched tick, and for a show the episode after it moves to <b>Next Episode</b>.</p>`)}
       ${this._sub('gd-details-and-popups', 'Details &amp; popups', `

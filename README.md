@@ -144,6 +144,21 @@ actions:
       entity_id: scene.theater_lights_up
 ```
 
+## Easy AV Control (power the room on and off)
+
+With [Easy AV Control (Ltek)](https://github.com/Ltek/easy-av-control) installed, Plex Center finds each TV's room by
+itself: the room with an activity that uses one of the TV's players (PiPup, ADB, Android TV Remote, Cast or Plex), else
+a room in the TV's area. TV settings → *Easy AV Control → Room* shows what it found, and can pick another room or none.
+
+- **Activity button** (Controls layout; next to the TV picker by default): **hold 3 s** to power on. With one activity
+  that uses the TV it starts; with several, their menu opens and a tap starts one. While the room is on, **hold 5 s** to
+  power it off, or tap to see it. Both times are in Global defaults (0 = a tap, then confirm). Only the activities that
+  use the TV are offered.
+- **The room's flow in the Now playing area** while it starts, turns off or fails: the step, what it's doing (warming
+  up the projector, 42 s), every device's state, warnings, and on failure the error with Retry and Turn off. The
+  library stays usable next to it; once the room is on (or something plays) Now playing takes over. On phones a slim
+  bar shows it; tap it for the full flow. Started from a wall switch or an automation, it shows the same.
+
 ## Rooms with several devices (a theater)
 
 A TV can have a **Room power** entity and a **Room status** entity (in the TV's settings). Plex Center doesn't

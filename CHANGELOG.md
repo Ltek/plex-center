@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.27.154
+
+- **Easy AV Control: power the TV's room on and off from Plex Center.** Each TV's room is found by itself (an activity that uses one of the TV's players, else the same area), or picked in TV settings → *Easy AV Control → Room*. Only the activities that use the TV are offered.
+- **Activity button** (a Controls layout item, next to the TV picker by default): hold 3 s to power on (one activity starts; with several, a menu opens and a tap starts one); while on, hold 5 s to power off, or tap to see the room. Hold times are in Global defaults (0 = a tap, then confirm).
+- **The room's flow in the Now playing area** while it starts, turns off or fails: the step, what it's doing, each device's state, warnings, and the error with Retry / Turn off. The library stays usable; Now playing takes over once the room is on or something plays. Phones show a slim bar that opens the full flow.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.26.153
 
 - **Editor: clearer split between settings for every screen and settings per screen type.** In each panel that has both, **On every screen** comes first; then **Only on <screen type>**, with the screen-type chips right above the settings they switch (and the Reset for that screen type). It used to be the other way round, with an "Every screen" part under the chips.

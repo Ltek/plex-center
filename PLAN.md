@@ -119,6 +119,11 @@ Not planned: management of the library, Plex sign-in, notifications (automations
   - Leave the non-button labels as they are (Controls layout's Row / place / style tags, "In use", "Hidden").
   - Check every panel in a render afterwards for any other button that still has the old look.
 
+- [x] **Easy AV Control**: Activity button, room found from the activities' devices, live flow in the Now playing
+  area (v2026.11.27.154).
+- [ ] **Play when ready** (Easy AV Control): Play on a title while the TV's room is off starts the room's activity, waits
+  until it's on, then plays.
+
 ### Next (recommended, in order)
 1. [ ] **Entity per TV** `media_player.<tv>_plex_center` (now playing with poster / show / episode; controls routed) and
    **`sensor.plex_center_watching`**. Lets the Theater Movie Lighting automation use one entity per room.

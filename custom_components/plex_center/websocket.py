@@ -37,7 +37,7 @@ INTEGRATIONS = ["plex", "pipup", "androidtv", "androidtv_remote", "cast", "tautu
 def async_register(hass: HomeAssistant) -> None:
     """Register the commands and the image view (once)."""
     for fn in (ws_config, ws_items, ws_hubs, ws_item, ws_random, ws_sessions, ws_search, ws_filters, ws_plex_hubs, ws_letters, ws_calendar,
-               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update, ws_sleep, ws_markers):
+               ws_resumes, ws_resume_forget, ws_app_media, ws_log, ws_log_clear, ws_tv_update, ws_sleep, ws_markers, ws_av):
         websocket_api.async_register_command(hass, fn)
     hass.http.register_view(PlexImageView())
 
@@ -45,7 +45,7 @@ def async_register(hass: HomeAssistant) -> None:
 # ------------------------------------------------------------------------------------------- TV settings (card editor)
 
 from .const import (TV_BUSY, TV_CREDITS, TV_FAIL, TV_POWER, TV_POWER_OFF, TV_POWER_ON, TV_READY, TV_READY_S, TV_ROOM_OFF,  # noqa: E402
-                    TV_SKIP_BACK, TV_SKIP_FWD, TV_STATUS, TV_VOLUME)
+                    TV_SKIP_BACK, TV_SKIP_FWD, TV_STATUS, TV_VOLUME, TV_AV)
 
 ROOM_DOMAINS = ("input_boolean", "input_select", "select", "switch", "script", "scene")
 EDIT_ENTITY = {TV_PIPUP: ("media_player",), TV_ADB: ("media_player",), TV_REMOTE: ("media_player",), TV_CAST: ("media_player",),
@@ -54,7 +54,7 @@ EDIT_ENTITY = {TV_PIPUP: ("media_player",), TV_ADB: ("media_player",), TV_REMOTE
 EDIT_TEXT = (TV_NAME, TV_USER, TV_POWER_ON, TV_POWER_OFF, TV_READY, TV_BUSY, TV_FAIL)
 EDIT_NUM = {TV_SKIP_FWD: (5, 600, 30), TV_SKIP_BACK: (5, 600, 10), TV_READY_S: (10, 900, 120)}
 EDIT_BOOL = (TV_ROOM_OFF,)
-EDITABLE = (*EDIT_ENTITY, *EDIT_TEXT, *EDIT_NUM, *EDIT_BOOL, TV_ROUTE)
+EDITABLE = (*EDIT_ENTITY, *EDIT_TEXT, *EDIT_NUM, *EDIT_BOOL, TV_ROUTE, TV_AV)
 
 
 def apply_tv_changes(tv: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
@@ -103,6 +103,14 @@ def apply_tv_changes(tv: dict[str, Any], changes: dict[str, Any]) -> dict[str, A
         elif k in EDIT_BOOL:
             if v:
                 out[k] = True
+            else:
+                out.pop(k, None)
+        elif k == TV_AV:   # Easy AV Control room: empty = find it by itself, none = off, <entry>/<room>
+            v = "" if empty else str(v).strip()
+            if v and v != "none" and not re.match(r"^([A-Za-z0-9_-]+/)?[A-Za-z0-9_.-]+$", v):
+                raise ValueError(f"{v} isn't an AV Control room")
+            if v:
+                out[k] = v
             else:
                 out.pop(k, None)
         elif k == TV_ROUTE:
@@ -592,6 +600,17 @@ async def ws_search(hass: HomeAssistant, connection, msg) -> None:
         return [{"library": k, "items": v} for k, v in groups.items()]
 
     await _run(hass, entry.runtime_data.conn, connection, msg, tv.get(TV_USER), fetch)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/av", vol.Optional("entry_id"): str, vol.Required("tv"): str})
+@callback
+def ws_av(hass: HomeAssistant, connection, msg) -> None:
+    """The TV's Easy AV Control room and the activities that use the TV (see avcontrol.py), with every room for the
+    TV setting's choices."""
+    from . import avcontrol  # noqa: PLC0415
+    entry = _entry(hass, msg.get("entry_id"))
+    tv = _tv(entry, msg.get("tv"))
+    connection.send_result(msg["id"], {**avcontrol.room_for(hass, tv), "rooms": avcontrol.rooms(hass)})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/markers", vol.Optional("entry_id"): str, vol.Required("tv"): str})
