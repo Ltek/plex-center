@@ -187,6 +187,16 @@ data:
                              # skip:<key> / unskip:<key>, or move:<key>:<after key or first>
 ```
 
+**Entities**, one of each per TV with Demos on (named after the TV; for a TV named Theater):
+
+- `sensor.theater_demo_collections`: the number of collections. Attributes: `library`, `all` and `collections`
+  (each with `id`, `title`, `clips`, `seconds`, `length`, `description`), `titles`, `selected`, and what the demo is
+  doing (`demo_state`, `demo_collection`, `demo_clip`, `demo_clips`, `demo_label`).
+- `select.theater_demo_collection`: "All of <library>" and each collection. Choosing one only sets it; nothing plays.
+  Pass its state to `plex_center.demo_play` as `sequence` (a collection's title, or "All of …", works there).
+
+They follow changes made in the Demo builder at once, and changes made in Plex itself within 5 minutes.
+
 `plex_center.demo_sequences` (with `response_variable`) returns the TV's demo library and its collections:
 `sequences` (id, title, number of clips, description) and `titles`, for example to fill an `input_select`.
 

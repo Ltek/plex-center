@@ -108,7 +108,7 @@ async def _run(hass, settings, mode="all", start=1, act=None, skip=None):
 
 
 async def test_a_whole_run(hass: HomeAssistant) -> None:
-    events, d = await _run(hass, {"start_entity": "input_boolean.bypass", "popup_label": True, "popup_number": True,
+    events, d = await _run(hass, {"lead_auto": False, "lead_s": 1, "start_entity": "input_boolean.bypass", "popup_label": True, "popup_number": True,
                                   "popup_start": "Atmos demo", "popup_end": "That's all"})
     plays = [e[1] for e in events if e[0] == "play"]
     assert plays == ["Gravity - Opening", "Dune - Worm", "Top Gun - Jets"]
@@ -255,3 +255,19 @@ async def test_each_clip_starts_the_way_its_page_allows(hass: HomeAssistant) -> 
     finally:
         del SERVER.fetchItem
     assert modes == ["play", "restart", "play"]
+
+
+
+async def test_the_lead_learns_how_late_pauses_land(hass: HomeAssistant) -> None:
+    d = dm.Demos(hass, "e5", FakeConn())
+    await d.async_load([TV])
+    assert dm.DEFAULTS["lead_s"] == 3.0 and d.lag("th") == 0.0
+    assert d.learn_lag("th", 2.0) == 2.0 and d.learn_lag("th", 1.0) == 1.5
+    assert d.learn_lag("th", 30) == 3.25, "capped at 5 s a measurement"
+
+
+def test_sequences_by_title() -> None:
+    assert dm.resolve(SERVER, "Demos", "All of Demos")[0] == "all"
+    assert dm.resolve(SERVER, "Demos", "atmos showcase")[0] == "50"
+    info = dm.sequence_info(SERVER, "Demos")
+    assert [x["title"] for x in info["sequences"]] == ["All of Demos", "Atmos showcase"] and info["sequences"][1]["seconds"] == 20

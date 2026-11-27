@@ -1,5 +1,14 @@
 # Changelog
 
+## v2026.11.27.162
+
+- **Demos entities**, one of each per TV with Demos on: `sensor.<tv>_demo_collections` (the collections, their clips, running time and description, and what the demo is doing) and `select.<tv>_demo_collection` (choose a collection; it only sets it). `plex_center.demo_play` takes a collection's title or "All of <library>" as the sequence.
+- **Demos: the pause comes earlier.** The lead before a clip's end is now 3 s (was 1 s), and Plex Center learns how late each TV's pauses really land and adds that (TV setting "Plus how late this TV's pauses land", on by default). After each pause it checks where the clip really stopped, or whether it ran out, and logs it; `demo_status` → `timing` has `ended` and `result` (paused / ran out).
+- **Demos: a clip that isn't playing 20 s after its start is started once more**, with Play.
+- **Retries over ADB**: play / pause is sent again with the key for the state wanted (Play or Pause), never the toggle, so a slow first command and the retry can't cancel out. A skip or seek that didn't show waits up to 6 s for the TV to report its position, then presses only what's still missing; with no report, it presses nothing (no overshoot). A seek that did nothing is now caught and corrected.
+- **The Plex player's own remote control is used only for a TV with no PiPup or ADB.** The SHIELD's Plex app says it takes pause / play but ignores them. A TV set to the Plex route in TV settings keeps it.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.27.161
 
 - Fixed: a demo could stay on "Starting" and never play its first clip (seen on the SHIELD with Play through). Each clip was started with Plex's **Play from start** button, which Plex only shows for a partly watched title; a demo clip played to its end counts as watched and only has **Play**. Each clip now asks Plex where it is and presses the button its page has. A Play from start that never shows now falls back to Play.

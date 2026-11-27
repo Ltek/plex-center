@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.27.161
+// Version: v2026.11.27.162
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.27.161';
+const BUILD_NUMBER = 'v2026.11.27.162';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -5730,9 +5730,10 @@ class PlexCenterCardEditor extends HTMLElement {
       <p class="plce-hint">A full page: make collections (the sequences you play), add clips, put them in order, label clips.</p>` : ''}
       <datalist id="plce-dm-ents">${ents.map((e) => `<option value="${esc(e)}">`).join('')}</datalist>
       ${this._sub('dm-end', 'At the end of each clip', `${pick('end', 'Then', [['pause', 'Pause (the last frame stays)'], ['stop', 'Stop']])}
-        ${field('lead_s', 'This long before its end', '1', { num: true, unit: 's' })}${field('gap_s', 'Then the next clip after', '3', { num: true, unit: 's' })}
+        ${field('lead_s', 'This long before its end', '3', { num: true, unit: 's' })}
+        ${chk('lead_auto', "Plus how late this TV's pauses land (learned from each clip)")}${field('gap_s', 'Then the next clip after', '3', { num: true, unit: 's' })}
         ${field('last_pause_s', 'After the last clip, pause for (then stop)', '10', { num: true, unit: 's' })}
-        <p class="plce-hint">Stopping a little before the end keeps Plex's "up next" screen away. The volume is never changed.</p>`)}
+        <p class="plce-hint">Stopping a little before the end keeps Plex's "up next" screen away. After each pause Plex Center checks where the clip really stopped (the event log shows it) and, when learning is on, adds how late that was to the lead.${got.lag ? ` Learned for this TV: +${esc(got.lag)} s.` : ''} The volume is never changed.</p>`)}
       ${this._sub('dm-session', 'Demo session', `<p class="plce-hint">Set at the start of a demo and set back at its end (also when it's stopped, fails, or Home Assistant restarts): for example a lighting-automation bypass. On / off, an option or a number; scripts and scenes just run.</p>
         ${field('start_entity', 'At the start, set', 'input_boolean.…', { list: 'plce-dm-ents' })}${field('start_value', 'to', 'on')}
         ${field('stop_entity', 'At the end, set', 'the same', { list: 'plce-dm-ents' })}${field('stop_value', 'to', 'off')}`)}

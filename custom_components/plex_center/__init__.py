@@ -31,6 +31,7 @@ class PlexCenterData:
 
 
 type PlexCenterConfigEntry = ConfigEntry[PlexCenterData]
+DEMO_PLATFORMS = ["sensor", "select"]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -198,6 +199,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: PlexCenterConfigEntry) -
     async def _end_demos() -> None:
         await demos.async_stop_all()
     entry.async_on_unload(lambda: hass.async_create_task(_end_demos()))
+    # the Demos entities (a sensor and a select per TV with Demos on); their collections asked every 5 minutes
+    await hass.config_entries.async_forward_entry_setups(entry, DEMO_PLATFORMS)
+    from datetime import timedelta  # noqa: PLC0415
+
+    from homeassistant.helpers.event import async_track_time_interval  # noqa: PLC0415
+
+    from .demos import INFO_EVERY_S  # noqa: PLC0415
+
+    async def _refresh(_now=None) -> None:
+        for t in demos.enabled_tvs():
+            await demos.async_refresh_info(t["id"])
+    entry.async_on_unload(async_track_time_interval(hass, _refresh, timedelta(seconds=INFO_EVERY_S)))
     entry.async_on_unload(entry.add_update_listener(_options_updated))
     return True
 
@@ -209,13 +222,17 @@ async def _options_updated(hass: HomeAssistant, entry: PlexCenterConfigEntry) ->
         entry.runtime_data.resumes.track(entry.runtime_data.tvs)
     if entry.runtime_data.demos:
         entry.runtime_data.demos.tvs = entry.runtime_data.tvs
+        from homeassistant.helpers.dispatcher import async_dispatcher_send  # noqa: PLC0415
+
+        from .demos import INFO_SIGNAL  # noqa: PLC0415
+        async_dispatcher_send(hass, INFO_SIGNAL, None)   # TVs added / removed: their Demos entities follow
     if entry.runtime_data.markers:
         entry.runtime_data.markers.track(entry.runtime_data.tvs)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: PlexCenterConfigEntry) -> bool:
     """Unload an entry."""
-    return True
+    return await hass.config_entries.async_unload_platforms(entry, DEMO_PLATFORMS)
 
 
 def loaded_entries(hass: HomeAssistant) -> list[PlexCenterConfigEntry]:

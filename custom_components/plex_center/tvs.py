@@ -159,12 +159,14 @@ def route_for(hass: HomeAssistant, tv: dict[str, Any]) -> str | None:
         return "adb" if has(adb) else None
     if want == "plex":
         return "plex" if has(plex) else None
-    if plex_remote_ok(hass, plex):
-        return "plex"
+    # Auto: PiPup, then ADB. The Plex player's own remote control only when the TV has neither: some Plex apps
+    # (the SHIELD's) say they take pause / play but ignore them.
     if pipup_ready(hass, pip):
         return "pipup"
     if has(adb):
         return "adb"
+    if plex_remote_ok(hass, plex):
+        return "plex"
     return "open" if has(pip) else None
 
 

@@ -484,7 +484,8 @@ async def trailer(hass: HomeAssistant, tv: dict[str, Any], url: str | None = Non
 
 # ---------------------------------------------------------------- did playback respond? (then retry over ADB)
 
-RESPOND_S = 2.0      # how long a play / pause / skip / seek gets to show on the TV's players
+RESPOND_S = 2.0      # how long a play / pause gets to show on the TV's players
+MOVE_S = 6.0         # … and a skip / seek: the Plex player reports its position only every few seconds
 _POLL_S = 0.25
 
 
@@ -529,20 +530,29 @@ def _moved(before: dict, now: dict, delta: float | None = None, target: float | 
     return False
 
 
-async def _responded(hass: HomeAssistant, tv: dict[str, Any], before: dict, check) -> bool:
-    """Wait up to RESPOND_S for `check(before, now)`; also True when the players can't tell (no state to compare)."""
+async def _responded(hass: HomeAssistant, tv: dict[str, Any], before: dict, check, wait: float = RESPOND_S) -> bool:
+    """Wait up to `wait` s for `check(before, now)`; also True when the players can't tell (no state to compare)."""
     if not before:
         return True
-    for _ in range(int(RESPOND_S / _POLL_S)):
+    for _ in range(int(wait / _POLL_S)):
         await asyncio.sleep(_POLL_S)
         if check(before, _snap(hass, tv)):
             return True
     return False
 
 
-def _retrying(hass: HomeAssistant, tv: dict[str, Any], what: str) -> None:
+def _retrying(hass: HomeAssistant, tv: dict[str, Any], what: str, wait: float = RESPOND_S, how: str = "sent again over ADB") -> None:
     from .eventlog import record  # noqa: PLC0415
-    record(hass, tv, what, HomeAssistantError(f"{what}: the TV didn't respond within {RESPOND_S:g} s"), handled="sent again over ADB")
+    record(hass, tv, what, HomeAssistantError(f"{what}: the TV didn't respond within {wait:g} s"), handled=how)
+
+
+def _fresh(before: dict, now: dict) -> tuple[str, float, float] | None:
+    """A player's position reported since `before` (state, position, when read), else None."""
+    for ent, (s1, p1, at1, t1) in now.items():
+        b = before.get(ent)
+        if p1 is not None and (b is None or at1 != b[2]):
+            return s1, p1, t1
+    return None
 
 
 async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: float | None = None) -> None:
@@ -564,26 +574,37 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
     async def checked_toggle() -> None:
         """Play / pause didn't show on the TV within 2 s: press the media key over ADB."""
         was = next((v[0] for v in before.values() if v[0] in ("playing", "paused")), None)
-        want = {"play": "playing", "pause": "paused"}.get(action)
-        if not retry or was is None or (want and was == want):   # can't tell, or nothing to change
+        want = {"play": "playing", "pause": "paused"}.get(action) or {"playing": "paused", "paused": "playing"}.get(was)
+        if not retry or was is None or (action != "play_pause" and was == want):   # can't tell, or nothing to change
             return
         if not await _responded(hass, tv, before, lambda b, n: _toggled(b, n, want)):
             _retrying(hass, tv, action.replace("_", " "))
-            await adb_key({"play": "media_play", "pause": "media_pause", "play_pause": "media_play_pause"}[action])
+            # the key for the state wanted, never the toggle: a late first command plus this one still end there
+            await adb_key("media_play" if want == "playing" else "media_pause")
 
     async def checked_move(delta: float | None, target: float | None) -> None:
         """A skip / seek didn't show within 2 s: Fast forward / Rewind presses over ADB instead (10 s and 30 s alike)."""
         known = [v for v in before.values() if v[1] is not None]
         if not retry or not known or not (delta or target is not None):
             return
-        if await _responded(hass, tv, before, lambda b, n: _moved(b, n, delta, target)):
+        if await _responded(hass, tv, before, lambda b, n: _moved(b, n, delta, target), MOVE_S):
             return
-        _retrying(hass, tv, f"skip {delta:+g} s" if delta is not None else "seek")
-        state, pos, _at, read = known[0]
-        pos += (time.time() - read) if state == "playing" else 0.0   # where it is now, the command having done nothing
-        move = delta if delta is not None else target - pos
-        if move:
-            await _skip_keys(hass, tv, adb_key, move, pos)
+        # Where is it really? Only a position reported since the command counts; without one, pressing could
+        # overshoot a command that was just slow, so nothing is pressed.
+        fresh = _fresh(before, _snap(hass, tv))
+        what = f"skip {delta:+g} s" if delta is not None else f"seek to {target:g} s"
+        if fresh is None:
+            _retrying(hass, tv, what, MOVE_S, "not sent again: the TV didn't report where it is")
+            return
+        state0, pos0, _at0, read0 = known[0]
+        aim = target if target is not None else pos0 + ((time.time() - read0) if state0 == "playing" else 0.0) + delta
+        s1, p1, t1 = fresh
+        now = p1 + ((time.time() - t1) if s1 == "playing" else 0.0)
+        missing = aim - now
+        if abs(missing) < 3:
+            return
+        _retrying(hass, tv, what, MOVE_S, f"pressed over ADB for the {missing:+.0f} s still missing")
+        await _skip_keys(hass, tv, adb_key, missing, now)
 
     if route == "plex":
         ent = tv[TV_PLEX]

@@ -656,7 +656,8 @@ async def ws_demos(hass: HomeAssistant, connection, msg) -> None:
     tv = _tv(entry, msg.get("tv"))
     d = _demos(entry)
     s = d.settings(tv["id"])
-    out: dict[str, Any] = {"settings": s, "status": d.status(tv["id"]), "sequences": [], "error": None, "libraries": []}
+    out: dict[str, Any] = {"settings": s, "status": d.status(tv["id"]), "sequences": [], "error": None, "libraries": [],
+                           "lag": d.lag(tv["id"])}
     try:
         out["sequences"] = await entry.runtime_data.conn.async_call(tv.get(TV_USER), lambda srv: dm.sequences(srv, s["library"]))
     except Exception as err:  # noqa: BLE001 - shown in the pane (the library isn't there, Plex is off)
@@ -727,6 +728,7 @@ async def ws_demos_collection(hass: HomeAssistant, connection, msg) -> None:
     tv = _tv(entry, msg.get("tv"))
     lib = _demos(entry).settings(tv["id"])["library"]
     await _run(hass, entry.runtime_data.conn, connection, msg, "", lambda srv: dm.collection_edit(srv, lib, msg["op"], msg))
+    hass.async_create_task(_demos(entry).async_refresh_info(tv["id"]))   # the sensor / select follow
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/demos/subscribe", vol.Optional("entry_id"): str, vol.Required("tv"): str})

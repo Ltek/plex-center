@@ -360,9 +360,11 @@ async def test_no_response_retries_over_adb(hass):
 
     async def svc(call):
         sent.append(call.service)
-        if not respond["on"]:
-            return
         st = hass.states.get(plex)
+        if not respond["on"]:
+            if st and "media_position" in st.attributes:   # the Plex player reports again a moment later: nothing moved
+                set_plex(st.state, st.attributes["media_position"])
+            return
         if call.service == "media_play_pause":
             set_plex("playing" if st.state == "paused" else "paused", st.attributes["media_position"])
         elif call.service == "seek":
@@ -382,7 +384,7 @@ async def test_no_response_retries_over_adb(hass):
     with patch("asyncio.sleep"):
         set_plex("paused", 600)
         await play.control(hass, tv, "play_pause")
-        assert adb == ["input keyevent KEYCODE_MEDIA_PLAY_PAUSE"], "play / pause ignored → the ADB media key"
+        assert adb == ["input keyevent KEYCODE_MEDIA_PLAY"], "play / pause ignored while paused → the explicit Play key, never the toggle"
         for delta, keys in [(30, ["KEYCODE_MEDIA_FAST_FORWARD"]), (-30, ["KEYCODE_MEDIA_REWIND"] * 3),
                             (10, ["KEYCODE_MEDIA_FAST_FORWARD", "KEYCODE_MEDIA_REWIND", "KEYCODE_MEDIA_REWIND"]), (-10, ["KEYCODE_MEDIA_REWIND"])]:
             adb.clear(); play._LAST_SEEK.clear(); set_plex("paused", 600)
@@ -401,3 +403,43 @@ async def test_no_response_retries_over_adb(hass):
     with patch("asyncio.sleep"):
         await play.control(hass, tv, "play_pause")
     assert adb == []
+
+
+
+async def test_move_retry_presses_only_what_is_missing(hass):
+    """A slow skip that half landed: only the rest is pressed. No fresh report: nothing is pressed (no overshoot)."""
+    from datetime import datetime, timezone
+    adb, plex, mode = [], "media_player.plex", {"v": "half"}
+
+    def set_plex(state, pos):
+        hass.states.async_set(plex, state, {"media_position": pos, "media_duration": 3600,
+                                             "media_position_updated_at": datetime.now(timezone.utc).isoformat()})
+
+    async def seek(call):
+        st = hass.states.get(plex)
+        if mode["v"] == "half":
+            set_plex(st.state, st.attributes["media_position"] + 30)   # +30 of a +90 skip landed
+
+    async def adb_cmd(call):
+        adb.append(call.data["command"])
+    hass.services.async_register("pipup", "seek", seek)
+    hass.services.async_register("androidtv", "adb_command", adb_cmd)
+    _pip(hass)
+    hass.states.async_set("media_player.adb", "idle")
+    tv = {"name": "Theater", "pipup": "media_player.pip", "plex_client": plex, "adb": "media_player.adb"}
+    with patch("asyncio.sleep"):
+        set_plex("paused", 600)
+        await play.control(hass, tv, "skip", 90)
+        assert adb == ["input keyevent KEYCODE_MEDIA_FAST_FORWARD KEYCODE_MEDIA_FAST_FORWARD"], adb
+        adb.clear(); play._LAST_SEEK.clear(); mode["v"] = "silent"; set_plex("paused", 600)
+        await play.control(hass, tv, "skip", 90)
+        assert adb == [], "no new report from the TV: nothing pressed"
+
+
+def test_auto_route_skips_the_plex_remote_when_pipup_or_adb_is_there(hass):
+    from homeassistant.components.media_player import MediaPlayerEntityFeature as F
+    from custom_components.plex_center.tvs import route_for
+    hass.states.async_set("media_player.plex", "playing", {"supported_features": int(F.PAUSE | F.PLAY_MEDIA)})
+    hass.states.async_set("media_player.adb", "idle")
+    assert route_for(hass, {"plex_client": "media_player.plex", "adb": "media_player.adb"}) == "adb"
+    assert route_for(hass, {"plex_client": "media_player.plex"}) == "plex", "nothing else: the Plex remote"

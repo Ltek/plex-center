@@ -301,3 +301,29 @@ async def test_demo_builder_requests_pass_the_schema(ws, hass):
         r = await ws(type="plex_center/demos/collection", tv="living_room_tv", op="add", collection="130", keys=["4"])
         assert r["success"], r
     assert got == [("create", None, "Test", ["1", "2", "3"]), ("add", "130", None, ["4"])]
+
+
+async def test_demo_sensor_and_select(ws, hass):
+    from unittest.mock import patch
+    info = {"library": "Demos", "sequences": [
+        {"id": "all", "title": "All of Demos", "clips": 3, "seconds": 400, "description": ""},
+        {"id": "50", "title": "Atmos showcase", "clips": 2, "seconds": 698, "description": "The loud ones"}]}
+    with patch("custom_components.plex_center.demos.sequence_info", lambda server, lib: info):
+        r = await ws(type="plex_center/demos/settings", tv="living_room_tv", changes={"enabled": True})
+        assert r["success"], r
+        await hass.async_block_till_done()
+        sensors = [s for s in hass.states.async_all("sensor") if s.entity_id.endswith("_demo_collections")]
+        selects = [s for s in hass.states.async_all("select") if s.entity_id.endswith("_demo_collection")]
+        assert len(sensors) == 1 and len(selects) == 1, (sensors, selects)
+        sen, sel = sensors[0], selects[0]
+        assert sen.state == "1" and sen.attributes["collections"][0]["length"] == "11:38"
+        assert sen.attributes["collections"][0]["description"] == "The loud ones" and sen.attributes["titles"] == ["All of Demos", "Atmos showcase"]
+        assert sel.state == "All of Demos" and sel.attributes["options"] == ["All of Demos", "Atmos showcase"]
+        await hass.services.async_call("select", "select_option", {"entity_id": sel.entity_id, "option": "Atmos showcase"}, blocking=True)
+        await hass.async_block_till_done()
+        assert hass.states.get(sel.entity_id).state == "Atmos showcase"
+        assert hass.states.get(sen.entity_id).attributes["demo_state"] == "idle", "choosing doesn't start anything"
+        r = await ws(type="plex_center/demos/settings", tv="living_room_tv", changes={"enabled": False})
+        await hass.async_block_till_done()
+        assert hass.states.get(sel.entity_id) is None and hass.states.get(sen.entity_id) is None, "Demos off: gone"
+        print("ENTITY IDS", sen.entity_id, sel.entity_id)

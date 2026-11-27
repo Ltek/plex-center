@@ -25,13 +25,16 @@ from .const import TV_ID, TV_NAME, TV_PIPUP, TV_PLEX, TV_USER
 
 _LOGGER = logging.getLogger(__name__)
 SIGNAL = "plex_center_demos"
+INFO_SIGNAL = "plex_center_demos_info"   # a TV's collections changed (the sensor / select entities)
+INFO_EVERY_S = 300                       # and they're asked again this often (changes made in Plex itself)
 ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 
 DEFAULTS: dict[str, Any] = {
     "enabled": False,      # Demos on this TV (the card shows the Demos button)
     "library": "Demos",    # the library of clips
     "end": "pause",        # pause | stop: what happens just before a clip's end
-    "lead_s": 1.0,         # how long before the end it's paused / stopped (keeps Plex's post-play screen away)
+    "lead_s": 3.0,         # how long before the end it's paused / stopped (keeps Plex's post-play screen away)
+    "lead_auto": True,     # … plus how late this TV's pauses land, learned from each clip (see Demos.lag)
     "gap_s": 3,            # between clips
     "last_pause_s": 10,    # after the last clip: paused this long, then stopped
     "start_entity": "",    # set when a demo session starts …
@@ -45,7 +48,7 @@ DEFAULTS: dict[str, Any] = {
     "popup_s": 5,
 }
 NUMS = {"lead_s": (0.0, 10.0), "gap_s": (0, 120), "last_pause_s": (0, 3600), "popup_s": (1, 60)}
-BOOLS = ("enabled", "popup_label", "popup_number")
+BOOLS = ("enabled", "popup_label", "popup_number", "lead_auto")
 TEXTS = ("library", "start_value", "stop_value", "popup_start", "popup_end")
 ENTITIES = ("start_entity", "stop_entity")
 
@@ -151,15 +154,38 @@ def sequences(server, library: str) -> list[dict[str, Any]]:
     return out
 
 
-def clips(server, library: str, seq: str) -> list:
-    """The clips of a sequence, in order ("all": the library in Plex's order; else a collection, by key or title)."""
+_KINDS = ("movie", "clip", "episode")
+
+
+def resolve(server, library: str, seq: str | None) -> tuple[str, list]:
+    """A sequence's id ("all" or the collection's key) and its clips, in order. `seq` is "all" (or empty, or the
+    library's own name, or "All of <library>": the whole library in Plex's order), or a collection's key or title."""
     sec = _section(server, library)
-    if seq in ("", "all", None):
-        return [i for i in sec.all() if getattr(i, "type", None) in ("movie", "clip", "episode")]
+    s = str(seq or "").strip()
+    if s.lower() in ("", "all", sec.title.lower(), f"all of {sec.title}".lower()):
+        return "all", [i for i in sec.all() if getattr(i, "type", None) in _KINDS]
     for c in sec.collections():
-        if str(c.ratingKey) == str(seq) or c.title == seq:
-            return [i for i in c.items() if getattr(i, "type", None) in ("movie", "clip", "episode")]
+        if str(c.ratingKey) == s or c.title == s or c.title.lower() == s.lower():
+            return str(c.ratingKey), [i for i in c.items() if getattr(i, "type", None) in _KINDS]
     raise HomeAssistantError(f"{library} has no collection {seq}")
+
+
+def clips(server, library: str, seq: str) -> list:
+    """The clips of a sequence, in order (see resolve)."""
+    return resolve(server, library, seq)[1]
+
+
+def sequence_info(server, library: str) -> dict[str, Any]:
+    """The library and its collections with their clips' running time (for the sensor / select entities)."""
+    sec = _section(server, library)
+    secs = lambda items: round(sum((getattr(i, "duration", None) or 0) for i in items) / 1000)  # noqa: E731
+    every = [i for i in sec.all() if getattr(i, "type", None) in _KINDS]
+    out = [{"id": "all", "title": f"All of {sec.title}", "clips": len(every), "seconds": secs(every), "description": ""}]
+    for c in sec.collections():
+        items = [i for i in c.items() if getattr(i, "type", None) in _KINDS]
+        out.append({"id": str(c.ratingKey), "title": c.title, "clips": len(items), "seconds": secs(items),
+                    "description": getattr(c, "summary", "") or ""})
+    return {"library": sec.title, "sequences": out}
 
 
 def collection_edit(server, library: str, op: str, data: dict[str, Any]) -> dict[str, Any]:
@@ -212,10 +238,11 @@ class Demos:
         self.data: dict[str, Any] = {"tvs": {}, "labels": {}, "active": {}}
         self.runs: dict[str, Runner] = {}
         self.tvs: list[dict[str, Any]] = []
+        self.info: dict[str, dict[str, Any]] = {}   # tv → {library, sequences, at, error}: for the entities
 
     async def async_load(self, tvs: list[dict[str, Any]]) -> None:
         self.tvs = tvs
-        self.data = {"tvs": {}, "labels": {}, "active": {}, **((await self._store.async_load()) or {})}
+        self.data = {"tvs": {}, "labels": {}, "active": {}, "picked": {}, "lag": {}, **((await self._store.async_load()) or {})}
         # Home Assistant stopped during a demo: end that session (the lighting bypass back off)
         for tv_id in list(self.data.get("active") or {}):
             tv = next((t for t in tvs if t.get(TV_ID) == tv_id), None)
@@ -238,7 +265,52 @@ class Demos:
         self.data["tvs"][tv_id] = check_settings(self.data["tvs"].get(tv_id) or {}, changes)
         self._save()
         self.notify(tv_id)
+        if {"enabled", "library"} & set(changes):
+            self.info.pop(tv_id, None)
+            async_dispatcher_send(self.hass, INFO_SIGNAL, tv_id)
         return self.settings(tv_id)
+
+    # ---- the collections for the entities (sensor, select)
+    def enabled_tvs(self) -> list[dict[str, Any]]:
+        return [t for t in self.tvs if self.settings(t.get(TV_ID))["enabled"]]
+
+    async def async_refresh_info(self, tv_id: str) -> dict[str, Any]:
+        """Ask Plex for the TV's collections (and their running time); the entities update."""
+        tv = next((t for t in self.tvs if t.get(TV_ID) == tv_id), None)
+        if tv is None:
+            return {}
+        lib = self.settings(tv_id)["library"]
+        try:
+            got = await self.conn.async_call(tv.get(TV_USER), lambda srv: sequence_info(srv, lib))
+            self.info[tv_id] = {**got, "at": time.time(), "error": None}
+        except Exception as err:  # noqa: BLE001 - shown on the sensor; the last list stays
+            self.info[tv_id] = {**(self.info.get(tv_id) or {"library": lib, "sequences": []}), "at": time.time(), "error": str(err)}
+        async_dispatcher_send(self.hass, INFO_SIGNAL, tv_id)
+        return self.info[tv_id]
+
+    def picked(self, tv_id: str) -> str | None:
+        """The collection chosen in the TV's select entity (its title)."""
+        titles = [x["title"] for x in (self.info.get(tv_id) or {}).get("sequences", [])]
+        cur = (self.data.get("picked") or {}).get(tv_id)
+        return cur if cur in titles else (titles[0] if titles else None)
+
+    def set_picked(self, tv_id: str, title: str) -> None:
+        self.data.setdefault("picked", {})[tv_id] = title
+        self._save()
+        async_dispatcher_send(self.hass, INFO_SIGNAL, tv_id)
+
+    def lag(self, tv_id: str) -> float:
+        """How late this TV's pauses land (s), learned from the clips played: added to the lead."""
+        return float((self.data.get("lag") or {}).get(tv_id) or 0.0)
+
+    def learn_lag(self, tv_id: str, late: float) -> float:
+        """One measurement: where playback really stopped minus where the pause was sent (capped 0–5 s)."""
+        late = max(0.0, min(5.0, late))
+        old = (self.data.get("lag") or {}).get(tv_id)
+        new = late if old is None else round(0.5 * float(old) + 0.5 * late, 2)
+        self.data.setdefault("lag", {})[tv_id] = new
+        self._save()
+        return new
 
     def label(self, key: str, title: str) -> str:
         return (self.data.get("labels") or {}).get(str(key)) or title
@@ -275,7 +347,8 @@ class Demos:
         s = self.settings(tv[TV_ID])
         from .media import item_dict  # noqa: PLC0415
 
-        items = await self.conn.async_call(tv.get(TV_USER), lambda srv: [item_dict(i) for i in clips(srv, s["library"], seq)])
+        seq, items = await self.conn.async_call(
+            tv.get(TV_USER), lambda srv: (lambda r: (r[0], [item_dict(i) for i in r[1]]))(resolve(srv, s["library"], seq)))
         if not items:
             raise HomeAssistantError(f"No clips in {seq if seq not in ('', 'all') else s['library']}")
         old = self.runs.get(tv[TV_ID])
@@ -517,6 +590,15 @@ class Runner:
             if self._jump is not None:
                 return True
             st = self.tv.get(TV_PLEX) and self.hass.states.get(self.tv[TV_PLEX])
+            if n == 80 and not (st and str(st.attributes.get("media_content_id") or "") == key and st.state in ("playing", "buffering")):
+                # 20 s and not playing: start it once more, with Play (from where Plex has it: a demo clip that
+                # isn't partly watched starts at its beginning)
+                record(self.hass, self.tv, "demo start", f"clip {self.i + 1} ({label}) not playing after 20 s: starting it again with Play",
+                       handled="sent again")
+                try:
+                    await start(self.hass, self.tv, {**it, "offset": None}, "play")
+                except HomeAssistantError as err:
+                    record(self.hass, self.tv, "demo start (again)", err)
             if n in (40, 120):   # 10 s and 30 s: say what the TV reports, so a start that doesn't take can be traced
                 record(self.hass, self.tv, "demo start", f"clip {self.i + 1} not playing after {n // 4} s: Plex player "
                        f"{(st.state + ' ' + str(st.attributes.get('media_content_id') or '-')) if st else 'none'}, position "
@@ -532,7 +614,8 @@ class Runner:
             dur = float(st.attributes.get("media_duration") or 0)
         if not dur:
             raise HomeAssistantError(f"{label}: Plex didn't say how long it is")
-        aim = max(0.5, dur - float(s["lead_s"]))
+        lag = self.demos.lag(self.tv[TV_ID]) if s.get("lead_auto", True) else 0.0
+        aim = max(0.5, dur - float(s["lead_s"]) - lag)
         self._set("playing")
         idle_since = None
         while True:
@@ -550,9 +633,52 @@ class Runner:
             else:
                 idle_since = None
             await asyncio.sleep(0.25)
+        sent_at = time.time()
         await control(self.hass, self.tv, "pause" if s["end"] == "pause" else "stop")
-        self.last_timing = {"clip": self.i + 1, "at": round(pos, 1), "aim": round(aim, 1), "length": round(dur, 1)}
-        record(self.hass, self.tv, "demo timing", f"clip {self.i + 1}: {s['end']}d at {pos:.1f} s, aimed for {aim:.1f} s of {dur:.1f} s",
-               handled="timing note")
+        self.last_timing = {"clip": self.i + 1, "at": round(pos, 1), "aim": round(aim, 1), "length": round(dur, 1),
+                            "lead": round(float(s["lead_s"]) + lag, 1), "ended": None, "result": "checking"}
+        record(self.hass, self.tv, "demo timing", f"clip {self.i + 1}: {s['end']} sent at {pos:.1f} s (aimed {aim:.1f} s of {dur:.1f} s, "
+               f"lead {float(s['lead_s']):g} s + learned {lag:g} s)", handled="timing note")
+        if s["end"] == "pause":
+            self.hass.async_create_background_task(self._check_end(dict(self.last_timing), key, pos, sent_at, dur, s),
+                                                   f"plex_center demo end check {self.tv[TV_ID]}")
+        else:
+            self.last_timing["result"] = "stopped"
         self.ends_at = None
         return False
+
+    async def _check_end(self, timing: dict[str, Any], key: str, sent_pos: float, sent_at: float, dur: float, s: dict[str, Any]) -> None:
+        """Where playback really ended after the pause: the Plex player's next report (it reports every few seconds).
+        paused: at what position, and how late that was; ran out: the clip reached its end first (a miss)."""
+        from .eventlog import record  # noqa: PLC0415
+        ent = self.tv.get(TV_PLEX)
+        if not ent:
+            return
+        first = self.hass.states.get(ent)
+        first_at = first and first.attributes.get("media_position_updated_at")
+        result, ended = "unknown", None
+        for _ in range(40):   # up to 10 s
+            await asyncio.sleep(0.25)
+            st = self.hass.states.get(ent)
+            if not st:
+                continue
+            if st.state in ("idle", "off", "unavailable") or str(st.attributes.get("media_content_id") or key) != key:
+                result = "ran out"
+                break
+            if st.state == "paused" and st.attributes.get("media_position") is not None \
+                    and (st.attributes.get("media_position_updated_at") != first_at or time.time() - sent_at > 3):
+                ended, result = float(st.attributes["media_position"]), "paused"
+                break
+        if self.last_timing and self.last_timing.get("clip") == timing["clip"] and self.last_timing.get("result") == "checking":
+            self.last_timing.update(ended=None if ended is None else round(ended, 1), result=result)
+            self.demos.notify(self.tv[TV_ID])
+        learned = None
+        if s.get("lead_auto", True):
+            if result == "paused" and ended is not None:
+                learned = self.demos.learn_lag(self.tv[TV_ID], ended - sent_pos)
+            elif result == "ran out":
+                learned = self.demos.learn_lag(self.tv[TV_ID], self.demos.lag(self.tv[TV_ID]) + 1.5)   # it was too late: 1.5 s more
+        where = f"paused at {ended:.1f} s ({ended - sent_pos:+.1f} s after the pause was sent, {dur - ended:.1f} s before the end)" \
+            if ended is not None else ("ran out to its end: the pause came too late" if result == "ran out" else "the TV didn't say")
+        record(self.hass, self.tv, "demo timing", f"clip {timing['clip']}: {where}" + (f"; learned lead now +{learned:g} s" if learned is not None else ""),
+               handled="timing note")
