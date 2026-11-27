@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.27.157
+
+- **The Demo builder is a full page** (on top of everything, Home Assistant's dialogs included), so it's usable on any screen: every clip with a search box and tick boxes on the left; on the right the collections, a new collection of the ticked clips, and the open collection's clips in order (up / down, take out), Add ticked, Rename and Delete (asks first). Clip labels are edited in place.
+- **Card editor → Demo builder**: a section of its own with every demo setting, per TV (Demos on this TV, the library, the end of each clip, the session entity, popups) and **Open the Demo builder**. The Demos settings are gone from TV settings and from the Showtime Remote's Demos pane, which now just plays (admins get a Demo builder button there).
+- Fixed: the gold buttons in the Demos pane (Play all, New collection) showed no text.
+
 ## v2026.11.27.156
 
 - **Demos**: a library of short clips (default **Demos**, Other Videos) that plays one clip, all of them, or in a loop. Each clip is paused (or stopped) just before its end so Plex's "up next" screen doesn't show, then the next one starts after a gap (3 s by default). After the last clip it stays paused for a while (10 s by default), then stops. The volume is never changed.

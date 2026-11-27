@@ -9,6 +9,13 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.plex_center import demos as dm
 
+
+def _fake(fn):
+    """A service handler that runs on the event loop, in call order (a plain function would run on a worker thread)."""
+    async def handler(call):
+        fn(call)
+    return handler
+
 TV = {"id": "th", "name": "Theater", "plex_client": "media_player.plex_th", "adb": "media_player.th_adb", "plex_user": ""}
 
 
@@ -44,7 +51,7 @@ async def test_set_entity_by_kind(hass: HomeAssistant) -> None:
     got = []
     for dom, svc in [("homeassistant", "turn_on"), ("homeassistant", "turn_off"), ("script", "turn_on"), ("input_select", "select_option"),
                      ("input_number", "set_value")]:
-        hass.services.async_register(dom, svc, lambda call, d=dom, s=svc: got.append((d, s, dict(call.data))))
+        hass.services.async_register(dom, svc, _fake(lambda call, d=dom, s=svc: got.append((d, s, dict(call.data)))))
     await dm.set_entity(hass, "input_boolean.bypass", "", start=True)
     await dm.set_entity(hass, "input_boolean.bypass", "", start=False)
     await dm.set_entity(hass, "script.demo_lights", "", start=True)
@@ -80,7 +87,7 @@ async def _run(hass, settings, mode="all", start=1, act=None):
         events.append(("control", action))
 
     for dom, svc in [("homeassistant", "turn_on"), ("homeassistant", "turn_off"), ("pipup", "show")]:
-        hass.services.async_register(dom, svc, lambda call, d=dom, s=svc: events.append((d, s, call.data.get("title") or call.data.get("entity_id"))))
+        hass.services.async_register(dom, svc, _fake(lambda call, d=dom, s=svc: events.append((d, s, call.data.get("title") or call.data.get("entity_id")))))
     d = dm.Demos(hass, "e1", FakeConn())
     await d.async_load([TV])
     d.data["tvs"]["th"] = dm.check_settings({}, {"enabled": True, "gap_s": 0, "last_pause_s": 0, **settings})
@@ -125,7 +132,7 @@ async def test_one_clip_and_stop_mode(hass: HomeAssistant) -> None:
 
 async def test_restart_mid_demo_ends_the_session(hass: HomeAssistant) -> None:
     got = []
-    hass.services.async_register("homeassistant", "turn_off", lambda call: got.append(call.data["entity_id"]))
+    hass.services.async_register("homeassistant", "turn_off", _fake(lambda call: got.append(call.data["entity_id"])))
     d = dm.Demos(hass, "e2", FakeConn())
     await d.async_load([TV])
     d.data["tvs"]["th"] = {"enabled": True, "start_entity": "input_boolean.bypass"}

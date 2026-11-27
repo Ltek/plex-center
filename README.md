@@ -150,16 +150,17 @@ A library of short, already-trimmed clips (by default the Plex library **Demos**
 by clip or straight through. Each clip is paused (or stopped) just before its end, so Plex's "up next" screen never
 shows, then the next one starts after a short gap. The volume is never changed.
 
-- **Turn it on per TV**: card editor → TV settings → the TV → **Demos on this TV**, and pick the library. That
-  library is then left out of Home, the library tabs and Surprise me.
-- **Play**: open the Showtime Remote and tap **Demos**. Pick the whole library or one of its collections, then
-  One clip / Play through / Loop. While it runs: which clip, time left, Previous / Pause / Next / Stop.
-- **Settings** (admins, ⚙ in the Demos pane): Pause or Stop at a clip's end and how long before it, the gap between
+- **Set up** (admins): card editor → **Demo builder** (its own group, before Apps & devices). Pick a TV, tick
+  **Demos on this TV** and choose its library; that library is then left out of Home, the library tabs and Surprise
+  me. The same section has every demo setting: Pause or Stop at a clip's end and how long before it, the gap between
   clips, how long the last clip stays paused before it stops, a **session entity** set at the start and set back at
   the end (also when stopped, on an error, or after a Home Assistant restart: handy for a lighting-automation
   bypass), and PiPup popups (each clip's label and number; a start and an end message).
-- **Demo builder** (admins): make collections of clips, add to them, reorder, rename, remove, delete. A collection
-  is a Plex collection in the demo library, so it plays in the order you set. A pencil next to a clip sets its label.
+- **Demo builder** (admins): a full page, opened from that section or from the Demos pane. Tick clips (with a search
+  box), make a collection of them or add them to one, put a collection's clips in order, take clips out, rename or
+  delete a collection, and give clips labels. A collection is a Plex collection in the demo library.
+- **Play**: open the Showtime Remote and tap **Demos**. Pick the whole library or one of its collections, then
+  One clip / Play through / Loop. While it runs: which clip, time left, Previous / Pause / Next / Stop.
 
 ```yaml
 action: plex_center.demo_play
