@@ -1,5 +1,10 @@
 # Changelog
 
+## v2026.11.27.163
+
+- **A TV's Plex player only gets commands it says it takes** (its `supported_features`): play / pause / skip / seek only when it claims play, pause and play_media, also when the Plex route is chosen in TV settings; volume only when it claims a volume control. The SHIELD's Plex app claims none of these, so nothing is ever sent to it.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.27.162
 
 - **Demos entities**, one of each per TV with Demos on: `sensor.<tv>_demo_collections` (the collections, their clips, running time and description, and what the demo is doing) and `select.<tv>_demo_collection` (choose a collection; it only sets it). `plex_center.demo_play` takes a collection's title or "All of <library>" as the sequence.

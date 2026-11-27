@@ -138,14 +138,25 @@ def pipup_ready(hass: HomeAssistant, entity_id: str | None) -> bool:
 
 
 def plex_remote_ok(hass: HomeAssistant, entity_id: str | None) -> bool:
-    """A Plex client that accepts remote control (Plex Web, Plex HTPC): more than browse + play_media."""
+    """A Plex client that says it takes remote control (Plex Web, Plex HTPC): play, pause and play_media. Players
+    that don't claim them (the Plex app on the SHIELD) never get commands."""
     st = entity_id and hass.states.get(entity_id)
     if not st or st.state == "unavailable":
         return False
     from homeassistant.components.media_player import MediaPlayerEntityFeature as F  # noqa: PLC0415
 
     feats = int(st.attributes.get("supported_features") or 0)
-    return bool(feats & F.PAUSE) and bool(feats & F.PLAY_MEDIA)
+    return bool(feats & F.PAUSE) and bool(feats & F.PLAY) and bool(feats & F.PLAY_MEDIA)
+
+
+def plex_volume_ok(hass: HomeAssistant, entity_id: str | None) -> bool:
+    """The Plex client says it can change the volume."""
+    st = entity_id and hass.states.get(entity_id)
+    if not st or st.state == "unavailable":
+        return False
+    from homeassistant.components.media_player import MediaPlayerEntityFeature as F  # noqa: PLC0415
+
+    return bool(int(st.attributes.get("supported_features") or 0) & (F.VOLUME_SET | F.VOLUME_STEP))
 
 
 def route_for(hass: HomeAssistant, tv: dict[str, Any]) -> str | None:
@@ -157,8 +168,8 @@ def route_for(hass: HomeAssistant, tv: dict[str, Any]) -> str | None:
         return ("pipup" if pipup_ready(hass, pip) else "open") if has(pip) else None
     if want == "adb":
         return "adb" if has(adb) else None
-    if want == "plex":
-        return "plex" if has(plex) else None
+    if want == "plex" and plex_remote_ok(hass, plex):
+        return "plex"   # chosen in TV settings, and the player says it takes the commands (else: as Auto)
     # Auto: PiPup, then ADB. The Plex player's own remote control only when the TV has neither: some Plex apps
     # (the SHIELD's) say they take pause / play but ignore them.
     if pipup_ready(hass, pip):

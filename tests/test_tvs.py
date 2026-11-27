@@ -51,7 +51,7 @@ async def test_routes(hass):
     hass.states.async_set("media_player.p", "on", {"click_service": True, "click_packages": ["com.plexapp.android"]})
     hass.states.async_set("media_player.p0", "on", {"click_service": False})
     hass.states.async_set("media_player.a", "idle", {})
-    hass.states.async_set("media_player.web", "idle", {"supported_features": 1 | 512 | 4096})
+    hass.states.async_set("media_player.web", "idle", {"supported_features": 1 | 512 | 4096 | 16384})
     hass.states.async_set("media_player.tvplex", "idle", {"supported_features": 131584})
     assert route_for(hass, {"pipup": "media_player.p", "adb": "media_player.a", "plex_client": "media_player.tvplex"}) == "pipup"
     assert route_for(hass, {"pipup": "media_player.p0", "adb": "media_player.a"}) == "adb"

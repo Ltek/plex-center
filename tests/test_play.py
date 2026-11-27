@@ -76,7 +76,7 @@ async def test_pipup_sends_back_first_when_playing(hass, calls):
 
 
 async def test_plex_route_uses_play_media_with_user(hass, calls):
-    hass.states.async_set("media_player.web", "idle", {"supported_features": 1 | 512 | 4096})
+    hass.states.async_set("media_player.web", "idle", {"supported_features": 1 | 512 | 4096 | 16384})
     await play.start(hass, {"plex_client": "media_player.web", "plex_user": "LivingRoom"}, MOVIE, "restart")
     dom, svc, data = calls[-1]
     assert (dom, svc) == ("media_player", "play_media")
@@ -439,7 +439,25 @@ async def test_move_retry_presses_only_what_is_missing(hass):
 def test_auto_route_skips_the_plex_remote_when_pipup_or_adb_is_there(hass):
     from homeassistant.components.media_player import MediaPlayerEntityFeature as F
     from custom_components.plex_center.tvs import route_for
-    hass.states.async_set("media_player.plex", "playing", {"supported_features": int(F.PAUSE | F.PLAY_MEDIA)})
+    hass.states.async_set("media_player.plex", "playing", {"supported_features": int(F.PAUSE | F.PLAY | F.PLAY_MEDIA)})
     hass.states.async_set("media_player.adb", "idle")
     assert route_for(hass, {"plex_client": "media_player.plex", "adb": "media_player.adb"}) == "adb"
     assert route_for(hass, {"plex_client": "media_player.plex"}) == "plex", "nothing else: the Plex remote"
+
+
+def test_plex_player_gets_no_commands_it_doesnt_claim(hass):
+    from homeassistant.components.media_player import MediaPlayerEntityFeature as F
+    from custom_components.plex_center.tvs import route_for
+    shield = int(F.PLAY_MEDIA | F.BROWSE_MEDIA)   # what the SHIELD's Plex app claims
+    hass.states.async_set("media_player.plex", "playing", {"supported_features": shield})
+    assert route_for(hass, {"plex_client": "media_player.plex"}) is None, "Auto: nothing to control it with"
+    assert route_for(hass, {"plex_client": "media_player.plex", "route": "plex"}) is None, "chosen in TV settings: still not"
+    hass.states.async_set("media_player.plex", "playing", {"supported_features": int(F.PAUSE | F.PLAY | F.PLAY_MEDIA)})
+    assert route_for(hass, {"plex_client": "media_player.plex", "route": "plex"}) == "plex"
+
+
+async def test_volume_never_goes_to_a_plex_player_without_volume(hass):
+    from homeassistant.components.media_player import MediaPlayerEntityFeature as F
+    hass.states.async_set("media_player.plex", "playing", {"supported_features": int(F.PLAY_MEDIA)})
+    with pytest.raises(Exception, match="No player to change the volume"):
+        await play.control(hass, {"name": "T", "plex_client": "media_player.plex", "route": "plex"}, "volume_up")

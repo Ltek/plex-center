@@ -440,7 +440,9 @@ async def _volume_power(hass: HomeAssistant, tv: dict[str, Any], route: str, act
             raise HomeAssistantError(f"{_name(tv)}: the volume player {own} isn't there")
         ent = own
     else:
-        ent = pip if pip and hass.states.get(pip) else adb if adb and hass.states.get(adb) else tv.get(TV_PLEX)
+        from .tvs import plex_volume_ok  # noqa: PLC0415
+        ent = pip if pip and hass.states.get(pip) else adb if adb and hass.states.get(adb) \
+            else tv.get(TV_PLEX) if plex_volume_ok(hass, tv.get(TV_PLEX)) else None
     if not ent:
         raise HomeAssistantError("No player to change the volume with")
     if action == "volume_set":   # 0–1 (the fill bar's drag)
