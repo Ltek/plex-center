@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.27.159
+
+- Fixed: the Demo builder couldn't make or change collections ("Plex: expected str at 'id'"). Its collection field clashed with the id every Home Assistant websocket message carries; it's now called `collection`.
+- Demo builder: the ticked clips and the new collection's name are kept when Plex reports an error, so you can try again.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.27.158
 
 - **Demos pane (Showtime Remote)**: the collections show their number of clips and running time; the one playing is marked.

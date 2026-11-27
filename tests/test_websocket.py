@@ -286,3 +286,18 @@ async def test_demo_library_only_in_demos(ws, hass):
     assert entry.runtime_data.demos.settings("living_room_tv")["library"] == "Kids Movies"
     r = await ws(type="plex_center/demos", tv="living_room_tv")
     assert r["success"] and r["result"]["status"] == {"state": "idle"}
+
+
+async def test_demo_builder_requests_pass_the_schema(ws, hass):
+    from unittest.mock import patch
+    got = []
+
+    def fake(server, library, op, data):
+        got.append((op, data.get("collection"), data.get("title"), data.get("keys")))
+        return {"id": "130"}
+    with patch("custom_components.plex_center.demos.collection_edit", fake):
+        r = await ws(type="plex_center/demos/collection", tv="living_room_tv", op="create", title="Test", keys=["1", "2", "3"])
+        assert r["success"], r
+        r = await ws(type="plex_center/demos/collection", tv="living_room_tv", op="add", collection="130", keys=["4"])
+        assert r["success"], r
+    assert got == [("create", None, "Test", ["1", "2", "3"]), ("add", "130", None, ["4"])]

@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.27.158
+// Version: v2026.11.27.159
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.27.158';
+const BUILD_NUMBER = 'v2026.11.27.159';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -8057,12 +8057,13 @@ class DemoBuilder {
     } catch (e) { this._say(String(e?.message || e), true); }
     this.paint();
   }
-  async _op(op, data, ok) {
+  async _op(op, data, ok, onOk) {
     this.busy = true; this.paint();
     try {
       const r = await this._ws('demos/collection', { op, ...data });
       if (op === 'create' && r?.id) this.col = String(r.id);
       if (op === 'delete') this.col = null;
+      onOk?.();
       this._say(ok || '');
     } catch (e) { this._say(`Plex: ${e?.message || e}`, true); }
     this.busy = false;
@@ -8089,13 +8090,12 @@ class DemoBuilder {
     this.edit = null;
     await this.load();
   }
-  _rename(v) { const name = v.trim(); this.renaming = false; if (name) this._op('rename', { id: this.col, title: name }, 'Renamed.'); else this.paint(); }
+  _rename(v) { const name = v.trim(); this.renaming = false; if (name) this._op('rename', { collection: this.col, title: name }, 'Renamed.'); else this.paint(); }
   _create() {
     const inp = this.el.querySelector('[data-newname]'), name = inp?.value.trim(), keys = [...this.pick];
     if (!keys.length) { this._say('Tick some clips first.', true); this.paint(); return; }
     if (!name) { this._say('Give the new collection a name.', true); this.paint(); inp?.focus(); return; }
-    this.pick = new Set();
-    this._op('create', { title: name, keys }, `Made "${name}".`);
+    this._op('create', { title: name, keys }, `Made "${name}".`, () => { this.pick = new Set(); const n = this.el.querySelector('[data-newname]'); if (n) n.value = ''; });
   }
   _click(e) {
     const t = (sel) => e.target.closest?.(sel);
@@ -8103,7 +8103,7 @@ class DemoBuilder {
     if (t('[data-close]')) { this.close(); return; }
     if ((el = t('[data-col]'))) { this.col = el.dataset.col; this.renaming = false; this.confirmDel = false; if (!this.clips[this.col]) this._ws('demos/clips', { sequence: this.col }).then((r) => { this.clips[this.col] = r; this.paint(); }).catch(() => {}); this.paint(); return; }
     if (t('[data-create]')) { this._create(); return; }
-    if (t('[data-add]')) { const keys = [...this.pick]; this.pick = new Set(); this._op('add', { id: this.col, keys }, `Added ${keys.length}.`); return; }
+    if (t('[data-add]')) { const keys = [...this.pick]; this._op('add', { collection: this.col, keys }, `Added ${keys.length}.`, () => { this.pick = new Set(); }); return; }
     if (t('[data-tickall]')) { this.el.querySelectorAll('[data-hay]').forEach((r) => { if (!r.hidden) this.pick.add(r.dataset.row); }); this.paint(); return; }
     if (t('[data-clear]')) { this.pick = new Set(); this.paint(); return; }
     if ((el = t('[data-lab]'))) { this.edit = el.dataset.lab; this.paint(); const i = this.el.querySelector('[data-labin]'); i?.focus(); i?.select(); return; }
@@ -8114,16 +8114,16 @@ class DemoBuilder {
     if (t('[data-renx]')) { this.renaming = false; this.paint(); return; }
     if (t('[data-del]')) { this.confirmDel = true; this.paint(); return; }
     if (t('[data-delno]')) { this.confirmDel = false; this.paint(); return; }
-    if (t('[data-delyes]')) { this.confirmDel = false; this._op('delete', { id: this.col }, 'Collection deleted. The clips are still in the library.'); return; }
+    if (t('[data-delyes]')) { this.confirmDel = false; this._op('delete', { collection: this.col }, 'Collection deleted. The clips are still in the library.'); return; }
     if ((el = t('[data-move]'))) {
       const [key, dir] = el.dataset.move.split('|'), cl = this.clips[this.col] || [], i = cl.findIndex((c) => c.key === key);
       if (i < 0) return;
       const after = dir === 'up' ? (i >= 2 ? cl[i - 2].key : null) : dir === 'down' ? cl[i + 1]?.key : dir === 'top' ? null : cl[cl.length - 1]?.key;
       if (after === key) return;
-      this._op('move', { id: this.col, key, after });
+      this._op('move', { collection: this.col, key, after });
       return;
     }
-    if ((el = t('[data-rm]'))) { this._op('remove', { id: this.col, keys: [el.dataset.rm] }); }
+    if ((el = t('[data-rm]'))) { this._op('remove', { collection: this.col, keys: [el.dataset.rm] }); }
   }
   paint() {
     const d = this.el;

@@ -176,7 +176,7 @@ def collection_edit(server, library: str, op: str, data: dict[str, Any]) -> dict
         except Exception:  # noqa: BLE001 - an older plexapi / server: Plex's default order
             pass
         return {"id": str(col.ratingKey)}
-    col = next((c for c in sec.collections() if str(c.ratingKey) == str(data.get("id"))), None)
+    col = next((c for c in sec.collections() if str(c.ratingKey) == str(data.get("collection"))), None)
     if col is None:
         raise HomeAssistantError("That collection isn't there any more")
     if op == "add":

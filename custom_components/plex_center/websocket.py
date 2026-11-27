@@ -714,7 +714,7 @@ def ws_demos_label(hass: HomeAssistant, connection, msg) -> None:
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/demos/collection", vol.Optional("entry_id"): str, vol.Required("tv"): str,
                                   vol.Required("op"): vol.In(["create", "add", "remove", "move", "rename", "delete"]),
-                                  vol.Optional("id"): str, vol.Optional("title"): str,
+                                  vol.Optional("collection"): str, vol.Optional("title"): str,
                                   vol.Optional("keys"): [vol.All(str, vol.Match(r"^\d+$"))],
                                   vol.Optional("key"): vol.All(str, vol.Match(r"^\d+$")), vol.Optional("after"): vol.Any(None, vol.All(str, vol.Match(r"^\d+$")))})
 @websocket_api.require_admin
