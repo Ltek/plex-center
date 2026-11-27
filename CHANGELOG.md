@@ -1,5 +1,13 @@
 # Changelog
 
+## v2026.11.27.161
+
+- Fixed: a demo could stay on "Starting" and never play its first clip (seen on the SHIELD with Play through). Each clip was started with Plex's **Play from start** button, which Plex only shows for a partly watched title; a demo clip played to its end counts as watched and only has **Play**. Each clip now asks Plex where it is and presses the button its page has. A Play from start that never shows now falls back to Play.
+- Demos: the event log says how each clip was started, and what the TV reports if a clip isn't playing after 10 s and 30 s.
+- New action `plex_center.demo_sequences`: the TV's demo library and its collections (with a response), to fill a dropdown.
+- Demo builder: chips on each clip show which collections it's in (tap one to open it), instead of the "in …" text.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.27.160
 
 - **Showtime Remote: a System power button** (Buttons → System power: off, at the top, or in the bottom row). Hold 3 s to turn the room on, 5 s to turn it off (the Activity button's times). It uses the TV's Easy AV Control room (asking which activity when several use the TV, and showing the start's progress), or the TV's own Room power entity.

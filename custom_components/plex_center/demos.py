@@ -499,13 +499,28 @@ class Runner:
             title = label if s["popup_label"] else f"{self.i + 1} / {len(self.items)}"
             msg = f"{self.i + 1} / {len(self.items)}" if s["popup_label"] and s["popup_number"] else ""
             await popup(self.hass, self.tv, title, msg, s["popup_s"])
-        await start(self.hass, self.tv, it, "restart")
+        # Plex shows "Play from start" only for a partly watched title; a clip played to its end counts as
+        # watched (only "Play"). So ask Plex where the clip is now, and start it the way its page allows.
+        offset = it.get("offset")
+        try:
+            fresh = await self.demos.conn.async_call(self.tv.get(TV_USER), lambda srv: srv.fetchItem(int(it["key"])))
+            offset = (getattr(fresh, "viewOffset", None) or 0) / 1000
+        except Exception as err:  # noqa: BLE001 - keep what we had
+            _LOGGER.debug("Demo: couldn't read %s's progress: %s", label, err)
+        how = "restart" if offset and offset > 1 else "play"
+        record(self.hass, self.tv, "demo start", f"clip {self.i + 1} ({label}): {'Play from start' if how == 'restart' else 'Play'}"
+               f" (progress {offset or 0:.0f} s)", handled="timing note")
+        await start(self.hass, self.tv, {**it, "offset": offset or None}, how)
         # playing: the TV's players report a position for it (up to 60 s: the room may be starting)
         key = str(it.get("key"))
-        for _ in range(240):
+        for n in range(240):
             if self._jump is not None:
                 return True
             st = self.tv.get(TV_PLEX) and self.hass.states.get(self.tv[TV_PLEX])
+            if n in (40, 120):   # 10 s and 30 s: say what the TV reports, so a start that doesn't take can be traced
+                record(self.hass, self.tv, "demo start", f"clip {self.i + 1} not playing after {n // 4} s: Plex player "
+                       f"{(st.state + ' ' + str(st.attributes.get('media_content_id') or '-')) if st else 'none'}, position "
+                       f"{position(self.hass, self.tv)}, waiting for {key}", handled="timing note")
             mine = not st or str(st.attributes.get("media_content_id") or key) == key
             if mine and position(self.hass, self.tv) is not None and (not st or st.state in ("playing", "buffering")):
                 break

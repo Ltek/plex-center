@@ -304,9 +304,13 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
                     await launch_retry(BTN_RESTART if mode == "restart" else BTN_WATCH)
                 except HomeAssistantError as err:
                     # Never started: no Restart button on the page; Watch starts from the beginning anyway.
+                    # Or the title isn't partly watched any more (played to its end: only Watch shows): Watch.
                     if mode == "restart" and "not on screen" not in str(err) and "didn't open" not in str(err) \
                             and ("404" in str(err) or "not found" in str(err).lower()):
                         await launch_retry(BTN_WATCH)
+                    elif mode == "restart" and "didn't open" in str(err) and not item.get("offset"):
+                        steps.mark("no Play from start button: Watch")
+                        await launch(BTN_WATCH)
                     else:
                         raise
         else:  # adb

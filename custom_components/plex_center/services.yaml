@@ -192,3 +192,11 @@ room_power:
       required: true
       selector:
         boolean:
+
+demo_sequences:
+  fields:
+    tv:
+      required: true
+      example: Theater
+      selector:
+        text:

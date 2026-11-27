@@ -187,6 +187,9 @@ data:
                              # skip:<key> / unskip:<key>, or move:<key>:<after key or first>
 ```
 
+`plex_center.demo_sequences` (with `response_variable`) returns the TV's demo library and its collections:
+`sequences` (id, title, number of clips, description) and `titles`, for example to fill an `input_select`.
+
 `plex_center.demo_status` (with `response_variable`) returns what the demo on a TV is doing: `state`, `index`,
 `total`, `label`, `ends_at`, and `timing` (where the last clip was paused against where it aimed).
 

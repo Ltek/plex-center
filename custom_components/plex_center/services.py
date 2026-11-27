@@ -185,6 +185,15 @@ def async_register(hass: HomeAssistant) -> None:
         entry, tv = find_tv(hass, call.data["tv"])
         return entry.runtime_data.demos.status(tv["id"])
     hass.services.async_register(DOMAIN, "demo_status", demo_status, schema=RESUME_SCHEMA, supports_response=SupportsResponse.ONLY)
+
+    async def demo_sequences(call: ServiceCall) -> ServiceResponse:
+        """The TV's demo library and its collections (to fill a dropdown, for example)."""
+        from . import demos as dm  # noqa: PLC0415
+        entry, tv = find_tv(hass, call.data["tv"])
+        lib = entry.runtime_data.demos.settings(tv["id"])["library"]
+        seqs = await entry.runtime_data.conn.async_call(tv.get("plex_user"), lambda srv: dm.sequences(srv, lib))
+        return {"library": lib, "sequences": seqs, "titles": [x["title"] for x in seqs]}
+    hass.services.async_register(DOMAIN, "demo_sequences", demo_sequences, schema=RESUME_SCHEMA, supports_response=SupportsResponse.ONLY)
     hass.services.async_register(DOMAIN, "demo_play", _logged(hass, "demo_play", demo_play), schema=DEMO_PLAY_SCHEMA)
     hass.services.async_register(DOMAIN, "demo_control", _logged(hass, "demo_control", demo_control), schema=DEMO_CONTROL_SCHEMA)
     hass.services.async_register(DOMAIN, "control", _logged(hass, "control", ctl), schema=CONTROL_SCHEMA)

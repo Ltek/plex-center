@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.27.160
+// Version: v2026.11.27.161
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.27.160';
+const BUILD_NUMBER = 'v2026.11.27.161';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -8069,6 +8069,10 @@ dialog.plc-dmb::backdrop { background: rgba(0,0,0,.6); }
 .plc-dmb .th { width: 128px; height: 72px; flex: none; border-radius: 8px; background: center / cover no-repeat rgba(127,127,127,.15); }
 .plc-dmb .t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .plc-dmb .t b { font-weight: 600; font-size: 15px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.plc-dmb .t .in { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.plc-dmb .cchip { height: 22px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--divider-color, rgba(127,127,127,.4)); background: rgba(127,127,127,.12);
+  color: inherit; font-size: 11.5px; line-height: 20px; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.plc-dmb .cchip.on { border-color: var(--primary-color, #03a9f4); background: color-mix(in srgb, var(--primary-color, #03a9f4) 22%, transparent); font-weight: 600; }
 .plc-dmb .t small { opacity: .65; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plc-dmb .n { width: 26px; flex: none; text-align: center; opacity: .6; }
 .plc-dmb button { font: inherit; cursor: pointer; }
@@ -8139,7 +8143,10 @@ class DemoBuilder {
       if (this.col && !cols.some((c) => c.id === this.col)) this.col = null;
       if (!this.col && cols.length) this.col = cols[0].id;
       this.clips.all = await this._ws('demos/clips', { sequence: 'all' });
-      if (this.col) this.clips[this.col] = await this._ws('demos/clips', { sequence: this.col });
+      // every collection's clips: which collections each clip is in (chips on its row)
+      const got = await Promise.all(cols.map((c) => this._ws('demos/clips', { sequence: c.id }).catch(() => null)));
+      this.clips = { all: this.clips.all };
+      cols.forEach((c, k) => { if (got[k]) this.clips[c.id] = got[k]; });
     } catch (e) { this._say(String(e?.message || e), true); }
     this.paint();
   }
@@ -8233,14 +8240,15 @@ class DemoBuilder {
     const cols = (i?.sequences || []).filter((x) => x.id !== 'all'), sel = cols.find((c) => c.id === this.col), cl = sel ? this.clips[sel.id] : null;
     const th = (c) => `<span class="th"${c.poster || c.art ? ` style="background-image:url('${cssUrl(c.poster || c.art)}')"` : ''}></span>`;
     const len = (list) => fmtTime(list.reduce((a, c) => a + (Number(c.duration) || 0), 0));
-    const inSel = new Set((cl || []).map((c) => c.key));
+    const memberOf = (key) => cols.filter((c) => (this.clips[c.id] || []).some((x) => x.key === key));
     const libRows = !all ? '<p class="hint">Loading the clips…</p>' : !all.length ? '<p class="hint">No clips in this library.</p>' : all.map((c) => {
       const ed = this.edit === `lib:${c.key}`, hay = `${c.label || ''} ${c.title || ''}`.toLowerCase();
       return `<div class="row${this.pick.has(c.key) ? ' on' : ''}" data-row="${esc(c.key)}" data-hay="${esc(hay)}"${this.filter && !hay.includes(this.filter) ? ' hidden' : ''}>
         <label class="pick" title="Tick"><input type="checkbox" data-pick="${esc(c.key)}"${this.pick.has(c.key) ? ' checked' : ''}></label>${th(c)}
         <div class="t">${ed ? `<input type="text" class="grow" data-labin="${esc(c.key)}" value="${esc(c.label && c.label !== c.title ? c.label : '')}" placeholder="${esc(c.title)}">`
           : `<b title="${esc(c.title)}">${esc(c.label || c.title)}</b>`}
-          <small>${esc(c.duration ? fmtTime(c.duration) : '')}${c.label && c.label !== c.title ? ` · Plex: ${esc(c.title)}` : ''}${sel && inSel.has(c.key) ? ` · in ${esc(sel.title)}` : ''}</small></div>
+          <small>${esc(c.duration ? fmtTime(c.duration) : '')}${c.label && c.label !== c.title ? ` · Plex: ${esc(c.title)}` : ''}</small>
+          ${(() => { const m = memberOf(c.key); return m.length ? `<span class="in">${m.map((x) => `<button class="cchip${x.id === this.col ? ' on' : ''}" data-col="${esc(x.id)}" title="In ${esc(x.title)}: open it">${esc(x.title)}</button>`).join('')}</span>` : ''; })()}</div>
         ${ed ? `<button class="ib" data-labsave="${esc(c.key)}" title="Save the label (empty: the Plex title)"><ha-icon icon="mdi:check"></ha-icon></button><button class="ib" data-labx title="Cancel"><ha-icon icon="mdi:close"></ha-icon></button>`
           : `<button class="ib" data-lab="lib:${esc(c.key)}" title="Label (shown in Plex Center and the popups)"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>`}</div>`;
     }).join('');

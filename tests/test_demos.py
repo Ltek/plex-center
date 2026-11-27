@@ -221,3 +221,37 @@ async def test_room_power_action(hass: HomeAssistant) -> None:
         await hass.services.async_call("plex_center", "room_power", {"tv": "Theater", "on": True}, blocking=True)
         await hass.services.async_call("plex_center", "room_power", {"tv": "Theater", "on": False}, blocking=True)
     assert got == [("on", "input_boolean.theater"), ("off", "input_boolean.theater")]
+
+
+async def test_demo_sequences_action(hass: HomeAssistant) -> None:
+    from custom_components.plex_center import services
+    d = dm.Demos(hass, "e4", FakeConn())
+    await d.async_load([TV])
+    entry = NS(runtime_data=NS(demos=d, conn=FakeConn()))
+    with patch.object(services, "find_tv", lambda h, name: (entry, TV)):
+        services.async_register(hass)
+        r = await hass.services.async_call("plex_center", "demo_sequences", {"tv": "Theater"}, blocking=True, return_response=True)
+    assert r["library"] == "Demos" and r["titles"] == ["All of Demos", "Atmos showcase"] and r["sequences"][1]["count"] == 2
+
+
+async def test_each_clip_starts_the_way_its_page_allows(hass: HomeAssistant) -> None:
+    modes = []
+    fresh = {1: 0, 2: 42000, 3: 0}   # clip 2 is partly watched: Play from start; the others only have Play
+    SERVER.fetchItem = lambda k: NS(viewOffset=fresh[k])
+    real = dm.Runner._clip
+
+    async def spy(self, s):
+        from custom_components.plex_center import play as pl
+        orig = pl.start
+
+        async def rec(h, tv, item, mode="play", **kw):
+            modes.append(mode)
+            return await orig(h, tv, item, mode, **kw)
+        with patch.object(pl, "start", rec):
+            return await real(self, s)
+    try:
+        with patch.object(dm.Runner, "_clip", spy):
+            await _run(hass, {})
+    finally:
+        del SERVER.fetchItem
+    assert modes == ["play", "restart", "play"]

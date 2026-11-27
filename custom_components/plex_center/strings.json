@@ -101,6 +101,13 @@
     }
   },
   "services": {
+    "demo_sequences": {
+      "name": "Demo collections",
+      "description": "The TV's demo library and its collections: sequences (id, title, number of clips, description) and titles (for a dropdown). Use with response_variable.",
+      "fields": {
+        "tv": {"name": "TV", "description": "Name or id of the TV."}
+      }
+    },
     "room_power": {
       "name": "Room power",
       "description": "Turn the TV's own Room power entity (TV settings) on or off. A TV in an Easy AV Control room uses that integration's actions instead.",
