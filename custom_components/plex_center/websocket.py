@@ -906,19 +906,23 @@ async def ws_app_media(hass: HomeAssistant, connection, msg) -> None:
     connection.send_result(msg["id"], {**now, **({"meta": art} if art else {})})
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/log", vol.Optional("level"): vol.In(["error", "info"])})
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/log", vol.Optional("level"): vol.In(["error", "info"]),
+                                  vol.Optional("ha_errors"): bool, vol.Optional("ha_info"): bool})
 @callback
 def ws_log(hass: HomeAssistant, connection, msg) -> None:
     """Plex Center's log, newest first: {level, entries: [{at, last, count, tv, action, message, cause, fix, handled, level}]}.
     With `level` (admins): set what is logged first (error = failures only, info = also workarounds)."""
-    from .eventlog import entries, level, set_level  # noqa: PLC0415
+    from .eventlog import entries, ha_log, level, set_ha_log, set_level  # noqa: PLC0415
 
-    if msg.get("level"):
+    if msg.get("level") or "ha_errors" in msg or "ha_info" in msg:
         if not connection.user or not connection.user.is_admin:
             connection.send_error(msg["id"], "unauthorized", "Only an administrator can change the log level")
             return
-        set_level(hass, msg["level"])
-    connection.send_result(msg["id"], {"level": level(hass), "entries": list(reversed(entries(hass)))})
+        if msg.get("level"):
+            set_level(hass, msg["level"])
+        if "ha_errors" in msg or "ha_info" in msg:
+            set_ha_log(hass, msg.get("ha_errors"), msg.get("ha_info"))
+    connection.send_result(msg["id"], {"level": level(hass), "ha_log": ha_log(hass), "entries": list(reversed(entries(hass)))})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/log_clear"})

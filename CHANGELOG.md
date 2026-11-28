@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.28.164
+
+- **Log**: what goes to Home Assistant's log is now set apart from Plex Center's own log: **Errors** (on by default) and **Info** (off by default), each on its own. Plex Center's log keeps its Errors / Errors and info choice. **Export** downloads Plex Center's log as text or JSON.
+- **Demos: no Back between clips, or at the end.** With Pause, each clip's last frame stays on screen until the next clip opens over it (Back is pressed only if it can't); after the last clip it stays paused, and the session's end changes nothing on the TV. A demo you Stop still leaves the player.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.27.163
 
 - **A TV's Plex player only gets commands it says it takes** (its `supported_features`): play / pause / skip / seek only when it claims play, pause and play_media, also when the Plex route is chosen in TV settings; volume only when it claims a volume control. The SHIELD's Plex app claims none of these, so nothing is ever sent to it.

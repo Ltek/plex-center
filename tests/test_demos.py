@@ -73,6 +73,7 @@ async def _run(hass, settings, mode="all", start=1, act=None, skip=None):
     events, pos = [], {"v": None, "key": None}
 
     async def fake_start(h, tv, item, mode="play", **kw):
+        assert kw.get("back_first") is False, "a demo opens each clip over the paused one, no Back first"
         events.append(("play", item["title"]))
         pos.update(v=0.0, key=item["key"])
         hass.states.async_set("media_player.plex_th", "playing", {"media_content_id": item["key"], "media_duration": 10})
@@ -112,7 +113,7 @@ async def test_a_whole_run(hass: HomeAssistant) -> None:
                                   "popup_start": "Atmos demo", "popup_end": "That's all"})
     plays = [e[1] for e in events if e[0] == "play"]
     assert plays == ["Gravity - Opening", "Dune - Worm", "Top Gun - Jets"]
-    assert [e[1] for e in events if e[0] == "control"] == ["pause", "pause", "pause", "stop"], "each clip paused before its end; stopped after the last"
+    assert [e[1] for e in events if e[0] == "control"] == ["pause", "pause", "pause"], "each clip paused before its end; the last stays paused (no Back at the end)"
     assert ("homeassistant", "turn_on", "input_boolean.bypass") in events and events[-2:][-1][:2] in (("homeassistant", "turn_off"), ("pipup", "show"))
     on = events.index(("homeassistant", "turn_on", "input_boolean.bypass"))
     off = next(i for i, e in enumerate(events) if e[:2] == ("homeassistant", "turn_off"))
@@ -127,7 +128,7 @@ async def test_a_whole_run(hass: HomeAssistant) -> None:
 async def test_one_clip_and_stop_mode(hass: HomeAssistant) -> None:
     events, _d = await _run(hass, {"end": "stop"}, mode="one", start=2)
     assert [e[1] for e in events if e[0] == "play"] == ["Dune - Worm"]
-    assert [e[1] for e in events if e[0] == "control"] == ["stop", "stop"]
+    assert [e[1] for e in events if e[0] == "control"] == ["stop"]
 
 
 async def test_restart_mid_demo_ends_the_session(hass: HomeAssistant) -> None:

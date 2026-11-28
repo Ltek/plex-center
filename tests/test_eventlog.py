@@ -81,3 +81,38 @@ async def test_log_is_saved_and_loaded(hass, hass_storage):
     saved = hass_storage["plex_center.log"]["data"]
     assert [e["message"] for e in saved["entries"]] == ["old", "has no media session"] and saved["level"] == "info"
     eventlog.set_level(hass, "error")
+
+
+
+def test_home_assistant_log_options_apart_from_this_log(hass):
+    import logging
+    from types import SimpleNamespace
+    from custom_components.plex_center import eventlog as el
+
+    class Keep(logging.Handler):
+        def emit(self, record):
+            caplog.records.append(SimpleNamespace(levelno=record.levelno, message=record.getMessage()))
+    caplog = SimpleNamespace(records=[])
+    lg = logging.getLogger("custom_components.plex_center")
+    h = Keep(level=logging.DEBUG)
+    lg.addHandler(h)
+    old = lg.level
+    lg.setLevel(logging.DEBUG)
+    tv = {"name": "Theater"}
+    el.set_level(hass, "info")
+    el.set_ha_log(hass, errors=False, info=False)
+    el.record(hass, tv, "pause", "boom 1")
+    el.record(hass, tv, "seek", "worked 1", handled="skip keys")
+    assert len(el.entries(hass)) == 2, "kept in this log"
+    assert not [r for r in caplog.records if r.levelno >= logging.INFO and "boom 1" in r.message], "not in Home Assistant's log"
+    el.set_ha_log(hass, errors=True, info=True)
+    el.record(hass, tv, "pause", "boom 2")
+    el.record(hass, tv, "seek", "worked 2", handled="skip keys")
+    assert any(r.levelno == logging.WARNING and "boom 2" in r.message for r in caplog.records)
+    assert any(r.levelno == logging.INFO and "worked 2" in r.message for r in caplog.records)
+    el.set_level(hass, "error")
+    el.record(hass, tv, "seek", "worked 3", handled="skip keys")
+    assert not any(e["message"] == "worked 3" for e in el.entries(hass)), "info not kept at error level..."
+    assert any(r.levelno == logging.INFO and "worked 3" in r.message for r in caplog.records), "...but still in Home Assistant's log"
+    lg.removeHandler(h)
+    lg.setLevel(old)

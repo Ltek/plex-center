@@ -220,10 +220,12 @@ async def open_app(hass: HomeAssistant, tv: dict[str, Any], rec: dict[str, Any])
 
 
 async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], mode: str = "play",
-                activity: str | None = None, start_room: bool = True) -> str:
+                activity: str | None = None, start_room: bool = True, back_first: bool = True) -> str:
     """Start an item on a TV. mode: play (Watch / Resume) | restart (Start over). Returns the route used.
     With an Easy AV Control room (and no room hook of its own), the room is turned on first: `activity` picks which
-    (else the only / default one that uses the TV); start_room=False skips it."""
+    (else the only / default one that uses the TV); start_room=False skips it.
+    back_first=False (Demos): open the title over what's on screen (a paused clip's last frame stays until the next
+    one starts), without pressing Back first; Back only when that doesn't work."""
     link = item.get("link")
     if not link or not SAFE_LINK.match(link):
         raise HomeAssistantError("This title has no Plex link")
@@ -257,10 +259,14 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
         elif route in ("pipup", "open"):
             pip = tv[TV_PIPUP]
             was_off = await wake(hass, tv, steps=steps)
-            if not was_off and _playing(hass, tv):   # the TV closed its apps in standby: nothing to leave
+            over = not was_off and _playing(hass, tv)   # something on screen (the TV closed its apps in standby)
+
+            async def back() -> None:
                 await _svc(hass, "pipup", "send_key", {"key": "back"}, pip)
                 await asyncio.sleep(1.5)
                 steps.mark("Back (something was playing)")
+            if over and back_first:
+                await back()
             data = {"package": PLEX_PKG, "uri": link}
             if route == "open":
                 await _svc(hass, "pipup", "launch_app", data, pip)
@@ -300,8 +306,20 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
                                 raise HomeAssistantError(f"Plex didn't open on {_name(tv)}. Try again.") from err2
                             raise
 
+                async def launch_first(button: str) -> None:
+                    """Over the paused player (back_first=False): if the title doesn't open there, Back, then again."""
+                    if not (over and not back_first):
+                        await launch_retry(button)
+                        return
+                    try:
+                        await launch(button)
+                        steps.mark("opened over the paused player")
+                    except HomeAssistantError:
+                        await back()
+                        await launch_retry(button)
+
                 try:
-                    await launch_retry(BTN_RESTART if mode == "restart" else BTN_WATCH)
+                    await launch_first(BTN_RESTART if mode == "restart" else BTN_WATCH)
                 except HomeAssistantError as err:
                     # Never started: no Restart button on the page; Watch starts from the beginning anyway.
                     # Or the title isn't partly watched any more (played to its end: only Watch shows): Watch.
@@ -317,7 +335,7 @@ async def start(hass: HomeAssistant, tv: dict[str, Any], item: dict[str, Any], m
             adb = tv[TV_ADB]
             cmd = lambda c: _svc(hass, "androidtv", "adb_command", {"command": c}, adb)  # noqa: E731
             was_off = await wake(hass, tv, steps=steps)
-            if not was_off and _playing(hass, tv):
+            if not was_off and _playing(hass, tv) and back_first:
                 await cmd("input keyevent KEYCODE_BACK")
                 await asyncio.sleep(1.5)
                 steps.mark("ADB Back (something was playing)")

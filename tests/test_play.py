@@ -1,6 +1,6 @@
 """Playback routes: the exact HA calls each route makes."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import ServiceCall
@@ -461,3 +461,27 @@ async def test_volume_never_goes_to_a_plex_player_without_volume(hass):
     hass.states.async_set("media_player.plex", "playing", {"supported_features": int(F.PLAY_MEDIA)})
     with pytest.raises(Exception, match="No player to change the volume"):
         await play.control(hass, {"name": "T", "plex_client": "media_player.plex", "route": "plex"}, "volume_up")
+
+
+
+async def test_back_first_false_opens_over_the_paused_player(hass):
+    """Demos: no Back before the next clip; Back only if opening over the paused player fails."""
+    calls, fail = [], {"n": 0}
+
+    async def svc(call):
+        calls.append((call.service, call.data.get("key") or call.data.get("click")))
+        if call.service == "launch_app" and fail["n"]:
+            fail["n"] -= 1
+            raise HomeAssistantError("launch failed (404): launched, but com.plexapp.android is not on screen within 45 s")
+    for s_ in ("launch_app", "send_key"):
+        hass.services.async_register("pipup", s_, svc)
+    _pip(hass)
+    hass.states.async_set("media_player.plex", "paused", {"media_position": 63, "media_content_id": "1"})
+    tv = {"name": "Theater", "pipup": "media_player.pip", "plex_client": "media_player.plex"}
+    item = {"key": "2", "title": "Clip 2", "link": f"plex://libraries/{SID}/movie/x/2"}
+    with patch("asyncio.sleep"), patch.object(play, "wake", AsyncMock(return_value=False)):
+        await play.start(hass, tv, item, "play", start_room=False, back_first=False)
+        assert ("send_key", "back") not in calls, calls
+        calls.clear(); fail["n"] = 1
+        await play.start(hass, tv, item, "play", start_room=False, back_first=False)
+        assert ("send_key", "back") in calls, "it didn't open over the player: Back, then again"

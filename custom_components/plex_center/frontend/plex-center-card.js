@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.27.163
+// Version: v2026.11.28.164
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.27.163';
+const BUILD_NUMBER = 'v2026.11.28.164';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -5732,8 +5732,8 @@ class PlexCenterCardEditor extends HTMLElement {
       ${this._sub('dm-end', 'At the end of each clip', `${pick('end', 'Then', [['pause', 'Pause (the last frame stays)'], ['stop', 'Stop']])}
         ${field('lead_s', 'This long before its end', '3', { num: true, unit: 's' })}
         ${chk('lead_auto', "Plus how late this TV's pauses land (learned from each clip)")}${field('gap_s', 'Then the next clip after', '3', { num: true, unit: 's' })}
-        ${field('last_pause_s', 'After the last clip, pause for (then stop)', '10', { num: true, unit: 's' })}
-        <p class="plce-hint">Stopping a little before the end keeps Plex's "up next" screen away. After each pause Plex Center checks where the clip really stopped (the event log shows it) and, when learning is on, adds how late that was to the lead.${got.lag ? ` Learned for this TV: +${esc(got.lag)} s.` : ''} The volume is never changed.</p>`)}
+        ${field('last_pause_s', 'After the last clip, the session ends after', '10', { num: true, unit: 's' })}
+        <p class="plce-hint">With Pause, each clip's last frame stays on screen until the next one opens over it, and after the last clip it stays there (the session's end changes nothing on the TV). Stopping a little before the end keeps Plex's "up next" screen away. After each pause Plex Center checks where the clip really stopped (the event log shows it) and, when learning is on, adds how late that was to the lead.${got.lag ? ` Learned for this TV: +${esc(got.lag)} s.` : ''} The volume is never changed.</p>`)}
       ${this._sub('dm-session', 'Demo session', `<p class="plce-hint">Set at the start of a demo and set back at its end (also when it's stopped, fails, or Home Assistant restarts): for example a lighting-automation bypass. On / off, an option or a number; scripts and scenes just run.</p>
         ${field('start_entity', 'At the start, set', 'input_boolean.…', { list: 'plce-dm-ents' })}${field('start_value', 'to', 'on')}
         ${field('stop_entity', 'At the end, set', 'the same', { list: 'plce-dm-ents' })}${field('stop_value', 'to', 'off')}`)}
@@ -6742,18 +6742,38 @@ class PlexCenterCardEditor extends HTMLElement {
         <p class="plce-hint" style="margin:0">${esc(e.message)}</p>
         ${e.handled ? `<p class="plce-hint" style="margin:0"><b>Worked around:</b> ${esc(e.handled)}</p>` : ''}
         ${e.cause ? `<p class="plce-hint" style="margin:0"><b>Why:</b> ${esc(e.cause)}</p><p class="plce-hint" style="margin:0"><b>Fix:</b> ${esc(e.fix)}</p>` : ''}</div>`).join('');
-    const lv = this._logs.level || 'error';
-    return `<p class="plce-hint">Commands a TV didn't take, why, and what to do. Also in Home Assistant's log (Settings → System → Logs). Kept across restarts (the last 100).</p>
-      <div class="plce-row"><label class="lbl">Log</label><div class="plce-chips">
+    const lv = this._logs.level || 'error', ha = this._logs.ha || { errors: true, info: false }, has = this._logs.list.length;
+    return `<p class="plce-hint">Commands a TV didn't take, why, and what to do. Kept across restarts (the last 100), below.</p>
+      <div class="plce-chiprow"><span class="plce-chiplbl">This log</span>
         <button class="plce-pick${lv === 'error' ? ' on' : ''}" data-loglevel="error">Errors</button>
-        <button class="plce-pick${lv === 'info' ? ' on' : ''}" data-loglevel="info">Errors and info</button></div></div>
-      <p class="plce-hint">Info adds the times Plex Center worked around a refusal (Back pressed with ADB, a seek done with skip keys).</p>
+        <button class="plce-pick${lv === 'info' ? ' on' : ''}" data-loglevel="info">Errors and info</button></div>
+      <p class="plce-hint">Info adds the times Plex Center worked around a refusal (Back pressed with ADB, a seek done with skip keys) and the Demos timing notes.</p>
+      <div class="plce-chiprow"><span class="plce-chiplbl">Home Assistant's log</span>
+        <button class="plce-pick${ha.errors ? ' on' : ''}" data-loghaerrors="${ha.errors ? '0' : '1'}">${ha.errors ? '✓ ' : ''}Errors</button>
+        <button class="plce-pick${ha.info ? ' on' : ''}" data-loghainfo="${ha.info ? '0' : '1'}">${ha.info ? '✓ ' : ''}Info</button></div>
+      <p class="plce-hint">What also goes to Settings → System → Logs, apart from this log: errors as warnings, info as info (Plex Center lets its info through when this is on).</p>
       <div class="plce-chips"><button class="plce-pick" data-logload><ha-icon icon="mdi:refresh"></ha-icon>Refresh</button>
-      ${this._logs.list.length ? '<button class="plce-pick" data-logclear><ha-icon icon="mdi:delete-outline"></ha-icon>Clear</button>' : ''}</div>
+      ${has ? `<button class="plce-pick" data-logexport="txt"><ha-icon icon="mdi:download"></ha-icon>Export (text)</button>
+        <button class="plce-pick" data-logexport="json"><ha-icon icon="mdi:code-json"></ha-icon>Export (JSON)</button>
+        <button class="plce-pick" data-logclear><ha-icon icon="mdi:delete-outline"></ha-icon>Clear</button>` : ''}</div>
       <div class="plce-list">${rows || '<p class="plce-hint">Nothing logged since Home Assistant started.</p>'}</div>`;
   }
-  _loadLog(lvl) {
-    ws(this._hass, 'log', lvl ? { level: lvl } : {}).then((r) => { this._logs = Array.isArray(r) ? { list: r } : { list: r?.entries || [], level: r?.level }; }).catch((e) => { this._logs = { error: e?.message || String(e), list: [] }; })
+  /** Download the log: readable text (one block per entry), or JSON. */
+  _exportLog(kind) {
+    const list = this._logs?.list || [], iso = (t) => new Date(t * 1000).toISOString();
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
+    const body = kind === 'json' ? JSON.stringify({ exported: new Date().toISOString(), level: this._logs.level, ha_log: this._logs.ha, entries: list }, null, 2)
+      : [`Plex Center log, exported ${new Date().toLocaleString()} (${list.length} entries, newest first)`, '',
+        ...list.map((e) => [`${iso(e.at)}${e.count > 1 ? ` … ${iso(e.last)} ×${e.count}` : ''}  [${e.level}]  ${e.tv} · ${e.action}`, `  ${e.message}`,
+          e.handled ? `  Worked around: ${e.handled}` : '', e.cause ? `  Why: ${e.cause}` : '', e.fix ? `  Fix: ${e.fix}` : '', ''].filter((x, i, a) => x || i === a.length - 1).join('\n'))].join('\n');
+    const url = URL.createObjectURL(new Blob([body], { type: kind === 'json' ? 'application/json' : 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `plex-center-log-${stamp}.${kind === 'json' ? 'json' : 'txt'}`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }
+  _loadLog(lvl, extra = {}) {
+    ws(this._hass, 'log', { ...(lvl ? { level: lvl } : {}), ...extra }).then((r) => { this._logs = Array.isArray(r) ? { list: r } : { list: r?.entries || [], level: r?.level, ha: r?.ha_log }; }).catch((e) => { this._logs = { error: e?.message || String(e), list: [] }; })
       .then(() => { if (this._open.has('log')) this._render(); });
   }
 
@@ -7147,6 +7167,9 @@ class PlexCenterCardEditor extends HTMLElement {
       this._saveTv(id, key, el.type === 'checkbox' ? el.checked : el.value.trim());
     }));
     all('[data-loglevel]', (b) => b.addEventListener('click', () => this._loadLog(b.dataset.loglevel)));
+    all('[data-loghaerrors]', (b) => b.addEventListener('click', () => this._loadLog(null, { ha_errors: b.dataset.loghaerrors === '1' })));
+    all('[data-loghainfo]', (b) => b.addEventListener('click', () => this._loadLog(null, { ha_info: b.dataset.loghainfo === '1' })));
+    all('[data-logexport]', (b) => b.addEventListener('click', () => this._exportLog(b.dataset.logexport)));
     all('[data-logclear]', (b) => b.addEventListener('click', () => ws(this._hass, 'log_clear').then(() => this._loadLog()).catch(() => this._loadLog())));
     all('[data-ssens]', (el) => el.addEventListener('change', () => {
       const id = el.dataset.sid;

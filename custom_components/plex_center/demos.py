@@ -36,7 +36,7 @@ DEFAULTS: dict[str, Any] = {
     "lead_s": 3.0,         # how long before the end it's paused / stopped (keeps Plex's post-play screen away)
     "lead_auto": True,     # … plus how late this TV's pauses land, learned from each clip (see Demos.lag)
     "gap_s": 3,            # between clips
-    "last_pause_s": 10,    # after the last clip: paused this long, then stopped
+    "last_pause_s": 10,    # after the last clip: the session ends this long later (the clip stays paused on its last frame)
     "start_entity": "",    # set when a demo session starts …
     "start_value": "",     # … to this (on / an option / a number; scripts and scenes just run)
     "stop_entity": "",     # set when it ends (empty: the start entity)
@@ -537,13 +537,11 @@ class Runner:
                     self.i, self._jump = self._jump, None
                     continue
                 self.i = nxt
-            # after the last clip: paused on its last frame for a while, then stopped
+            # after the last clip: it stays paused on its last frame; the session ends after last_pause_s (no Back)
             if s["end"] == "pause":
                 self._set("ending")
                 self.ends_at = time.time() + float(s["last_pause_s"])
                 await self._wait(float(s["last_pause_s"]))
-            from .play import control  # noqa: PLC0415
-            await control(self.hass, self.tv, "stop")
         except asyncio.CancelledError:
             raise
         except Exception as err:  # noqa: BLE001 - in the log, and the session still ends
@@ -583,7 +581,8 @@ class Runner:
         how = "restart" if offset and offset > 1 else "play"
         record(self.hass, self.tv, "demo start", f"clip {self.i + 1} ({label}): {'Play from start' if how == 'restart' else 'Play'}"
                f" (progress {offset or 0:.0f} s)", handled="timing note")
-        await start(self.hass, self.tv, {**it, "offset": offset or None}, how)
+        # the last clip stays paused on its last frame until this one opens over it (no Back in between)
+        await start(self.hass, self.tv, {**it, "offset": offset or None}, how, back_first=False)
         # playing: the TV's players report a position for it (up to 60 s: the room may be starting)
         key = str(it.get("key"))
         for n in range(240):

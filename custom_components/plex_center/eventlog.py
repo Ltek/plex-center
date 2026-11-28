@@ -5,9 +5,11 @@ the last 100, for the card's Log panel (editor → Apps & devices → Log), in `
 survives a restart (saved 30 s after the last change: a burst of entries is one write). The same failure on the
 same TV within 10 minutes adds to the count of the entry instead of a new one (and isn't logged again).
 
-Two levels: **error** (the default: commands that failed) and **info** (also the times Plex Center worked around a
-refusal, such as Back pressed with ADB or a seek done with skip keys). At error level workarounds go to Home
-Assistant's debug log only.
+Two levels for this log: **error** (the default: commands that failed) and **info** (also the times Plex Center
+worked around a refusal, such as Back pressed with ADB or a seek done with skip keys, and the Demos timing notes).
+
+Home Assistant's own log is set apart: errors (a warning each, on by default) and info (off by default). Anything
+not written there goes to its debug log.
 """
 
 from __future__ import annotations
@@ -95,6 +97,29 @@ def set_level(hass: HomeAssistant, value: str) -> None:
     _save_later(hass)
 
 
+def ha_log(hass: HomeAssistant) -> dict[str, bool]:
+    """What goes to Home Assistant's log: {errors, info}."""
+    return {"errors": True, "info": False, **(hass.data.get(f"{DOMAIN}_ha_log") or {})}
+
+
+def set_ha_log(hass: HomeAssistant, errors: bool | None = None, info: bool | None = None) -> dict[str, bool]:
+    cur = ha_log(hass)
+    if errors is not None:
+        cur["errors"] = bool(errors)
+    if info is not None:
+        cur["info"] = bool(info)
+    hass.data[f"{DOMAIN}_ha_log"] = cur
+    _follow_level(cur)
+    _save_later(hass)
+    return cur
+
+
+def _follow_level(cur: dict[str, bool]) -> None:
+    """Info to Home Assistant's log: our logger lets info through (Home Assistant's default is warning)."""
+    if cur.get("info") and _LOGGER.getEffectiveLevel() > logging.INFO:
+        _LOGGER.setLevel(logging.INFO)
+
+
 def entries(hass: HomeAssistant) -> deque:
     return hass.data.setdefault(f"{DOMAIN}_log", deque(maxlen=KEEP))
 
@@ -119,12 +144,15 @@ async def async_load(hass: HomeAssistant) -> None:
     log = entries(hass)
     if (data or {}).get("level") in LEVELS:
         hass.data[f"{DOMAIN}_log_level"] = data["level"]
+    if isinstance((data or {}).get("ha_log"), dict):
+        hass.data[f"{DOMAIN}_ha_log"] = {k: bool(v) for k, v in data["ha_log"].items() if k in ("errors", "info")}
+        _follow_level(ha_log(hass))
     saved = [e for e in (data or {}).get("entries", []) if isinstance(e, dict) and "message" in e]
     log.extendleft(reversed(saved[-KEEP:]))   # before anything logged while loading
 
 
 def _save_later(hass: HomeAssistant) -> None:
-    _store(hass).async_delay_save(lambda: {"level": level(hass), "entries": list(entries(hass))}, SAVE_DELAY_S)
+    _store(hass).async_delay_save(lambda: {"level": level(hass), "ha_log": ha_log(hass), "entries": list(entries(hass))}, SAVE_DELAY_S)
 
 
 def clear(hass: HomeAssistant) -> None:
@@ -137,25 +165,37 @@ def record(hass: HomeAssistant, tv: dict[str, Any] | None, action: str, err: Exc
     msg = str(err) or err.__class__.__name__
     cause, fix = explain(msg)
     name = (tv or {}).get(TV_NAME) or "Plex Center"
-    if handled and level(hass) != "info":   # a workaround, and only errors are logged
-        _LOGGER.debug("Plex Center: %s: %s needed a workaround: %s (%s)", name, action, msg, handled)
-        return {}
-    log, now = entries(hass), time.time()
-    for e in reversed(log):
-        if e["tv"] == name and e["action"] == action and e["cause"] == cause and e["message"] == msg and now - e["last"] < SAME_S:
-            e["count"] += 1
-            e["last"] = now
-            _save_later(hass)
-            return e
-    e = {"at": now, "last": now, "count": 1, "tv": name, "action": action, "message": msg, "cause": cause, "fix": fix,
-         "handled": handled, "level": "info" if handled else "error",
-         "players": {k: v for k, v in ((k, (tv or {}).get(k)) for k in (TV_PIPUP, TV_ADB)) if v}}
-    log.append(e)
-    _save_later(hass)
     text = f"Plex Center: {name}: {action} {'needed a workaround' if handled else 'failed'}: {msg}"
     if cause:
         text += f". Cause: {cause} Fix: {fix}"
     if handled:
         text += f" ({handled})"
-    (_LOGGER.info if handled else _LOGGER.warning)(text)
+    ha = ha_log(hass)
+    to_ha = ha["info"] if handled else ha["errors"]
+    keep = not handled or level(hass) == "info"
+    log, now = entries(hass), time.time()
+    if keep:
+        for e in reversed(log):
+            if e["tv"] == name and e["action"] == action and e["cause"] == cause and e["message"] == msg and now - e["last"] < SAME_S:
+                e["count"] += 1   # the same again within 10 minutes: counted, not logged again
+                e["last"] = now
+                _save_later(hass)
+                return e
+    else:
+        seen = hass.data.setdefault(f"{DOMAIN}_ha_seen", {})
+        k = (name, action, msg)
+        if now - seen.get(k, 0) < SAME_S:
+            return {}
+        seen[k] = now
+    if to_ha:
+        (_LOGGER.info if handled else _LOGGER.warning)(text)
+    else:
+        _LOGGER.debug(text)
+    if not keep:
+        return {}
+    e = {"at": now, "last": now, "count": 1, "tv": name, "action": action, "message": msg, "cause": cause, "fix": fix,
+         "handled": handled, "level": "info" if handled else "error",
+         "players": {k: v for k, v in ((k, (tv or {}).get(k)) for k in (TV_PIPUP, TV_ADB)) if v}}
+    log.append(e)
+    _save_later(hass)
     return e
