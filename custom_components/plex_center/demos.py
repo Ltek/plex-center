@@ -244,6 +244,8 @@ class Demos:
     async def async_load(self, tvs: list[dict[str, Any]]) -> None:
         self.tvs = tvs
         self.data = {"tvs": {}, "labels": {}, "active": {}, "picked": {}, "lag": {}, **((await self._store.async_load()) or {})}
+        if self.data.get("lag_v") != 2:   # learned before pauses went straight to the media keys (.167): too long
+            self.data["lag"], self.data["lag_v"] = {}, 2
         # Home Assistant stopped during a demo: end that session (the lighting bypass back off)
         for tv_id in list(self.data.get("active") or {}):
             tv = next((t for t in tvs if t.get(TV_ID) == tv_id), None)

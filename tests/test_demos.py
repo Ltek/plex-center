@@ -298,3 +298,19 @@ async def test_a_stalled_clip_is_started_again_with_back_and_the_tv_learns(hass:
     events, d = await _run(hass, {}, freeze={"Dune - Worm": 2}, demos=d)
     plays = [e[1] for e in events if e[0] == "play"]
     assert plays == ["Gravity - Opening", "Dune - Worm", "Dune - Worm", "Top Gun - Jets"], "stalled twice: on to the next clip"
+
+
+async def test_old_learned_lead_is_cleared_once(hass: HomeAssistant) -> None:
+    d = dm.Demos(hass, "e6", FakeConn())
+    await d.async_load([TV])
+    d.data["lag"] = {"th": 2.8}
+    d.data.pop("lag_v")
+    await d._store.async_save(d.data)
+    d2 = dm.Demos(hass, "e6", FakeConn())
+    await d2.async_load([TV])
+    assert d2.lag("th") == 0.0
+    d2.learn_lag("th", 0.4)
+    await d2._store.async_save(d2.data)
+    d3 = dm.Demos(hass, "e6", FakeConn())
+    await d3.async_load([TV])
+    assert d3.lag("th") == 0.4, "only once"

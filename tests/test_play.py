@@ -378,7 +378,7 @@ async def test_no_response_retries_over_adb(hass):
     hass.services.async_register("media_player", "media_seek", svc)
     hass.services.async_register("pipup", "seek", svc)
     hass.services.async_register("androidtv", "adb_command", adb_cmd)
-    _pip(hass)
+    _pip(hass, playing=True)   # PiPup reports the playback (a TCL): its own commands, retried over ADB
     hass.states.async_set("media_player.adb", "idle")
     tv = {"name": "Theater", "pipup": "media_player.pip", "plex_client": plex, "adb": "media_player.adb"}
     with patch("asyncio.sleep"):
@@ -399,6 +399,7 @@ async def test_no_response_retries_over_adb(hass):
             await play.control(hass, tv, action, value)
             assert adb == [], f"{action} {value}: the TV responded, nothing sent again"
     hass.states.async_set(plex, "on", {})   # nothing playing: can't tell, no retry
+    _pip(hass)
     adb.clear(); respond["on"] = False
     with patch("asyncio.sleep"):
         await play.control(hass, tv, "play_pause")
@@ -424,7 +425,7 @@ async def test_move_retry_presses_only_what_is_missing(hass):
         adb.append(call.data["command"])
     hass.services.async_register("pipup", "seek", seek)
     hass.services.async_register("androidtv", "adb_command", adb_cmd)
-    _pip(hass)
+    _pip(hass, playing=True)   # PiPup reports the playback (a TCL): its own commands, retried over ADB
     hass.states.async_set("media_player.adb", "idle")
     tv = {"name": "Theater", "pipup": "media_player.pip", "plex_client": plex, "adb": "media_player.adb"}
     with patch("asyncio.sleep"):
@@ -485,3 +486,59 @@ async def test_back_first_false_opens_over_the_paused_player(hass):
         calls.clear(); fail["n"] = 1
         await play.start(hass, tv, item, "play", start_room=False, back_first=False)
         assert ("send_key", "back") in calls, "it didn't open over the player: Back, then again"
+
+
+
+async def test_shield_media_keys_at_once(hass):
+    """PiPup doesn't report the playback (the SHIELD's Plex app): play / pause / skip go straight to media keys."""
+    from datetime import datetime, timezone
+    adb, pip_calls = [], []
+
+    async def adb_cmd(call):
+        adb.append(call.data["command"])
+
+    async def pip_svc(call):
+        pip_calls.append(call.service)
+    hass.services.async_register("androidtv", "adb_command", adb_cmd)
+    for d, s_ in (("media_player", "media_pause"), ("media_player", "media_play"), ("pipup", "seek"), ("media_player", "media_seek")):
+        hass.services.async_register(d, s_, pip_svc)
+    _pip(hass)   # PiPup "on" while Plex plays
+    hass.states.async_set("media_player.adb", "idle")
+    hass.states.async_set("media_player.plex", "playing", {"media_position": 600, "media_duration": 3600,
+                                                            "media_position_updated_at": datetime.now(timezone.utc).isoformat()})
+    tv = {"name": "Theater", "pipup": "media_player.pip", "plex_client": "media_player.plex", "adb": "media_player.adb"}
+    with patch("asyncio.sleep"):
+        await play.control(hass, tv, "pause")
+        await play.control(hass, tv, "play_pause")
+        await play.control(hass, tv, "skip", 30)
+        await play.control(hass, tv, "skip", -10)
+    assert pip_calls == [], "nothing sent to PiPup's player, which can't do it here"
+    assert adb == ["input keyevent KEYCODE_MEDIA_PAUSE", "input keyevent KEYCODE_MEDIA_PAUSE",
+                   "input keyevent KEYCODE_MEDIA_FAST_FORWARD", "input keyevent KEYCODE_MEDIA_REWIND"], adb
+
+
+async def test_shield_keys_through_the_android_tv_remote(hass):
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+    sent = []
+
+    async def send(call):
+        sent.append(call.data["command"])
+    hass.services.async_register("remote", "send_command", send)
+    hass.services.async_register("androidtv", "adb_command", lambda call: sent.append(("adb", call.data["command"])))
+    entry = MockConfigEntry(domain="androidtv_remote")
+    entry.add_to_hass(hass)
+    dev = dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, identifiers={("androidtv_remote", "shield")})
+    reg = er.async_get(hass)
+    mp = reg.async_get_or_create("media_player", "androidtv_remote", "shield_mp", device_id=dev.id, config_entry=entry)
+    rm = reg.async_get_or_create("remote", "androidtv_remote", "shield_rm", device_id=dev.id, config_entry=entry)
+    hass.states.async_set(mp.entity_id, "on")
+    hass.states.async_set(rm.entity_id, "on")
+    _pip(hass)
+    hass.states.async_set("media_player.adb", "idle")
+    hass.states.async_set("media_player.plex", "paused", {"media_position": 600, "media_duration": 3600})
+    tv = {"name": "Theater", "pipup": "media_player.pip", "plex_client": "media_player.plex", "adb": "media_player.adb", "remote": mp.entity_id}
+    with patch("asyncio.sleep"):
+        await play.control(hass, tv, "play_pause")
+        await play.control(hass, tv, "skip", 30)
+    assert sent == ["MEDIA_PLAY", ["MEDIA_FAST_FORWARD"]], sent

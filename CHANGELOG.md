@@ -1,5 +1,11 @@
 # Changelog
 
+## v2026.11.28.167
+
+- Fixed: **jump (±10 / ±30) did nothing on the SHIELD**, and **play / pause / stop took 2–3 s**. The Plex app on the SHIELD doesn't share its playback with Android, so PiPup's pause / play / seek are accepted but do nothing there. Pause and play only worked through the ADB retry 2 s later, and since .162 a jump that didn't show was never pressed again. Now, when PiPup's player doesn't report what plays but the Plex player does, Plex Center sends the media keys at once: Play / Pause (never the toggle), Back, and Fast forward / Rewind presses for jumps and seeks. They go through the TV's **Android TV Remote** when it has one (about 0.1 s), else ADB. TVs whose PiPup reports the playback (the TCLs) work as before.
+- Demos: the lead learned so far is cleared once, because it was measured with the slow pause (about +2.8 s).
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.28.166
 
 - Fixed: **Mark watched** didn't show on the card. The details kept "Mark watched" and the poster no watched mark until the rows were fetched again. Now every copy of the title on the card (rows, library grid, details) changes at once. Two seconds later the card asks Plex again, and says so if Plex still has it the old way.

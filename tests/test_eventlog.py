@@ -37,7 +37,7 @@ async def test_workaround_is_logged_as_handled(hass):
 
     async def ok(call):
         pass
-    hass.states.async_set("media_player.pip", "on", {"click_service": True, "click_packages": ["com.plexapp.android"]})
+    hass.states.async_set("media_player.pip", "playing", {"click_service": True, "click_packages": ["com.plexapp.android"]})
     hass.states.async_set("media_player.adb", "idle")
     hass.services.async_register("pipup", "send_key", refuse)
     hass.services.async_register("androidtv", "adb_command", ok)
