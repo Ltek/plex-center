@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.28.165
+// Version: v2026.11.28.166
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.28.165';
+const BUILD_NUMBER = 'v2026.11.28.166';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -4344,12 +4344,24 @@ Object.assign(PlexCenterCard.prototype, {
     const what = it.type === 'episode' ? `${it.show || ''} S${it.season}E${it.episode}` : it.type === 'show' ? `every episode of ${it.show || it.title}` : (it.show || it.title);
     // held for the set time = confirmed; with no hold (0), ask
     if (!(Number(cfg(this._c, holdKey)) > 0) && !window.confirm(`Mark “${what}” as ${watched ? 'watched' : 'unwatched'} for ${tvLabel(tv)}?`)) return;
-    this._hass.callService('plex_center', 'mark', { tv: tv.id, key: String(it.key), watched }).then(() => {
+    const key = String(it.key);
+    this._hass.callService('plex_center', 'mark', { tv: tv.id, key, watched }).then(() => {
       for (const k of [...CACHE.keys()]) if (/^(items|hubs|item|phub|search):/.test(k) && k.includes(`:${tv.id}:`) || k === `hubs:${tv.id}`) CACHE.delete(k);
+      // shown at once: every copy of it on the card (rows, grid, details), before Plex is asked again
+      if (it.type !== 'show') {
+        for (const list of this._lists.values()) for (const x of list || []) if (String(x?.key) === key) Object.assign(x, { watched, ...(watched ? { offset: 0, progress: 0 } : {}) });
+        if (this._detailItem && String(this._detailItem.key) === key) this._detailItem.watched = watched;
+      }
       this._toast(it.type === 'show' ? (watched ? 'Marked every episode as watched' : 'Marked every episode as unwatched') : watched ? 'Marked as watched' : 'Marked as unwatched');
       if (this._v.detail) this._renderDetail();
       this._v.hero = 0;
       if (this._v.tab === 'home') this._renderMain();
+      // did Plex keep it? (it answers the mark before every reader sees it): ask again a moment later
+      if (it.type !== 'show') {
+        setTimeout(() => ws(this._hass, 'item', { tv: tv.id, key }).then((fresh) => {
+          if (fresh && !!fresh.watched !== !!watched) this._toast(`Plex still has it as ${fresh.watched ? 'watched' : 'not watched'} for ${tvLabel(tv)}. See Plex Center's log.`);
+        }).catch(() => {}), 2000);
+      }
     }).catch((err) => this._toast(`Mark: ${err?.message || err}`));
   },
 

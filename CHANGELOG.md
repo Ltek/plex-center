@@ -1,5 +1,9 @@
 # Changelog
 
+## v2026.11.28.166
+
+- Fixed: **Mark watched** didn't show on the card. The details kept "Mark watched" and the poster no watched mark until the rows were fetched again. Now every copy of the title on the card (rows, library grid, details) changes at once. Two seconds later the card asks Plex again, and says so if Plex still has it the old way.
+
 ## v2026.11.28.165
 
 - Fixed: a demo could hang on its first clip (a still frame with Plex's loading circle). Since .164 a session's first clip opened over whatever was on screen, such as the last frame left paused by the previous demo. The first clip of a session now presses Back first.
