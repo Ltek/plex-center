@@ -1,5 +1,10 @@
 # Changelog
 
+## v2026.11.28.169
+
+- A jump or seek sent through PiPup that the Plex player shows no change for within 6 s (on the SHIELD, PiPup takes it and does nothing) is now pressed with the media keys, and Plex Center learns from it as from a slow pause. So the first command after installing can be a jump too.
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.28.168
 
 - Fixed: **play / pause / stop / jump through Plex Center still took 4–6 s on the SHIELD** after .167. Its PiPup player does report the playback, so Plex Center tried PiPup first, waited 2 s, then sent the key over ADB. Now Plex Center learns it: the first time PiPup's play / pause on a TV has to be sent again (or PiPup can't seek there), it notes that for the TV (kept across restarts, in the log as "learned") and from then on sends the media keys at once, through the Android TV Remote (about 0.4 s) or ADB (about 1.3 s).

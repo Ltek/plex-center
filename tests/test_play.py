@@ -437,7 +437,8 @@ async def test_move_retry_presses_only_what_is_missing(hass):
         assert adb == ["input keyevent KEYCODE_MEDIA_FAST_FORWARD KEYCODE_MEDIA_FAST_FORWARD"], adb
         adb.clear(); play._LAST_SEEK.clear(); mode["v"] = "silent"; set_plex("paused", 600)
         await play.control(hass, tv, "skip", 90)
-        assert adb == [], "no new report from the TV: nothing pressed"
+        assert adb == ["input keyevent " + " ".join(["KEYCODE_MEDIA_FAST_FORWARD"] * 3)], "PiPup's seek showed nothing: the whole jump with keys"
+        assert play.keys_first(hass, tv), "and learned"
 
 
 def test_auto_route_skips_the_plex_remote_when_pipup_or_adb_is_there(hass):

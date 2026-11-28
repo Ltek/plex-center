@@ -676,6 +676,17 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
         # overshoot a command that was just slow, so nothing is pressed.
         fresh = _fresh(before, _snap(hass, tv))
         what = f"skip {delta:+g} s" if delta is not None else f"seek to {target:g} s"
+        if fresh is None and route in ("pipup", "open"):
+            # PiPup's seek: a jump that lands shows on the Plex player within about a second, so no report at all
+            # means nothing moved (the SHIELD: PiPup takes the seek and does nothing). Press it with the keys.
+            learn_keys_first(hass, tv, "seek")
+            state0, pos0, _at0, read0 = known[0]
+            now0 = pos0 + ((time.time() - read0) if state0 == "playing" else 0.0)
+            move = delta if delta is not None else target - now0
+            _retrying(hass, tv, what, MOVE_S, "the Plex player showed no change: pressed with the media keys")
+            if move:
+                await _skip_keys(hass, tv, adb_key, move, now0)
+            return
         if fresh is None:
             _retrying(hass, tv, what, MOVE_S, "not sent again: the TV didn't report where it is")
             return
