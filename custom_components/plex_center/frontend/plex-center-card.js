@@ -1,5 +1,5 @@
 // Plex Center Card (Ltek) — Home Assistant Dashboard card, the front end of the Plex Center integration
-// Version: v2026.11.28.169
+// Version: v2026.11.28.170
 //
 // Browse Plex and play on your TVs. All Plex data and playback come from the Plex Center integration
 // (websocket plex_center/* and the plex_center.play / plex_center.control actions): the card holds no
@@ -12,7 +12,7 @@
 // Vanilla JS, single file, light DOM. The stylesheet is a constant (no config value is ever written into
 // it); per-card values are custom properties on the card root. Renders once, then patches.
 
-const BUILD_NUMBER = 'v2026.11.28.169';
+const BUILD_NUMBER = 'v2026.11.28.170';
 const CARD_TAG = 'plex-center-card';
 const EDITOR_TAG = 'plex-center-card-editor';
 const PREVIEW_MAX_S = 60;          // Plex plays a 30 s preview on a title page; longer = real playback
@@ -1259,8 +1259,18 @@ function haCardStyle(c) {
   return o.join(';');
 }
 
-/** The screen the card on this page is showing now (for the editor's "in the preview" marker). */
+/** The screen the card on this page is showing now (for the editor's "this device" marker). */
 const SHOWN = { screen: null };
+/** The editor's preview: the screen type picked under Screens → Editing, and whether it stays still. */
+const PREVIEW = { screen: null, still: (() => { try { return localStorage.getItem('plc-preview-still') !== '0'; } catch { return true; } })() };
+/** Each screen type at a typical real size (CSS px): the preview draws the card at this width, scaled to fit. */
+const SCREEN_PX = { tablet_landscape: [1280, 800], tablet_portrait: [800, 1280], phone_portrait: [412, 915], phone_landscape: [915, 412] };
+function setPreview(changes) {
+  const before = JSON.stringify(PREVIEW);
+  Object.assign(PREVIEW, changes);
+  if ('still' in changes) { try { localStorage.setItem('plc-preview-still', PREVIEW.still ? '1' : '0'); } catch { /* */ } }
+  if (JSON.stringify(PREVIEW) !== before) window.dispatchEvent(new CustomEvent('plex-center-preview', { detail: { ...PREVIEW } }));
+}
 const SAVED_KEYS = ['tab', 'sort', 'unwatched', 'genre', 'decade', 'rating', 'short', 'view'];
 const pickSaved = (v) => Object.fromEntries(SAVED_KEYS.filter((k) => v[k] !== undefined && v[k] !== null).map((k) => [k, v[k]]));
 const RECENT_KEY = 'plc-recent-searches';
@@ -1678,6 +1688,7 @@ const CARD_CSS = `
 .pm-neon { --pm-c: var(--secondary-text-color); --pm-ac: var(--primary-text-color); --pm-ic: var(--plc-a); --pm-aic: var(--plc-a); --pm-bg: transparent;
   --pm-abg: color-mix(in srgb, var(--plc-a) 10%, transparent); }
 @media (prefers-reduced-motion: reduce) { .plc-tabs.pm .plc-tab { transition: none; } }
+.plc.plc-still *, .plc.plc-still *::before, .plc.plc-still *::after { animation: none !important; transition: none !important; }
 .plc-msg { color: var(--secondary-text-color); font-size: .9em; padding: 12px 2px; }
 .plc-msg.err { color: var(--error-color, #f44336); }
 .plc-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
@@ -1755,9 +1766,9 @@ const CARD_CSS = `
   display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .plc-detail { border-radius: calc(var(--plc-r) + 4px); background: var(--plc-bg2); overflow: hidden; align-self: start; position: sticky; top: 0; }
 /* tablets: the details panel stays in view while the library scrolls (below the dashboard's header; its own scroll when tall) */
-.plc.tablet .plc-body.with-detail .plc-detail { top: calc(var(--header-height, 56px) + 8px); max-height: calc(100vh - var(--header-height, 56px) - 16px); overflow-y: auto; scrollbar-width: thin; }
+.plc.tablet .plc-body.with-detail .plc-detail { top: calc(var(--header-height, 56px) + 8px); max-height: calc(var(--plc-vh, 100vh) - var(--header-height, 56px) - 16px); overflow-y: auto; scrollbar-width: thin; }
 .plc.tablet .plc-detail-slot { align-self: stretch; }
-.plc.side.fit .plc-body.with-detail .plc-detail { top: 0; max-height: calc(100dvh - var(--plc-offset, 80px) - 8px); }
+.plc.side.fit .plc-body.with-detail .plc-detail { top: 0; max-height: calc(var(--plc-vh, 100dvh) - var(--plc-offset, 80px) - 8px); }
 .plc-detail-img { aspect-ratio: 16 / 10; background: center / cover no-repeat; position: relative; }
 .plc-detail-img .plc-big { position: absolute; left: 14px; right: 14px; bottom: 12px; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
 .plc-detail-img::after { content: ''; position: absolute; inset: 40% 0 0 0; background: linear-gradient(transparent, rgba(0,0,0,.75)); pointer-events: none; }
@@ -1815,7 +1826,7 @@ const CARD_CSS = `
 .plc-side { align-self: start; position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; }
 .plc-side[hidden] { display: none; }
 .plc-side-card { position: relative; border-radius: calc(var(--plc-r) + 6px); overflow: hidden; background: #0b0b0b; color: #fff; }
-.plc.side.fit .plc-wrap { height: calc(100dvh - var(--plc-offset, 80px)); min-height: 360px; }
+.plc.side.fit .plc-wrap { height: calc(var(--plc-vh, 100dvh) - var(--plc-offset, 80px)); min-height: 360px; }
 .plc.side.fit .plc-side { position: static; height: 100%; min-height: 0; overflow: hidden; }
 .plc.side.fit .plc-side-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .plc.side.fit .plc-side-art { flex: 1 1 auto; min-height: 100px; aspect-ratio: auto; background-size: contain; background-color: #000; }
@@ -2093,7 +2104,7 @@ const CARD_CSS = `
 /* A–Z jump bar */
 .plc-gridwrap.jump { position: relative; padding-right: 26px; }
 .plc-jump-slot { position: absolute; top: 0; right: 0; bottom: 0; width: 22px; }
-.plc-jump { position: sticky; top: calc(var(--header-height, 0px) + 8px); display: flex; flex-direction: column; align-items: center; max-height: calc(100vh - var(--header-height, 56px) - 24px); overflow-y: auto; scrollbar-width: none; }
+.plc-jump { position: sticky; top: calc(var(--header-height, 0px) + 8px); display: flex; flex-direction: column; align-items: center; max-height: calc(var(--plc-vh, 100vh) - var(--header-height, 56px) - 24px); overflow-y: auto; scrollbar-width: none; }
 .plc-jump-l { border: none; background: none; color: var(--secondary-text-color); font: inherit; font-size: 11px; font-weight: 600; line-height: 1; padding: 3px 4px; cursor: pointer; min-height: 18px; }
 .plc-jump-l.on, .plc-jump-l:hover { color: var(--plc-a); }
 /* recent searches */
@@ -2607,6 +2618,15 @@ class PlexCenterCard extends HTMLElement {
 
   connectedCallback() {
     if (!this._built && this._hass) this._build();
+    this._onPreview ||= () => {
+      if (!this._inPreview()) return;
+      this._lsig = null; this._pvSig = null; this._bnTimer = {};
+      for (const k of Object.keys(this._anim || {})) { clearInterval(this._anim[k]); clearTimeout(this._anim[k]); delete this._anim[k]; }
+      this._root?.querySelectorAll('[data-sig], [data-cwsig]').forEach((n) => { delete n.dataset.sig; delete n.dataset.cwsig; });
+      this._layout();
+      if (this._built && this._phone !== undefined) this._renderAll();
+    };
+    window.addEventListener('plex-center-preview', this._onPreview);
     this._onShot ||= () => { this._npSig = null; this._appSig = null; if (this._root) this._updateStates(); };
     SHOT_WATCH.add(this._onShot);
     if (!this._orient && typeof matchMedia === 'function') {
@@ -2627,6 +2647,8 @@ class PlexCenterCard extends HTMLElement {
   }
   disconnectedCallback() {
     this._detached = true;
+    window.removeEventListener('plex-center-preview', this._onPreview);
+    this._pvRo?.disconnect(); this._pvRo = null;
     clearInterval(this._npEndT); this._npEnd = null;
     clearTimeout(this._rmIdleT); clearInterval(this._rmTickT); clearInterval(this._rmSleepT); clearTimeout(this._rmAutoT);
     this._rmLock?.release?.().catch?.(() => {}); this._rmLock = null;
@@ -2847,10 +2869,13 @@ class PlexCenterCard extends HTMLElement {
     const raw = this._raw || this._c;
     const want = cfg(raw, 'layout');
     const w = this.offsetWidth || this._root?.offsetWidth || 1000;
-    const phone = want === 'phone' || (want === 'auto' && w > 0 && w < PHONE_MAX_W);
+    const pv = this._inPreview() && PREVIEW.screen;   // the editor's preview: the screen type being edited
+    const phone = pv ? pv.startsWith('phone') : want === 'phone' || (want === 'auto' && w > 0 && w < PHONE_MAX_W);
     if (!this._root) return;
-    const sig = screenOf(phone, isPortrait()), fit = this._c?._fit;
-    this._c = effectiveConfig(raw, phone); this._c._cycle = this._v?.cycle;
+    const portrait = pv ? pv.endsWith('portrait') : isPortrait();
+    const sig = screenOf(phone, portrait), fit = this._c?._fit;
+    this._c = effectiveConfig(raw, phone, portrait); this._c._cycle = this._v?.cycle;
+    this._fitPreview();
     if (fit && this._lsig === sig) this._c._fit = fit;   // same screen: keep the row sizes (a banner repaint would otherwise drop its Width and height)
     this._root.setAttribute('style', cardVars(this._c));
     if (this._phone === phone && this._lsig === sig) return;
@@ -2861,8 +2886,42 @@ class PlexCenterCard extends HTMLElement {
     this._root.classList.toggle('phone', phone);
     this._root.classList.toggle('tablet', !phone);
     this._root.dataset.screen = sig;
-    if (SHOWN.screen !== sig) { SHOWN.screen = sig; window.dispatchEvent(new CustomEvent('plex-center-screen', { detail: sig })); }
+    if (!pv && SHOWN.screen !== sig) { SHOWN.screen = sig; window.dispatchEvent(new CustomEvent('plex-center-screen', { detail: sig })); }
     if (this._built) this._renderAll();
+  }
+
+  /** In the card editor's preview (Home Assistant sets preview, or the card sits in its preview / dialog). */
+  _inPreview() {
+    if (this.preview === true) return true;
+    for (let n = this, i = 0; n && i < 40; i++) {
+      const tag = n.localName || '';
+      if (tag === 'hui-card-preview' || tag === 'hui-dialog-edit-card' || n.preview === true) return true;
+      n = n.parentElement || n.getRootNode?.()?.host || null;
+    }
+    return false;
+  }
+  _still() { return !!(PREVIEW.still && this._inPreview()); }
+  /** The preview: drawn at the edited screen type's real width, then scaled down to fit the preview pane. */
+  _fitPreview() {
+    const pv = this._inPreview() && PREVIEW.screen && SCREEN_PX[PREVIEW.screen];
+    this._root?.classList.toggle('plc-still', this._still());
+    if (!pv) {
+      if (this._pvOn) { this._pvOn = false; for (const k of ['width', 'zoom']) this.style[k] = ''; this.style.removeProperty('--plc-vh'); this._pvRo?.disconnect(); this._pvRo = null; }
+      return;
+    }
+    const box = this.parentElement || this.getRootNode?.()?.host;
+    // zoom (not transform): the card takes up only its shrunk size in the pane
+    const [W] = pv, avail = box?.clientWidth || W, k = Math.min(1, avail / W);   // no width yet: full size until it's measured
+    const want = [W, k.toFixed(4)].join('|');
+    if (this._pvSig !== want) {
+      this._pvSig = want; this._pvOn = true;
+      Object.assign(this.style, { display: 'block', width: `${W}px`, zoom: String(k) });
+      this.style.setProperty('--plc-vh', `${pv[1]}px`);   // the screen's height, not this window's
+    }
+    if (!this._pvRo && typeof ResizeObserver !== 'undefined' && box) {
+      this._pvRo = new ResizeObserver(() => this._fitPreview());
+      this._pvRo.observe(box);
+    }
   }
 
   _renderAll() { this._avFetch(); this._renderTop(); this._renderMain(); this._renderDetail(); this._renderNP(true); }
@@ -3820,7 +3879,7 @@ class PlexCenterCard extends HTMLElement {
     if (st.fit) sec.style.setProperty('--plc-secw', `${st.fit.secw}%`); else sec.style.removeProperty('--plc-secw');
     // one timer for the banner, kept across repaints (a repaint must not restart it); it reads the current list each time
     const tsig = JSON.stringify([st.auto, st.scroll_dir, st.speed, st.fade_ms, cfg(this._c, 'stagger_rotate'), cfg(this._c, 'stagger_gap'), this._stepSections()]);
-    if (st.auto !== 'off' && items.length > 1) {   // reduced motion: it still steps, without the slide / fade (see the CSS)
+    if (st.auto !== 'off' && items.length > 1 && !this._still()) {   // reduced motion: it still steps, without the slide / fade (see the CSS)
       this._bnTimer ||= {};
       if (!this._anim[AK] || this._bnTimer[id] !== tsig) {
         clearInterval(this._anim[AK]); clearTimeout(this._anim[AK]);
@@ -3964,7 +4023,7 @@ class PlexCenterCard extends HTMLElement {
     if (this._measurePage(id, sec, items)) { this._fill(id, sec, title, total, items, listId, extraHead); return; }
     const st = this._pageFit(id, secStyle(this._c, id));
     const reduce = !cfg(this._c, 'full_motion') && typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (st.auto === 'off' || items.length <= st.show) return;   // reduced motion: rows step an item at a time instead of gliding
+    if (st.auto === 'off' || items.length <= st.show || this._still()) return;   // reduced motion: rows step an item at a time instead of gliding
     const body = sec.querySelector('[data-secbody]');
     let paused = false;
     body.addEventListener('pointerenter', () => { paused = true; });
@@ -5844,13 +5903,18 @@ class PlexCenterCardEditor extends HTMLElement {
   _calAvail() { return !!this._c('calendar') && Object.values(this._conf?.arr || {}).some(Boolean); }
 
   /** The screen type being edited (one for the whole editor): the preview's, until a chip is picked. */
-  _eds() { return this._edScreen && SCREENS.some(([sc]) => sc === this._edScreen) ? this._edScreen : (SHOWN.screen || 'tablet_landscape'); }
+  _eds() {
+    if (this._edScreen && SCREENS.some(([sc]) => sc === this._edScreen)) return this._edScreen;
+    const lay = this._config?.layout;   // the card's own Layout first, then this device's screen
+    return lay === 'phone' ? (SHOWN.screen?.startsWith('phone') ? SHOWN.screen : 'phone_portrait') : lay === 'tablet' ? (SHOWN.screen?.startsWith('tablet') ? SHOWN.screen : 'tablet_landscape')
+      : (SHOWN.screen || 'tablet_landscape');
+  }
   /** Screen chips: the lit one is the screen being edited; a dot marks the one in the preview. */
   _scrChips(label = 'Screen') {
     const cur = this._eds(), short = { tablet_landscape: 'Tablet landscape', tablet_portrait: 'Tablet portrait', phone_portrait: 'Phone portrait', phone_landscape: 'Phone landscape' };
     const icon = (sc) => (sc.startsWith('phone') ? (sc.endsWith('portrait') ? 'mdi:cellphone' : 'mdi:cellphone-arrow-down') : (sc.endsWith('portrait') ? 'mdi:tablet' : 'mdi:tablet-dashboard'));
     return `<div class="plce-chiprow">${label ? `<span class="plce-chiplbl">${esc(label)}</span>` : ''}${SCREENS.map(([sc]) => `<button class="plce-pick${sc === cur ? ' on' : ''}" data-edscreen="${sc}"
-      title="${sc === SHOWN.screen ? 'In the preview now' : ''}"><ha-icon icon="${icon(sc)}"></ha-icon>${esc(short[sc])}${sc === SHOWN.screen ? '<span class="plce-pdot"></span>' : ''}</button>`).join('')}</div>`;
+      title="${sc === SHOWN.screen ? 'This device\'s screen' : ''}"><ha-icon icon="${icon(sc)}"></ha-icon>${esc(short[sc])}${sc === SHOWN.screen ? '<span class="plce-pdot"></span>' : ''}</button>`).join('')}</div>`;
   }
 
   /** The look of a kind of item on one screen type (picked under Editing; the preview's screen first). */
@@ -6284,7 +6348,7 @@ class PlexCenterCardEditor extends HTMLElement {
     };
     return `${this._select('layout', 'Device type', [['auto', `Automatic (phone when the card is narrower than ${PHONE_MAX_W}px)`], ['tablet', 'Always tablet / computer'], ['phone', 'Always phone']])}
       <p class="plce-hint">Portrait or landscape follows the screen. Each screen type has its own settings; the card uses the one that matches.
-        The lit chip is the screen type you're editing (the dot is the one in the preview). How each section looks is set in its own panel.</p>
+        The lit chip is the screen type you're editing, and the preview shows it at its real size (the dot is this device's screen). How each section looks is set in its own panel.</p>
       ${this._scrChips('Editing')}
       <div class="plce-row"><button class="plce-chip reset" data-scrreset title="Reset everything for this screen type"><ha-icon icon="mdi:restore"></ha-icon>Reset this screen type</button></div>
       ${screen(this._eds(), '')}
@@ -6800,7 +6864,10 @@ class PlexCenterCardEditor extends HTMLElement {
 
   _render() {
     if (!this._hass) { this.innerHTML = ''; return; }
+    setPreview({ screen: this._eds() });
     this.innerHTML = `<style>${EDITOR_CSS}</style><div class="plce">
+      <label class="plce-check plce-pvstill"><input type="checkbox" data-pvstill${PREVIEW.still ? ' checked' : ''}>Still preview: no animation or movement (rows, banners and fades stay put)</label>
+      <p class="plce-hint" style="margin-top:0">The preview shows the screen type picked in <b>Screens → Editing</b>, at its real size.</p>
       <div class="plce-gh first">Card</div>
       ${this._panel('layout', 'mdi:responsive', 'Screens', this._layoutBody())}
       ${this._panel('header', 'mdi:page-layout-header-footer', 'Controls layout', this._headerBody())}
@@ -7006,6 +7073,7 @@ class PlexCenterCardEditor extends HTMLElement {
       this._resetScreen(this._eds()); this._emit(); this._render();
     }));
     all('[data-edscreen]', (b) => b.addEventListener('click', () => { this._edScreen = b.dataset.edscreen; this._render(); }));
+    all('[data-pvstill]', (b) => b.addEventListener('change', () => setPreview({ still: b.checked })));
     all('[data-flock]', (b) => b.addEventListener('click', () => { const k = b.dataset.flock; this._fLock = { ...(this._fLock || {}), [k]: this._fLock?.[k] === false }; this._render(); }));
     all('[data-fld]', (el) => el.addEventListener('change', () => { const prop = el.dataset.fld.split('.').pop(); this._setK(el.dataset.fld, prop === 'weight' ? el.value : Number(el.value)); this._render(); }));
     all('[data-fldhide]', (el) => el.addEventListener('change', () => { this._setK(el.dataset.fldhide, el.checked); this._render(); }));

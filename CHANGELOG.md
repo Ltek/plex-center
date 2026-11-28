@@ -1,5 +1,10 @@
 # Changelog
 
+## v2026.11.28.170
+
+- **The editor's preview shows the screen type picked in Screens → Editing**, at its real size (tablet landscape 1280×800, tablet portrait 800×1280, phone portrait 412×915, phone landscape 915×412), scaled down to fit the preview pane. Before, it showed the card's Layout setting with this browser window's orientation, squeezed into the pane. The Editing chips start on the card's Layout (Phone → phone portrait); the dot marks this device's own screen.
+- **Still preview** (a checkbox at the top of the editor, on by default): no animation or movement in the preview, so rows, banners and fades stay put while you edit. Dashboards are unchanged.
+
 ## v2026.11.28.169
 
 - A jump or seek sent through PiPup that the Plex player shows no change for within 6 s (on the SHIELD, PiPup takes it and does nothing) is now pressed with the media keys, and Plex Center learns from it as from a slow pause. So the first command after installing can be a jump too.
