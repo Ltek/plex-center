@@ -68,19 +68,26 @@ class FakeConn:
         return fn(SERVER)
 
 
-async def _run(hass, settings, mode="all", start=1, act=None, skip=None):
-    """A demo with fake playback: each start() plays from 0, each position() read moves 1 s on."""
-    events, pos = [], {"v": None, "key": None}
+async def _run(hass, settings, mode="all", start=1, act=None, skip=None, freeze=None, demos=None):
+    """A demo with fake playback: each start() plays from 0, each position() read moves 1 s on.
+    freeze: {title: n}: that clip's first n starts stall at 2 s."""
+    events, pos = [], {"v": None, "key": None, "frozen": False}
+    freeze = dict(freeze or {})
 
     async def fake_start(h, tv, item, mode="play", **kw):
-        assert kw.get("back_first") is False, "a demo opens each clip over the paused one, no Back first"
         events.append(("play", item["title"]))
+        events.append(("back_first", kw.get("back_first")))
+        pos["frozen"] = freeze.get(item["title"], 0) > 0
+        if pos["frozen"]:
+            freeze[item["title"]] -= 1
         pos.update(v=0.0, key=item["key"])
         hass.states.async_set("media_player.plex_th", "playing", {"media_content_id": item["key"], "media_duration": 10})
 
     def fake_position(h, tv):
         if pos["v"] is None:
             return None
+        if pos["frozen"] and pos["v"] >= 2:
+            return pos["v"]
         pos["v"] += 1.0
         return pos["v"]
 
@@ -89,8 +96,9 @@ async def _run(hass, settings, mode="all", start=1, act=None, skip=None):
 
     for dom, svc in [("homeassistant", "turn_on"), ("homeassistant", "turn_off"), ("pipup", "show")]:
         hass.services.async_register(dom, svc, _fake(lambda call, d=dom, s=svc: events.append((d, s, call.data.get("title") or call.data.get("entity_id")))))
-    d = dm.Demos(hass, "e1", FakeConn())
-    await d.async_load([TV])
+    d = demos or dm.Demos(hass, "e1", FakeConn())
+    if demos is None:
+        await d.async_load([TV])
     d.data["tvs"]["th"] = dm.check_settings({}, {"enabled": True, "gap_s": 0, "last_pause_s": 0, **settings})
     real = asyncio.sleep
 
@@ -98,7 +106,8 @@ async def _run(hass, settings, mode="all", start=1, act=None, skip=None):
         await real(0)
     with patch("custom_components.plex_center.play.start", fake_start), patch("custom_components.plex_center.play.position", fake_position), \
             patch("custom_components.plex_center.play.control", fake_control), patch("custom_components.plex_center.demos.asyncio.sleep", fast), \
-            patch("custom_components.plex_center.demos._popup_target", lambda h, tv: "binary_sensor.th_popup"):
+            patch("custom_components.plex_center.demos._popup_target", lambda h, tv: "binary_sensor.th_popup"), \
+            patch.object(dm, "STALL_S", 0.05):
         await d.async_play(TV, "all", start, mode, skip)
         if act:
             await act(d)
@@ -272,3 +281,20 @@ def test_sequences_by_title() -> None:
     assert dm.resolve(SERVER, "Demos", "atmos showcase")[0] == "50"
     info = dm.sequence_info(SERVER, "Demos")
     assert [x["title"] for x in info["sequences"]] == ["All of Demos", "Atmos showcase"] and info["sequences"][1]["seconds"] == 20
+
+
+
+async def test_back_first_for_the_first_clip_only(hass: HomeAssistant) -> None:
+    events, _d = await _run(hass, {})
+    assert [e[1] for e in events if e[0] == "back_first"] == [True, False, False]
+
+
+async def test_a_stalled_clip_is_started_again_with_back_and_the_tv_learns(hass: HomeAssistant) -> None:
+    events, d = await _run(hass, {}, freeze={"Dune - Worm": 1})
+    plays = [e[1] for e in events if e[0] == "play"]
+    assert plays == ["Gravity - Opening", "Dune - Worm", "Dune - Worm", "Top Gun - Jets"], plays
+    assert [e[1] for e in events if e[0] == "back_first"] == [True, False, True, True], "after the stall: Back first"
+    assert d.over_ok("th") is False
+    events, d = await _run(hass, {}, freeze={"Dune - Worm": 2}, demos=d)
+    plays = [e[1] for e in events if e[0] == "play"]
+    assert plays == ["Gravity - Opening", "Dune - Worm", "Dune - Worm", "Top Gun - Jets"], "stalled twice: on to the next clip"

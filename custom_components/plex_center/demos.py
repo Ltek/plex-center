@@ -27,6 +27,7 @@ _LOGGER = logging.getLogger(__name__)
 SIGNAL = "plex_center_demos"
 INFO_SIGNAL = "plex_center_demos_info"   # a TV's collections changed (the sensor / select entities)
 INFO_EVERY_S = 300                       # and they're asked again this often (changes made in Plex itself)
+STALL_S = 12.0                           # a clip whose position doesn't move this long has stalled
 ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 
 DEFAULTS: dict[str, Any] = {
@@ -299,6 +300,14 @@ class Demos:
         self._save()
         async_dispatcher_send(self.hass, INFO_SIGNAL, tv_id)
 
+    def over_ok(self, tv_id: str) -> bool:
+        """Whether a clip can open over the paused one on this TV (False once that stalled)."""
+        return (self.data.get("over") or {}).get(tv_id, True)
+
+    def set_over_ok(self, tv_id: str, ok: bool) -> None:
+        self.data.setdefault("over", {})[tv_id] = bool(ok)
+        self._save()
+
     def lag(self, tv_id: str) -> float:
         """How late this TV's pauses land (s), learned from the clips played: added to the lead."""
         return float((self.data.get("lag") or {}).get(tv_id) or 0.0)
@@ -392,6 +401,7 @@ class Runner:
         self._jump: int | None = None
         self._kick = asyncio.Event()
         self._stopped = False
+        self._opened = 0   # clips started in this session
         self.last_timing: dict[str, Any] | None = None
 
     def status(self) -> dict[str, Any]:
@@ -581,10 +591,32 @@ class Runner:
         how = "restart" if offset and offset > 1 else "play"
         record(self.hass, self.tv, "demo start", f"clip {self.i + 1} ({label}): {'Play from start' if how == 'restart' else 'Play'}"
                f" (progress {offset or 0:.0f} s)", handled="timing note")
-        # the last clip stays paused on its last frame until this one opens over it (no Back in between)
-        await start(self.hass, self.tv, {**it, "offset": offset or None}, how, back_first=False)
-        # playing: the TV's players report a position for it (up to 60 s: the room may be starting)
+        # Between clips the last frame stays paused and the next clip opens over it (no Back) where the TV allows
+        # that. Not for a session's first clip (whatever is on screen may be stuck), nor on a TV where opening over
+        # the player has stalled before: then Back first.
+        over = self._opened > 0 and self.demos.over_ok(self.tv[TV_ID])
         key = str(it.get("key"))
+        for attempt in (0, 1):
+            if attempt:
+                record(self.hass, self.tv, "demo start", f"clip {self.i + 1} ({label}) stalled: starting it again, Back first",
+                       handled="sent again")
+            await start(self.hass, self.tv, {**it, "offset": offset or None}, how, back_first=not over)
+            self._opened += 1
+            got = await self._play_through(s, it, label, key, record, control, position, start)
+            if got != "stalled":
+                return got
+            if over:   # opening over the paused player hung this TV: from now on, Back first
+                self.demos.set_over_ok(self.tv[TV_ID], False)
+                record(self.hass, self.tv, "demo start", "opening a clip over the paused one stalls on this TV: Back first from now on",
+                       handled="learned")
+            over = False
+        record(self.hass, self.tv, "demo", f"clip {self.i + 1} ({label}) stalled twice: on to the next clip")
+        return False
+
+    async def _play_through(self, s, it, label, key, record, control, position, start):
+        """Wait for the clip to play, then pause / stop it just before its end. True (cut short), False (done), or
+        "stalled": its position stopped moving (a still frame with Plex's loading circle)."""
+        # playing: the TV's players report a position for it (up to 60 s: the room may be starting)
         for n in range(240):
             if self._jump is not None:
                 return True
@@ -603,7 +635,7 @@ class Runner:
                        f"{(st.state + ' ' + str(st.attributes.get('media_content_id') or '-')) if st else 'none'}, position "
                        f"{position(self.hass, self.tv)}, waiting for {key}", handled="timing note")
             mine = not st or str(st.attributes.get("media_content_id") or key) == key
-            if mine and position(self.hass, self.tv) is not None and (not st or st.state in ("playing", "buffering")):
+            if mine and position(self.hass, self.tv) is not None and (not st or st.state == "playing"):
                 break
             await asyncio.sleep(0.25)
         else:
@@ -617,10 +649,21 @@ class Runner:
         aim = max(0.5, dur - float(s["lead_s"]) - lag)
         self._set("playing")
         idle_since = None
+        moved_pos, moved_at = None, time.time()
         while True:
             if self._jump is not None:
                 return True
             pos = position(self.hass, self.tv)
+            # stalled: the position hasn't moved for STALL_S while we wait for the end (a paused demo doesn't count)
+            if pos is not None and (moved_pos is None or abs(pos - moved_pos) > 0.5):
+                moved_pos, moved_at = pos, time.time()
+            if self.state == "paused":
+                moved_at = time.time()
+            elif time.time() - moved_at > STALL_S:
+                st = self.tv.get(TV_PLEX) and self.hass.states.get(self.tv[TV_PLEX])
+                record(self.hass, self.tv, "demo", f"clip {self.i + 1} ({label}) stalled at {moved_pos} s for {STALL_S:g} s "
+                       f"(Plex player {st.state if st else 'none'})")
+                return "stalled"
             self.ends_at = time.time() + max(0.0, aim - (pos or 0)) if pos is not None and self.state == "playing" else self.ends_at
             if pos is not None and pos >= aim:
                 break

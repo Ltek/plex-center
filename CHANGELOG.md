@@ -1,5 +1,12 @@
 # Changelog
 
+## v2026.11.28.165
+
+- Fixed: a demo could hang on its first clip (a still frame with Plex's loading circle). Since .164 a session's first clip opened over whatever was on screen, such as the last frame left paused by the previous demo. The first clip of a session now presses Back first.
+- Demos notice a clip that has **stalled** (its position doesn't move for 12 s; a paused demo doesn't count). It's logged, started again once with Back first, and if it stalls again the demo goes on to the next clip. When opening a clip over the paused one is what stalled, Plex Center remembers it for that TV and presses Back first from then on.
+- A clip counts as started only once the Plex player says playing (not buffering).
+- Needs a Home Assistant restart (integration change).
+
 ## v2026.11.28.164
 
 - **Log**: what goes to Home Assistant's log is now set apart from Plex Center's own log: **Errors** (on by default) and **Info** (off by default), each on its own. Plex Center's log keeps its Errors / Errors and info choice. **Export** downloads Plex Center's log as text or JSON.
