@@ -393,11 +393,14 @@ async def test_no_response_retries_over_adb(hass):
         adb.clear(); play._LAST_SEEK.clear(); set_plex("paused", 600)
         await play.control(hass, tv, "seek", 720)
         assert adb == ["input keyevent " + " ".join(["KEYCODE_MEDIA_FAST_FORWARD"] * 4)], "seek ignored → ADB presses"
+        assert play.keys_first(hass, tv), "learned: PiPup's commands don't take here"
+        hass.data.pop(play._KEYS_KEY, None)   # a TV where PiPup works (the TCLs)
         respond["on"] = True
         for action, value in [("play_pause", None), ("skip", 30), ("skip", -10), ("seek", 900)]:
             adb.clear(); play._LAST_SEEK.clear(); set_plex("paused", 600)
             await play.control(hass, tv, action, value)
             assert adb == [], f"{action} {value}: the TV responded, nothing sent again"
+    hass.data.pop(play._KEYS_KEY, None)
     hass.states.async_set(plex, "on", {})   # nothing playing: can't tell, no retry
     _pip(hass)
     adb.clear(); respond["on"] = False
@@ -542,3 +545,36 @@ async def test_shield_keys_through_the_android_tv_remote(hass):
         await play.control(hass, tv, "play_pause")
         await play.control(hass, tv, "skip", 30)
     assert sent == ["MEDIA_PLAY", ["MEDIA_FAST_FORWARD"]], sent
+
+
+async def test_learns_keys_first_after_one_retry(hass):
+    """The SHIELD with a PiPup that reports the playback but ignores pause: one slow retry, then keys at once."""
+    from datetime import datetime, timezone
+    adb, pip_calls = [], []
+    plex = "media_player.plex"
+
+    def set_plex(state):
+        hass.states.async_set(plex, state, {"media_position": 600, "media_duration": 3600,
+                                             "media_position_updated_at": datetime.now(timezone.utc).isoformat()})
+
+    async def adb_cmd(call):
+        adb.append(call.data["command"])
+        set_plex("paused" if "PAUSE" in call.data["command"] else "playing")
+
+    async def pip_svc(call):
+        pip_calls.append(call.service)
+        set_plex(hass.states.get(plex).state)   # reported again, nothing changed
+    hass.services.async_register("androidtv", "adb_command", adb_cmd)
+    hass.services.async_register("media_player", "media_pause", pip_svc)
+    hass.services.async_register("media_player", "media_play", pip_svc)
+    _pip(hass, playing=True)
+    hass.states.async_set("media_player.adb", "idle")
+    tv = {"name": "Theater", "pipup": "media_player.pip", "plex_client": plex, "adb": "media_player.adb"}
+    with patch("asyncio.sleep"):
+        set_plex("playing")
+        await play.control(hass, tv, "pause")
+        assert pip_calls == ["media_pause"] and adb == ["input keyevent KEYCODE_MEDIA_PAUSE"], "first: PiPup, then the ADB retry"
+        assert play.keys_first(hass, tv)
+        pip_calls.clear(); adb.clear()
+        await play.control(hass, tv, "play")
+    assert pip_calls == [] and adb == ["input keyevent KEYCODE_MEDIA_PLAY"], "then: the key at once"

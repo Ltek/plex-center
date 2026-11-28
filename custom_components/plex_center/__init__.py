@@ -39,6 +39,8 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     from . import eventlog, services, websocket  # noqa: PLC0415
 
     await eventlog.async_load(hass)
+    from .play import async_load_keys_first  # noqa: PLC0415
+    await async_load_keys_first(hass)
     websocket.async_register(hass)
     services.async_register(hass)
     await _register_card(hass)

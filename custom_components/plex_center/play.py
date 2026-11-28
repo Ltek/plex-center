@@ -431,6 +431,35 @@ def _remote_entity(hass: HomeAssistant, tv: dict[str, Any]) -> str | None:
     return None
 
 
+# TVs where PiPup's play / pause / seek are accepted but do nothing (the SHIELD: its PiPup player may still report
+# the playback). Learned from the first command that had to be sent again, kept across restarts.
+_KEYS_KEY = "plex_center_keys_first"
+
+
+async def async_load_keys_first(hass: HomeAssistant) -> None:
+    from homeassistant.helpers.storage import Store  # noqa: PLC0415
+    store = Store(hass, 1, "plex_center.keys_first")
+    hass.data[_KEYS_KEY + "_store"] = store
+    hass.data[_KEYS_KEY] = set(((await store.async_load()) or {}).get("tvs", []))
+
+
+def keys_first(hass: HomeAssistant, tv: dict[str, Any]) -> bool:
+    return _tv_key(tv) in hass.data.get(_KEYS_KEY, set())
+
+
+def learn_keys_first(hass: HomeAssistant, tv: dict[str, Any], why: str) -> None:
+    got = hass.data.setdefault(_KEYS_KEY, set())
+    if _tv_key(tv) in got:
+        return
+    got.add(_tv_key(tv))
+    store = hass.data.get(_KEYS_KEY + "_store")
+    if store:
+        store.async_delay_save(lambda: {"tvs": sorted(hass.data.get(_KEYS_KEY, set()))}, 5)
+    from .eventlog import record  # noqa: PLC0415
+    record(hass, tv, "playback route", f"PiPup's {why} did nothing on this TV: the media keys are sent at once from now on "
+           "(the Android TV Remote, else ADB)", handled="learned")
+
+
 def media_session(hass: HomeAssistant, tv: dict[str, Any]) -> bool:
     """PiPup's player reports what plays: the app shares its playback with Android (PiPup's play / pause / seek
     work). The Plex app on the SHIELD doesn't: PiPup stays "on" while it plays."""
@@ -631,6 +660,8 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
             return
         if not await _responded(hass, tv, before, lambda b, n: _toggled(b, n, want)):
             _retrying(hass, tv, action.replace("_", " "))
+            if route in ("pipup", "open"):
+                learn_keys_first(hass, tv, action.replace("_", " "))
             # the key for the state wanted, never the toggle: a late first command plus this one still end there
             await adb_key("media_play" if want == "playing" else "media_pause")
 
@@ -689,7 +720,7 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
 
     # The app on screen doesn't share its playback (PiPup's player doesn't report it): PiPup's play / pause / seek
     # do nothing there, so send the media keys at once instead of waiting for them to fail.
-    keys_only = pip and not media_session(hass, tv) and bool(rem or _adb_on(hass, tv)) \
+    keys_only = pip and (keys_first(hass, tv) or not media_session(hass, tv)) and bool(rem or _adb_on(hass, tv)) \
         and any(v[0] in ("playing", "paused", "buffering") for v in before.values())   # something plays (the Plex player says)
 
     async def key(k: str) -> None:
@@ -728,6 +759,7 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
                 if not _no_session(err):
                     raise
                 from .eventlog import record  # noqa: PLC0415
+                learn_keys_first(hass, tv, "seek")
                 record(hass, tv, "seek (PiPup)", err, handled="seeked with Fast forward / Rewind presses")
         pos = position(hass, tv)
         if pos is None:
@@ -743,6 +775,7 @@ async def control(hass: HomeAssistant, tv: dict[str, Any], action: str, value: f
                 if not _no_session(err):
                     raise
                 from .eventlog import record  # noqa: PLC0415
+                learn_keys_first(hass, tv, "skip")
                 record(hass, tv, "skip (PiPup)", err, handled="skipped with Fast forward / Rewind presses")
         await _skip_keys(hass, tv, fast_key if keys_only else key, float(value or 0), position(hass, tv))
     else:
